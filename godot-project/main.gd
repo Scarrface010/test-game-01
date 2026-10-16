@@ -73,7 +73,11 @@ var relic_choices: Array = []
 var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
-var ups: Dictionary = {"vet": 0, "iron": 0, "packed": 0, "lucky": 0}
+var ups: Dictionary = {"vet": 0, "iron": 0, "packed": 0, "lucky": 0, "pockets": 0, "treasure": 0, "oil": 0, "toolbox": 0, "gate": 0, "steel": 0, "haggle": 0, "ash": 0, "head": 0, "interest": 0}
+var shop_page := 0
+var reset_armed := -10.0
+var btn_skip := Rect2(160, 1140, 400, 70)
+var btn_wipe := Rect2(160, 1210, 400, 56)
 var snd_on := true
 var sfx_cache: Dictionary = {}
 var sfx_players: Array[AudioStreamPlayer] = []
@@ -86,8 +90,10 @@ var btn_reset := Rect2(596, 20, 104, 46)
 var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 880, 400, 76)
 var btn_shop := Rect2(160, 970, 400, 76)
-var btn_back := Rect2(160, 1030, 400, 76)
-var btn_shop2 := Rect2(160, 1130, 400, 76)
+var btn_back := Rect2(250, 1010, 220, 64)
+var btn_shop2 := Rect2(160, 1100, 400, 76)
+var btn_prev := Rect2(40, 1010, 190, 64)
+var btn_next := Rect2(490, 1010, 190, 64)
 
 const SR_SFX := 22050
 const SR_MUS := 11025
@@ -231,7 +237,21 @@ func _make_defs() -> void:
 		{"id": "iron", "name": "Iron Will", "desc": "The dark waits 1 step longer per ring", "costs": [20, 40, 70]},
 		{"id": "packed", "name": "Packed Shield", "desc": "Start every floor with a shield", "costs": [45]},
 		{"id": "lucky", "name": "Lucky Finds", "desc": "Relic choices offer 4 relics instead of 3", "costs": [50]},
+		{"id": "pockets", "name": "Deep Pockets", "desc": "+1 tool slot", "costs": [40, 90]},
+		{"id": "treasure", "name": "Treasure Hunter", "desc": "Every coin is worth +1", "costs": [25, 55, 100]},
+		{"id": "oil", "name": "Lantern Oil", "desc": "Lanterns hold the dark back 2 steps longer", "costs": [25, 50, 85]},
+		{"id": "toolbox", "name": "Toolbox", "desc": "Start every run with a random tool", "costs": [30, 70]},
+		{"id": "gate", "name": "Gate Whisperer", "desc": "Gates and bosses need 1 less level", "costs": [60, 120]},
+		{"id": "steel", "name": "Steel Boots", "desc": "Spikes cost 1 less extra step", "costs": [35]},
+		{"id": "haggle", "name": "Haggler", "desc": "Merchant prices are 2 coins cheaper", "costs": [30]},
+		{"id": "head", "name": "Head Start", "desc": "Begin every run with a random relic", "costs": [75, 150]},
+		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [120]},
+		{"id": "interest", "name": "Interest", "desc": "+10% bonus on coins you bank", "costs": [40, 80, 130]},
 	]
+
+
+func up(id: String) -> int:
+	return int(ups.get(id, 0))
 
 
 func relic_n(id: String) -> int:
@@ -262,15 +282,18 @@ func big_g() -> int:
 
 
 func lamp_amt() -> int:
+	var base := 4
 	if relic_n("ember") > 0 or syn("slowdark", "lantern"):
-		return 12
-	return 8 if relic_n("lantern") > 0 else 4
+		base = 12
+	elif relic_n("lantern") > 0:
+		base = 8
+	return base + 2 * up("oil")
 
 
 func spike_x() -> int:
 	if relic_n("boots") > 0:
 		return 0
-	return 2 + (2 if relic_n("ember") > 0 else 0)
+	return maxi(0, 2 + (2 if relic_n("ember") > 0 else 0) - up("steel"))
 
 
 func start_shield() -> bool:
@@ -278,7 +301,7 @@ func start_shield() -> bool:
 
 
 func slots_n() -> int:
-	return 2 + (1 if cls == "mystic" else 0) + relic_n("bandolier")
+	return 2 + (1 if cls == "mystic" else 0) + relic_n("bandolier") + up("pockets")
 
 
 func kill_gain(c: Vector2i) -> int:
@@ -286,7 +309,7 @@ func kill_gain(c: Vector2i) -> int:
 
 
 func coin_val() -> int:
-	var v := 1
+	var v := 1 + up("treasure")
 	if relic_n("midas") > 0:
 		v *= 2
 	if relic_n("greedy") > 0:
@@ -297,7 +320,7 @@ func coin_val() -> int:
 
 
 func req_adjust() -> int:
-	return 3 * relic_n("blade") - relic_n("skeleton") - (1 if syn("skeleton", "boots") else 0)
+	return 3 * relic_n("blade") - relic_n("skeleton") - (1 if syn("skeleton", "boots") else 0) - up("gate")
 
 
 func stairs_blocked() -> bool:
@@ -1277,6 +1300,7 @@ func _die(why: String) -> void:
 	if reached > best:
 		best = reached
 	var delta := maxi(0, coins - run_banked)
+	delta += int(delta * 0.1 * up("interest"))
 	bank += delta
 	run_banked += delta
 	_save_meta()
@@ -1363,7 +1387,7 @@ func _open_market() -> void:
 	ids.shuffle()
 	market_stock.clear()
 	for i in 3:
-		market_stock.append({"id": String(ids[i]), "price": randi_range(5, 8) + floor_n / 5})
+		market_stock.append({"id": String(ids[i]), "price": maxi(2, randi_range(5, 8) + floor_n / 5 - 2 * up("haggle"))})
 	state = MARKET
 
 
@@ -1372,7 +1396,11 @@ func _relic_rect(i: int) -> Rect2:
 
 
 func _shop_rect(i: int) -> Rect2:
-	return Rect2(50, 360 + i * 150, 620, 132)
+	return Rect2(50, 350 + i * 108, 620, 98)
+
+
+func _shop_pages() -> int:
+	return (shop_defs.size() + 5) / 6
 
 
 func _class_rect(i: int) -> Rect2:
@@ -1579,6 +1607,16 @@ func _aim_apply(c: Vector2i) -> void:
 
 # ----- run flow -----
 
+func _wipe_progress() -> void:
+	bank = 0
+	best = 0
+	for k in ups.keys():
+		ups[k] = 0
+	reset_armed = -10.0
+	_save_meta()
+	_sfx("death")
+
+
 func _new_run(start_floor := 1) -> void:
 	floor_n = start_floor
 	coins = 0
@@ -1594,6 +1632,18 @@ func _new_run(start_floor := 1) -> void:
 		for i in 2:
 			var d: Dictionary = pool[i]
 			relics[d["id"]] = 1
+	if up("ash") > 0:
+		relics["phoenix"] = 1
+	var safe_pool: Array = []
+	for d2 in relic_defs:
+		if not d2.has("curse") and relic_n(String(d2["id"])) < int(d2["max"]):
+			safe_pool.append(d2)
+	safe_pool.shuffle()
+	for i in mini(up("head"), safe_pool.size()):
+		relics[safe_pool[i]["id"]] = relic_n(String(safe_pool[i]["id"])) + 1
+	for i in up("toolbox"):
+		if inv.size() < slots_n():
+			inv.append(_random_use())
 	_new_floor()
 
 
@@ -1615,13 +1665,25 @@ func _gui_input(event: InputEvent) -> void:
 				return
 		if btn_shop2.has_point(p):
 			shop_return = CLASS
+			shop_page = 0
 			state = SHOP
 			_sfx("ui")
+		elif btn_wipe.has_point(p):
+			if t - reset_armed < 4.0:
+				_wipe_progress()
+			else:
+				reset_armed = t
+				_sfx("blocked")
 		return
 	if state == CLEAR:
 		_finish_clear()
 		return
 	if state == RELIC:
+		if btn_skip.has_point(p):
+			coins += 3
+			_sfx("coin")
+			_finish_clear()
+			return
 		for i in relic_choices.size():
 			if _relic_rect(i).has_point(p):
 				var id: String = relic_choices[i]["id"]
@@ -1662,10 +1724,21 @@ func _gui_input(event: InputEvent) -> void:
 			state = shop_return
 			_sfx("ui")
 			return
-		for i in shop_defs.size():
+		if btn_prev.has_point(p):
+			shop_page = (shop_page + _shop_pages() - 1) % _shop_pages()
+			_sfx("ui")
+			return
+		if btn_next.has_point(p):
+			shop_page = (shop_page + 1) % _shop_pages()
+			_sfx("ui")
+			return
+		for i in 6:
+			var idx := shop_page * 6 + i
+			if idx >= shop_defs.size():
+				break
 			if _shop_rect(i).has_point(p):
-				var d: Dictionary = shop_defs[i]
-				var lv: int = int(ups[d["id"]])
+				var d: Dictionary = shop_defs[idx]
+				var lv: int = up(String(d["id"]))
 				var costs: Array = d["costs"]
 				if lv < costs.size() and bank >= int(costs[lv]):
 					bank -= int(costs[lv])
@@ -1684,6 +1757,7 @@ func _gui_input(event: InputEvent) -> void:
 			_sfx("ui")
 		elif btn_shop.has_point(p):
 			shop_return = DEAD
+			shop_page = 0
 			state = SHOP
 			_sfx("ui")
 		return
@@ -2136,6 +2210,7 @@ func _draw_overlay(acc: Color) -> void:
 					var stxt := ("SYNERGY ACTIVE: " + String(sy["text"])) if have else ("Synergy with %s: %s" % [oname, sy["text"]])
 					_txt(stxt, Vector2(rr.position.x + 22, rr.end.y - 10), 16, Color("ffd84f") if have else Color(1, 1, 1, 0.45), rr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
 					break
+		_button(btn_skip, "SKIP  (+3 coins)", Color(1, 1, 1, 0.75), 26)
 	elif state == FORK:
 		_txt("CHOOSE YOUR PATH", Vector2(0, 250), 54, acc)
 		_txt("Floor %d awaits" % (floor_n + 1), Vector2(0, 310), 26, Color(1, 1, 1, 0.7))
@@ -2183,24 +2258,31 @@ func _draw_overlay(acc: Color) -> void:
 				_use_icon(String(kid), Vector2(kx, cr.position.y + 40), 44)
 				kx -= 56.0
 		_button(btn_shop2, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
+		var armed := t - reset_armed < 4.0
+		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP:
-		_txt("SHOP", Vector2(0, 250), 60, Color("ffc93c"))
-		_txt("Bank: %d coins" % bank, Vector2(0, 310), 32, Color.WHITE)
-		for i in shop_defs.size():
-			var d2: Dictionary = shop_defs[i]
+		_txt("SHOP", Vector2(0, 230), 56, Color("ffc93c"))
+		_txt("Bank: %d coins      Page %d / %d" % [bank, shop_page + 1, _shop_pages()], Vector2(0, 290), 26, Color.WHITE)
+		for i in 6:
+			var idx := shop_page * 6 + i
+			if idx >= shop_defs.size():
+				break
+			var d2: Dictionary = shop_defs[idx]
 			var rr2 := _shop_rect(i)
-			var lv: int = int(ups[d2["id"]])
+			var lv: int = up(String(d2["id"]))
 			var costs: Array = d2["costs"]
 			var maxed := lv >= costs.size()
 			var can2 := (not maxed) and bank >= int(costs[lv])
 			var col2 := Color("6dff9a") if can2 else Color(1, 1, 1, 0.45)
 			draw_rect(rr2, Color(col2.r, col2.g, col2.b, 0.1))
 			draw_rect(rr2, col2, false, 2.0)
-			_txt("%s  (%d/%d)" % [d2["name"], lv, costs.size()], Vector2(rr2.position.x + 24, rr2.position.y + 48), 30, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(d2["desc"]), Vector2(rr2.position.x + 24, rr2.position.y + 92), 21, Color(1, 1, 1, 0.7), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt("%s  (%d/%d)" % [d2["name"], lv, costs.size()], Vector2(rr2.position.x + 20, rr2.position.y + 38), 26, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(d2["desc"]), Vector2(rr2.position.x + 20, rr2.position.y + 76), 19, Color(1, 1, 1, 0.7), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
 			var ptxt := "MAXED" if maxed else "%d coins" % int(costs[lv])
-			_txt(ptxt, Vector2(rr2.end.x - 190, rr2.position.y + 78), 30, col2, 170.0, HORIZONTAL_ALIGNMENT_RIGHT)
-		_button(btn_back, "BACK", acc, 28)
+			_txt(ptxt, Vector2(rr2.end.x - 170, rr2.position.y + 62), 26, col2, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		_button(btn_prev, "< PREV", acc, 24)
+		_button(btn_next, "NEXT >", acc, 24)
+		_button(btn_back, "BACK", acc, 26)
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 
 

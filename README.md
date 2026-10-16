@@ -32,3 +32,8 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 - **Boss floors** every 5th floor (colossus / king / warden rules).
 - **Vaults:** a key on the floor opens a locked vault (+10 coins, +1 level, a free tool).
 - Dev URLs: `?floor=5&class=brute`, `?demo=relic|fork|market|shop`.
+
+## v6
+- Relic screen has a SKIP button (+3 coins), so cursed relics are never forced.
+- Shop is paged (6 per page) with 10 new permanent upgrades: Deep Pockets, Treasure Hunter, Lantern Oil, Toolbox, Gate Whisperer, Steel Boots, Haggler, Head Start, Phoenix Ash, Interest.
+- Class screen has a two-tap RESET ALL PROGRESS button (wipes bank, upgrades, best).
