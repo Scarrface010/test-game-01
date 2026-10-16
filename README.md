@@ -54,3 +54,10 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 ## v9: XP, persistent levels, inventory
 - Adventure: kills, potions, vaults and elixirs give XP; levels persist for the whole run (each level = +1 attack, +3 max HP). Monsters scale with your current level and the floor depth so fights stay costly.
 - New BAG button (top right in Adventure) opens an inventory screen with STATS, TOOLS (with USE buttons), RELICS and GEAR tabs. The tool bar stays at the bottom. GEAR has weapon/armour/trinket slots reserved for future items.
+
+## v10: Gear
+- Adventure: Phoenix Feather now fully restores health and air instead of restarting the floor.
+- 32 pieces of gear in 5 slots (weapon, helmet, armour, boots, trinket) across 4 tiers, with stats like attack, crit, leech, armour, thorns, dodge, max HP, air, air saving, sight, XP, coin and kill-heal bonuses.
+- Findable: gear crates in rooms (at least one per floor), elite and boss drops. Buyable: an Outfitter stall in some rooms (step on it, or tap it, to trade). Starter Kit shop upgrade gives starting gear.
+- Inventory has GEAR (equipped) and PACK (12 slots, equip or sell for half price) tabs. Monster scaling eased slightly.
+- Dev URL: `?mode=adv&class=brute&floor=3&gear=trade` (gives gear and opens the Outfitter).

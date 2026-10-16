@@ -9,7 +9,9 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE }
+const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
+const BAG_MAX := 12
 const AC := 90.0
 const AMX := 360.0
 const AMY := 644.0
@@ -76,7 +78,7 @@ var relic_choices: Array = []
 var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
-var ups: Dictionary = {"vet": 0, "iron": 0, "packed": 0, "lucky": 0, "pockets": 0, "treasure": 0, "oil": 0, "toolbox": 0, "gate": 0, "steel": 0, "haggle": 0, "ash": 0, "head": 0, "interest": 0}
+var ups: Dictionary = {"kit": 0, "vet": 0, "iron": 0, "packed": 0, "lucky": 0, "pockets": 0, "treasure": 0, "oil": 0, "toolbox": 0, "gate": 0, "steel": 0, "haggle": 0, "ash": 0, "head": 0, "interest": 0}
 var shop_page := 0
 var mode := "puzzle"
 var adv_best := 0
@@ -97,6 +99,12 @@ var cam := Vector2.ZERO
 var scan_steps := 0
 var scan_r := 0
 var xp := 0
+var bag: Array[String] = []
+var gear_list: Array = []
+var gear_defs: Dictionary = {}
+var merchants: Dictionary = {}
+var trade_cell := Vector2i(-1, -1)
+var pack_page := 0
 var inv_tab := 0
 var inv_page := 0
 var equip: Dictionary = {}
@@ -130,7 +138,7 @@ var adv_text := {
 	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
 	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
-	"phoenix": "Survive one death: the floor restarts",
+	"phoenix": "Survive one death: restores full health and air",
 	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters for 10",
 	"tool_zap": "Zaps a monster within 3 tiles for 12 damage",
 	"tool_crystal": "+20 air", "tool_cloak": "+3 attack until your next kill",
@@ -173,6 +181,7 @@ func _ready() -> void:
 		for k in ups:
 			ups[k] = int(cfg.get_value("ups", k, 0))
 	_make_defs()
+	_make_gear()
 	var rs := RandomNumberGenerator.new()
 	rs.seed = 4242
 	for i in 60:
@@ -208,6 +217,20 @@ func _ready() -> void:
 			cls = String(cq)
 		if fq != null and int(fq) > 0:
 			_new_run(int(fq))
+		var gq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('gear')")
+		if gq != null and mode == "adv" and fq != null:
+			coins = 99
+			for gi in 7:
+				_adv_give_gear(_adv_roll_gear(null, 0))
+			if String(gq) == "trade":
+				var tmc := start + Vector2i(1, 0)
+				var toffers: Array = []
+				for k in 3:
+					var tg := _adv_roll_gear(null, 0)
+					toffers.append({"kind": "gear", "id": tg, "price": int(gear_defs[tg]["price"]), "sold": false})
+				toffers.append({"kind": "tool", "id": "blink", "price": 6, "sold": false})
+				merchants[tmc] = toffers
+				_adv_open_trade(tmc)
 		if demo == "relic":
 			if fq == null:
 				_new_run()
@@ -317,6 +340,7 @@ func _make_defs() -> void:
 		{"id": "head", "name": "Head Start", "desc": "Begin every run with a random relic", "costs": [75, 150]},
 		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [120]},
 		{"id": "interest", "name": "Interest", "desc": "+10% bonus on coins you bank", "costs": [40, 80, 130]},
+		{"id": "kit", "name": "Starter Kit", "desc": "Adventure: begin each run with random starter gear", "costs": [40, 90]},
 	]
 
 
@@ -391,7 +415,7 @@ func kill_gain(c: Vector2i) -> int:
 
 
 func coin_val() -> int:
-	var v := 1 + up("treasure")
+	var v := 1 + up("treasure") + int(gear("coin"))
 	if relic_n("midas") > 0:
 		v *= 2
 	if relic_n("greedy") > 0:
@@ -1374,6 +1398,14 @@ func _thief_check() -> void:
 
 
 func _die(why: String) -> void:
+	if mode == "adv" and relic_n("phoenix") > 0:
+		relics.erase("phoenix")
+		hp = hp_cap()
+		oxy = oxy_max
+		msg = "Phoenix Feather burns up! Health and air fully restored"
+		_pop(pos, "REBORN", Color("ffb347"))
+		_sfx("shield")
+		return
 	if relic_n("phoenix") > 0:
 		relics.erase("phoenix")
 		_reset_floor()
@@ -1769,6 +1801,9 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if state == INV:
 		_inv_input(p)
+		return
+	if state == TRADE:
+		_trade_input(p)
 		return
 	if state == CLASS:
 		if btn_modeback.has_point(p):
@@ -2301,6 +2336,8 @@ func _draw_overlay(acc: Color) -> void:
 	draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
 	if state == INV:
 		_draw_inv(acc)
+	elif state == TRADE:
+		_draw_trade(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose a mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -2440,15 +2477,15 @@ func _draw_overlay(acc: Color) -> void:
 # ---------- ADVENTURE MODE (sprawling map, fog of war, points gate, air) ----------
 
 func adv_vis_r() -> int:
-	return 4 + relic_n("lantern") + relic_n("ember") + up("oil") / 2 + (1 if cls == "scout" else 0)
+	return 4 + relic_n("lantern") + relic_n("ember") + up("oil") / 2 + (1 if cls == "scout" else 0) + int(gear("sight"))
 
 
 func adv_oxy_max() -> float:
-	return 90.0 + 10.0 * int(cdef()["per"]) + 8.0 * up("iron") + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass")
+	return 90.0 + 10.0 * int(cdef()["per"]) + 8.0 * up("iron") + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air")
 
 
 func adv_pod_amt() -> float:
-	return 30.0 + 5.0 * up("oil")
+	return 30.0 + 5.0 * up("oil") + gear("pod")
 
 
 func _ai(c: Vector2i) -> int:
@@ -2600,6 +2637,7 @@ func _adv_gen() -> void:
 		if k != "pick":
 			tool_ids.append(k)
 	stations.clear()
+	merchants.clear()
 	mon_hp.clear()
 	stations[start] = true
 	var smin: Dictionary = dist.duplicate()
@@ -2667,6 +2705,11 @@ func _adv_gen() -> void:
 			if hc.x >= 0:
 				items[hc] = "hp"
 				pts += 1
+		if not is_start and rng.randf() < 0.24:
+			var gcell := _adv_pick(rng, r, false, taken)
+			if gcell.x >= 0:
+				items[gcell] = "gear_" + _adv_roll_gear(rng)
+				pts += 2
 		if rng.randf() < 0.2:
 			var arc := _adv_pick(rng, r, false, taken)
 			if arc.x >= 0:
@@ -2687,6 +2730,29 @@ func _adv_gen() -> void:
 				var spc := _adv_pick(rng, r, false, taken)
 				if spc.x >= 0:
 					spikes[spc] = true
+	var crates := 0
+	for ic in items:
+		if String(items[ic]).begins_with("gear_"):
+			crates += 1
+	if crates == 0 and adv_rooms.size() > 2:
+		var cr: Rect2i = adv_rooms[rng.randi_range(1, adv_rooms.size() - 1)]
+		var cc2 := _adv_pick(rng, cr, false, taken)
+		if cc2.x >= 0:
+			items[cc2] = "gear_" + _adv_roll_gear(rng)
+			pts += 2
+	if rng.randf() < 0.6 and adv_rooms.size() > 3:
+		var mi := rng.randi_range(1, adv_rooms.size() - 1)
+		if mi != far:
+			var mcell2 := _adv_pick(rng, adv_rooms[mi], true, taken)
+			if mcell2.x >= 0:
+				var offers: Array = []
+				for k in 3:
+					var gid3 := _adv_roll_gear(rng)
+					var gd3: Dictionary = gear_defs[gid3]
+					offers.append({"kind": "gear", "id": gid3, "price": maxi(5, int(gd3["price"]) - 2 * up("haggle")), "sold": false})
+				var tid := String(tool_ids[rng.randi() % tool_ids.size()])
+				offers.append({"kind": "tool", "id": tid, "price": maxi(3, 6 + floor_n / 5 - up("haggle")), "sold": false})
+				merchants[mcell2] = offers
 	if relic_n("scavenger") > 0:
 		var er: Rect2i = adv_rooms[rng.randi_range(1, adv_rooms.size() - 1)]
 		var ec := _adv_pick(rng, er, false, taken)
@@ -2732,8 +2798,31 @@ func _adv_gen() -> void:
 	adv_req = maxi(6, int(pts * minf(0.5, 0.35 + 0.015 * floor_n)) + 4 * req_adjust())
 
 
+func gear(stat: String) -> float:
+	var tot := 0.0
+	for slot in equip:
+		var id := String(equip[slot])
+		if id == "" or not gear_defs.has(id):
+			continue
+		var st: Dictionary = gear_defs[id]["stats"]
+		tot += float(st.get(stat, 0))
+	return tot
+
+
+func hp_cap() -> int:
+	return hp_max + int(gear("hp"))
+
+
+func sh_cap() -> int:
+	return sh_max + int(gear("shield"))
+
+
+func armor_total() -> int:
+	return armor + int(gear("armor"))
+
+
 func p_atk() -> int:
-	return level + boost
+	return level + boost + int(gear("atk"))
 
 
 func mon_atk(c: Vector2i) -> int:
@@ -2754,7 +2843,7 @@ func mon_hp_now(c: Vector2i) -> int:
 
 
 func dmg_taken(a: int) -> int:
-	return maxi(1, a - armor)
+	return maxi(1, a - armor_total())
 
 
 func _adv_cost(c: Vector2i) -> int:
@@ -2786,7 +2875,11 @@ func _adv_level_up(n: int) -> void:
 	hp += 3 * n
 
 
-func _adv_hurt(a: int, who: String) -> bool:
+func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
+	if randf() * 100.0 < gear("dodge"):
+		_pop(pos, "DODGE", Color("9fe8ff"))
+		msg += "   You dodge %s!" % who
+		return true
 	var d := dmg_taken(a)
 	var absorbed := mini(sh, d)
 	sh -= absorbed
@@ -2794,6 +2887,9 @@ func _adv_hurt(a: int, who: String) -> bool:
 	_pop(pos, "-%d" % d, Color("ff6a6a") if absorbed < d else Color("7db2ff"))
 	msg += "   %s hits you for %d" % [who, d]
 	_sfx("spike")
+	var th := int(gear("thorns"))
+	if th > 0 and mons.has(src):
+		_adv_damage_mon(src, th)
 	if hp <= 0:
 		hp = 0
 		_die("%s was too strong" % who)
@@ -2812,12 +2908,239 @@ func _adv_damage_mon(c: Vector2i, dmg: int) -> void:
 		mon_hp[c] = left
 
 
+func _make_gear() -> void:
+	gear_list = [
+		{"id": "dagger", "slot": "weapon", "name": "Rusty Dagger", "tier": 1, "price": 14, "stats": {"atk": 1, "crit": 10}},
+		{"id": "wrench", "slot": "weapon", "name": "Maintenance Wrench", "tier": 1, "price": 16, "stats": {"atk": 2}},
+		{"id": "arcblade", "slot": "weapon", "name": "Arc Blade", "tier": 2, "price": 34, "stats": {"atk": 3, "crit": 15}},
+		{"id": "plasmaaxe", "slot": "weapon", "name": "Plasma Axe", "tier": 2, "price": 38, "stats": {"atk": 4}},
+		{"id": "leechfang", "slot": "weapon", "name": "Leech Fang", "tier": 2, "price": 36, "stats": {"atk": 2, "leech": 2}},
+		{"id": "railspike", "slot": "weapon", "name": "Rail Spike", "tier": 3, "price": 60, "stats": {"atk": 6, "crit": 20}},
+		{"id": "voidcutter", "slot": "weapon", "name": "Void Cutter", "tier": 4, "price": 90, "stats": {"atk": 8, "crit": 25, "leech": 2}},
+		{"id": "visor", "slot": "helmet", "name": "Scanner Visor", "tier": 1, "price": 12, "stats": {"sight": 1}},
+		{"id": "hardcap", "slot": "helmet", "name": "Hard Cap", "tier": 1, "price": 12, "stats": {"armor": 1}},
+		{"id": "rebreather", "slot": "helmet", "name": "Rebreather", "tier": 2, "price": 30, "stats": {"air": 20}},
+		{"id": "tachelm", "slot": "helmet", "name": "Tactical Helm", "tier": 2, "price": 34, "stats": {"armor": 1, "sight": 1, "crit": 5}},
+		{"id": "scholar", "slot": "helmet", "name": "Scholar Helm", "tier": 3, "price": 55, "stats": {"xp": 25}},
+		{"id": "oracle", "slot": "helmet", "name": "Oracle Mask", "tier": 3, "price": 58, "stats": {"sight": 2, "dodge": 8}},
+		{"id": "jacket", "slot": "armour", "name": "Work Jacket", "tier": 1, "price": 14, "stats": {"armor": 1}},
+		{"id": "scrap", "slot": "armour", "name": "Scrap Plating", "tier": 1, "price": 18, "stats": {"armor": 1, "hp": 6}},
+		{"id": "kevlar", "slot": "armour", "name": "Kevlar Vest", "tier": 2, "price": 34, "stats": {"armor": 2, "hp": 6}},
+		{"id": "reactive", "slot": "armour", "name": "Reactive Suit", "tier": 2, "price": 38, "stats": {"armor": 2, "thorns": 3}},
+		{"id": "exo", "slot": "armour", "name": "Exo Frame", "tier": 3, "price": 62, "stats": {"armor": 3, "hp": 12}},
+		{"id": "bulwark", "slot": "armour", "name": "Bulwark Rig", "tier": 4, "price": 92, "stats": {"armor": 4, "hp": 16, "shield": 6}},
+		{"id": "sneakers", "slot": "boots", "name": "Quiet Sneakers", "tier": 1, "price": 14, "stats": {"airsave": 8}},
+		{"id": "magboots", "slot": "boots", "name": "Mag Boots", "tier": 1, "price": 16, "stats": {"dodge": 5}},
+		{"id": "jets", "slot": "boots", "name": "Jet Boots", "tier": 2, "price": 34, "stats": {"airsave": 15}},
+		{"id": "grip", "slot": "boots", "name": "Grip Boots", "tier": 2, "price": 34, "stats": {"armor": 1, "dodge": 6}},
+		{"id": "gravity", "slot": "boots", "name": "Gravity Boots", "tier": 3, "price": 58, "stats": {"airsave": 22, "dodge": 8}},
+		{"id": "phase", "slot": "boots", "name": "Phase Boots", "tier": 4, "price": 90, "stats": {"airsave": 30, "dodge": 12}},
+		{"id": "luckychip", "slot": "trinket", "name": "Lucky Chip", "tier": 1, "price": 14, "stats": {"coin": 1}},
+		{"id": "battery", "slot": "trinket", "name": "Spare Battery", "tier": 1, "price": 14, "stats": {"air": 15}},
+		{"id": "medpatch", "slot": "trinket", "name": "Med Patch", "tier": 2, "price": 32, "stats": {"killheal": 3}},
+		{"id": "podamp", "slot": "trinket", "name": "Pod Amplifier", "tier": 2, "price": 30, "stats": {"pod": 15}},
+		{"id": "ward", "slot": "trinket", "name": "Ward Emitter", "tier": 2, "price": 36, "stats": {"shield": 8}},
+		{"id": "reaperchip", "slot": "trinket", "name": "Reaper Chip", "tier": 3, "price": 60, "stats": {"killheal": 6, "atk": 1}},
+		{"id": "datalens", "slot": "trinket", "name": "Data Lens", "tier": 3, "price": 55, "stats": {"xp": 30}},
+	]
+	gear_defs.clear()
+	for d in gear_list:
+		gear_defs[String(d["id"])] = d
+
+
+func _gear_col(slot: String) -> Color:
+	var cols := {"weapon": Color("ff8a4f"), "helmet": Color("4fd1ff"), "armour": Color("9fb3d9"), "boots": Color("6dff9a"), "trinket": Color("c07cff")}
+	return cols.get(slot, Color.WHITE)
+
+
+func _tier_col(t: int) -> Color:
+	if t >= 4:
+		return Color("ffd84f")
+	if t == 3:
+		return Color("d58cff")
+	if t == 2:
+		return Color("6fd8ff")
+	return Color.WHITE
+
+
+func _gear_desc(d: Dictionary) -> String:
+	var labels := {
+		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
+		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
+		"xp": "+%d%% XP", "coin": "+%d per coin", "dodge": "%d%% dodge", "thorns": "%d thorns damage", "killheal": "heal %d on kill",
+		"pod": "+%d air per pod",
+	}
+	var parts: Array[String] = []
+	var st: Dictionary = d["stats"]
+	for k in st:
+		parts.append(String(labels[k]) % int(st[k]))
+	return ", ".join(parts)
+
+
+func _adv_roll_gear(rng: RandomNumberGenerator, bonus := 0) -> String:
+	var r := rng.randf() if rng != null else randf()
+	var tier := 1
+	if floor_n <= 3:
+		tier = 1 if r < 0.7 else 2
+	elif floor_n <= 7:
+		tier = 1 if r < 0.3 else (2 if r < 0.8 else 3)
+	elif floor_n <= 12:
+		tier = 2 if r < 0.4 else (3 if r < 0.85 else 4)
+	else:
+		tier = 2 if r < 0.2 else (3 if r < 0.65 else 4)
+	tier = clampi(tier + bonus, 1, 4)
+	var pool: Array = []
+	for d in gear_list:
+		if int(d["tier"]) == tier:
+			pool.append(d)
+	if pool.is_empty():
+		pool = gear_list
+	var idx := (rng.randi() if rng != null else randi()) % pool.size()
+	return String(pool[idx]["id"])
+
+
+func _adv_apply_change(old_hp: int, old_ox: float) -> void:
+	var nh := hp_cap()
+	if nh > old_hp:
+		hp += nh - old_hp
+	hp = mini(hp, nh)
+	oxy_max = adv_oxy_max()
+	if oxy_max > old_ox:
+		oxy += oxy_max - old_ox
+	oxy = minf(oxy, oxy_max)
+
+
+func _adv_give_gear(id: String) -> bool:
+	var slot := String(gear_defs[id]["slot"])
+	if not equip.has(slot) or String(equip[slot]) == "":
+		var oh := hp_cap()
+		var oo := oxy_max
+		equip[slot] = id
+		_adv_apply_change(oh, oo)
+		return true
+	if bag.size() >= BAG_MAX:
+		return false
+	bag.append(id)
+	return true
+
+
+func _adv_equip(id: String) -> void:
+	var slot := String(gear_defs[id]["slot"])
+	var oh := hp_cap()
+	var oo := oxy_max
+	var prev := String(equip.get(slot, ""))
+	bag.erase(id)
+	equip[slot] = id
+	if prev != "":
+		bag.append(prev)
+	_adv_apply_change(oh, oo)
+
+
+func _adv_unequip(slot: String) -> bool:
+	if not equip.has(slot) or String(equip[slot]) == "":
+		return false
+	if bag.size() >= BAG_MAX:
+		return false
+	var oh := hp_cap()
+	var oo := oxy_max
+	bag.append(String(equip[slot]))
+	equip.erase(slot)
+	_adv_apply_change(oh, oo)
+	return true
+
+
+func _adv_open_trade(c: Vector2i) -> void:
+	trade_cell = c
+	state = TRADE
+	walk.clear()
+	aim = -1
+	_sfx("ui")
+
+
+func _trade_rect(i: int) -> Rect2:
+	return Rect2(50, 300 + i * 150, 620, 134)
+
+
+func _trade_input(p: Vector2) -> void:
+	if btn_back.has_point(p):
+		state = PLAY
+		_sfx("ui")
+		return
+	var offers: Array = merchants.get(trade_cell, [])
+	for i in offers.size():
+		if _trade_rect(i).has_point(p):
+			var o: Dictionary = offers[i]
+			if bool(o["sold"]) or coins < int(o["price"]):
+				_sfx("blocked")
+				return
+			if String(o["kind"]) == "gear":
+				if not _adv_give_gear(String(o["id"])):
+					msg = "Pack is full!"
+					_sfx("blocked")
+					return
+			else:
+				if not _give_use(String(o["id"])):
+					msg = "Tool slots are full!"
+					_sfx("blocked")
+					return
+			coins -= int(o["price"])
+			o["sold"] = true
+			_sfx("coin")
+			return
+
+
+func _draw_trade(acc: Color) -> void:
+	_txt("OUTFITTER", Vector2(0, 220), 56, Color("ffc93c"))
+	_txt("Your coins: %d      Pack: %d / %d" % [coins, bag.size(), BAG_MAX], Vector2(0, 270), 26, Color.WHITE)
+	var offers: Array = merchants.get(trade_cell, [])
+	for i in offers.size():
+		var o: Dictionary = offers[i]
+		var rr := _trade_rect(i)
+		var sold := bool(o["sold"])
+		var can := coins >= int(o["price"]) and not sold
+		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
+		draw_rect(rr, Color(col.r, col.g, col.b, 0.1))
+		draw_rect(rr, col, false, 2.0)
+		if String(o["kind"]) == "gear":
+			var gd: Dictionary = gear_defs[String(o["id"])]
+			var gc := _gear_col(String(gd["slot"]))
+			_txt(String(gd["name"]), Vector2(rr.position.x + 20, rr.position.y + 40), 28, _tier_col(int(gd["tier"])), 420.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(gd["slot"]).to_upper() + "  T" + str(gd["tier"]), Vector2(rr.position.x + 20, rr.position.y + 68), 18, gc, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_gear_desc(gd), Vector2(rr.position.x + 20, rr.position.y + 96), 20, Color(1, 1, 1, 0.8), 420.0)
+		else:
+			var uid := String(o["id"])
+			_use_icon(uid, Vector2(rr.position.x + 56, rr.position.y + 67), 70)
+			_txt(_use_name(uid), Vector2(rr.position.x + 110, rr.position.y + 50), 30, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_atext("tool_" + uid, String(use_defs[uid]["desc"])), Vector2(rr.position.x + 110, rr.position.y + 84), 19, Color(1, 1, 1, 0.75), 340.0)
+		_txt("SOLD" if sold else "%d coins" % int(o["price"]), Vector2(rr.end.x - 170, rr.position.y + 76), 28, col, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_button(btn_back, "LEAVE", acc, 28)
+
+
+func _draw_crate(ctr: Vector2, id: String, bob: float) -> void:
+	var d: Dictionary = gear_defs[id]
+	var col := _gear_col(String(d["slot"]))
+	var w := AC * 0.46
+	var r := Rect2(ctr.x - w * 0.5, ctr.y - w * 0.5 + bob, w, w)
+	draw_rect(r, col.darkened(0.6))
+	draw_rect(r, col, false, 3.0)
+	_ctext(String(d["slot"]).substr(0, 1).to_upper(), ctr + Vector2(0, bob), int(AC * 0.3), col)
+
+
+func _draw_merchant(ctr: Vector2) -> void:
+	var col := Color("ffc93c")
+	draw_rect(Rect2(ctr.x - AC * 0.3, ctr.y - AC * 0.02, AC * 0.6, AC * 0.3), Color("5a3a1a"))
+	draw_colored_polygon(PackedVector2Array([Vector2(ctr.x - AC * 0.4, ctr.y), Vector2(ctr.x + AC * 0.4, ctr.y), Vector2(ctr.x, ctr.y - AC * 0.36)]), Color("c0392b"))
+	_ctext("$", ctr + Vector2(0, AC * 0.14), int(AC * 0.26), col)
+	_ctext("SHOP", ctr + Vector2(0, AC * 0.42), 12, col)
+
+
 func _adv_snapshot() -> void:
 	saved = {
 		"mons": mons.duplicate(), "elite": elite.duplicate(), "items": items.duplicate(), "spikes": spikes.duplicate(),
 		"coin_at": coin_at.duplicate(), "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
 		"vaults": vaults.duplicate(), "inv": inv.duplicate(), "coins": coins,
 		"level": level, "xp": xp, "hp_max": hp_max, "armor": armor, "sh": sh,
+		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true),
 	}
 
 
@@ -2851,6 +3174,11 @@ func _adv_reset() -> void:
 	hp_max = int(saved["hp_max"])
 	armor = int(saved["armor"])
 	sh = int(saved["sh"])
+	equip = saved["equip"].duplicate()
+	bag.clear()
+	for g in saved["bag"]:
+		bag.append(String(g))
+	merchants = saved["merchants"].duplicate(true)
 	_adv_begin()
 
 
@@ -2861,6 +3189,13 @@ func _adv_init_run() -> void:
 	armor = 1 if cls == "brute" else 0
 	sh = 0
 	equip.clear()
+	bag.clear()
+	for i in up("kit"):
+		var kid := _adv_roll_gear(null, -1)
+		if not equip.has(String(gear_defs[kid]["slot"])):
+			equip[String(gear_defs[kid]["slot"])] = kid
+		else:
+			bag.append(kid)
 
 
 func xp_need() -> int:
@@ -2868,7 +3203,7 @@ func xp_need() -> int:
 
 
 func _adv_gain_xp(n: int) -> void:
-	xp += n
+	xp += int(round(n * (1.0 + gear("xp") / 100.0)))
 	var gained := 0
 	while xp >= xp_need():
 		xp -= xp_need()
@@ -2887,7 +3222,7 @@ func _adv_relic_applied(id: String) -> void:
 
 
 func _adv_scaled(raw: int) -> int:
-	var r := raw + int(round(0.75 * float(level - START_LEVEL)))
+	var r := raw + int(round(0.7 * float(level - START_LEVEL)))
 	if raw >= 2:
 		r += (floor_n - 1) / 2
 	else:
@@ -2897,8 +3232,8 @@ func _adv_scaled(raw: int) -> int:
 
 
 func _adv_begin() -> void:
-	hp = hp_max
-	sh = maxi(sh, 8 if start_shield() else 0)
+	hp = hp_cap()
+	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")))
 	shield = false
 	mon_hp.clear()
 	pos = start
@@ -3037,6 +3372,14 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		msg += "  (+%d coins back)" % back
 	_pop(nc, "+%d XP" % xg, Color("6dff9a"))
 	_adv_gain_xp(xg)
+	var kh := int(gear("killheal"))
+	if kh > 0:
+		hp = mini(hp_cap(), hp + kh)
+	if was_elite or is_boss:
+		if randf() < (1.0 if is_boss else 0.3):
+			var gid := _adv_roll_gear(null, 1 if is_boss else 0)
+			if _adv_give_gear(gid):
+				msg += "  Dropped: " + String(gear_defs[gid]["name"])
 	if is_boss:
 		coins += 10
 		var it := _random_use()
@@ -3053,15 +3396,21 @@ func _adv_fight(nc: Vector2i) -> int:
 	var is_boss := boss_floor and nc == boss_cell
 	var nm := _adv_mname(nc)
 	var dmg := p_atk()
+	var crit := randf() * 100.0 < gear("crit")
+	if crit:
+		dmg *= 2
 	var left := mon_hp_now(nc) - dmg
-	_pop(nc, "-%d" % dmg, Color.WHITE)
+	_pop(nc, ("CRIT -%d" % dmg) if crit else ("-%d" % dmg), Color("ffd84f") if crit else Color.WHITE)
+	var lk := int(gear("leech"))
+	if lk > 0 and hp < hp_cap():
+		hp = mini(hp_cap(), hp + lk)
 	if left <= 0:
 		_adv_kill(nc, nm, lv, is_boss)
 		return 1
 	mon_hp[nc] = left
 	msg = "You hit %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(nc)]
 	_sfx("step")
-	if not _adv_hurt(mon_atk(nc), nm):
+	if not _adv_hurt(mon_atk(nc), nm, nc):
 		return 0
 	return 2
 
@@ -3137,12 +3486,12 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				_pop(nc, "+%d AIR" % int(amt), Color("7fd8ff"))
 				snd = "lamp"
 		elif kind == "hp":
-			if hp >= hp_max:
+			if hp >= hp_cap():
 				items[nc] = kind
 				msg = "Health is full - the medkit stays for later"
 			else:
-				var heal := int(hp_max * 0.4)
-				hp = mini(hp_max, hp + heal)
+				var heal := int(hp_cap() * 0.4)
+				hp = mini(hp_cap(), hp + heal)
 				adv_pts += 1
 				msg = "Medkit! +%d HP" % heal
 				_pop(nc, "+%d HP" % heal, Color("ff8a9a"))
@@ -3150,9 +3499,22 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		elif kind == "armor":
 			armor = mini(6, armor + 1)
 			adv_pts += 3
-			msg = "Armour plate! Every hit you take is reduced by %d" % armor
+			msg = "Armour plate! Every hit you take is reduced by %d" % armor_total()
 			_pop(nc, "ARMOUR", Color("c9d3f0"))
 			snd = "shield"
+		elif kind.begins_with("gear_"):
+			var gid2 := kind.substr(5)
+			var gd: Dictionary = gear_defs[gid2]
+			adv_pts += 2
+			if _adv_give_gear(gid2):
+				msg = "Found %s! %s" % [gd["name"], _gear_desc(gd)]
+				_pop(nc, String(gd["name"]), _gear_col(String(gd["slot"])))
+				snd = "big"
+			else:
+				items[nc] = kind
+				adv_pts -= 2
+				msg = "Pack is full! Sell or drop something in the BAG"
+				snd = "blocked"
 		elif kind == "pot":
 			var pxp := 4 * pot_g()
 			adv_pts += 2
@@ -3168,7 +3530,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			_adv_gain_xp(bxp)
 			snd = "big"
 		elif kind == "shield":
-			sh = mini(sh_max, sh + 8)
+			sh = mini(sh_cap(), sh + 8)
 			adv_pts += 2
 			msg = "Shield +8! It soaks damage before your health does"
 			_pop(nc, "SHIELD", Color("7db2ff"))
@@ -3200,7 +3562,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if moved:
 		pos = nc
 	adv_steps += 1
-	oxy -= 1.0 + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	oxy -= (1.0 - gear("airsave") / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
 	if moved and stations.has(pos):
 		if oxy < oxy_max - 0.5:
 			msg = "O2 station: air fully restored"
@@ -3234,6 +3596,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				if String(kinds.get(c, "")) == "hunter":
 					msg += " (it hunts you!)"
 				break
+	if moved and merchants.has(pos) and state == PLAY:
+		_adv_open_trade(pos)
 	if snd != "":
 		if snd == "step" and oxy < 20.0:
 			snd = "tick"
@@ -3273,7 +3637,7 @@ func _adv_hunters() -> void:
 		if bd == 1:
 			walk.clear()
 			msg = "%s attacks!" % _adv_mname(c)
-			if not _adv_hurt(mon_atk(c), _adv_mname(c)):
+			if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
 				return
 			continue
 		if adv_steps % 2 != 0:
@@ -3432,6 +3796,9 @@ func _adv_input(p: Vector2) -> void:
 	if aim >= 0:
 		_adv_aim_apply(c)
 		return
+	if c == pos and merchants.has(pos):
+		_adv_open_trade(pos)
+		return
 	if c == pos or not _aopen(c) or not _aseen(c):
 		return
 	var path := _adv_path(c)
@@ -3535,6 +3902,8 @@ func _adv_draw() -> void:
 				_ctext("EXIT" if ok else "%d" % adv_req, ctr, int(AC * 0.22), dc)
 			elif stations.has(c):
 				_draw_station(ctr)
+			elif merchants.has(c):
+				_draw_merchant(ctr)
 			elif vaults.has(c):
 				_draw_vault(ctr + Vector2(0, bob * 0.3))
 			elif items.has(c):
@@ -3546,6 +3915,8 @@ func _adv_draw() -> void:
 					_draw_key(ctr + Vector2(0, bob), AC * 0.8)
 				elif kind2 == "pod":
 					_draw_pod(ctr + Vector2(0, bob), AC * 0.7)
+				elif kind2.begins_with("gear_"):
+					_draw_crate(ctr, kind2.substr(5), bob)
 				elif kind2 == "hp":
 					draw_rect(Rect2(ctr.x - AC * 0.2, ctr.y - AC * 0.2 + bob, AC * 0.4, AC * 0.4), Color("f4f4f4"))
 					draw_rect(Rect2(ctr.x - AC * 0.2, ctr.y - AC * 0.2 + bob, AC * 0.4, AC * 0.4), Color("1a1a1a"), false, 2.0)
@@ -3626,7 +3997,7 @@ func _adv_draw() -> void:
 	var sx := 40.0
 	_txt("ATK %d" % p_atk(), Vector2(sx, 272), 18, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	sx += 84.0
-	_txt("ARMOUR %d" % armor, Vector2(sx, 272), 18, Color("c9d3f0") if armor > 0 else Color(1, 1, 1, 0.4), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("ARMOUR %d" % armor_total(), Vector2(sx, 272), 18, Color("c9d3f0") if armor_total() > 0 else Color(1, 1, 1, 0.4), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
 	sx += 126.0
 	if boost > 0:
 		_txt("CLOAK +%d" % boost, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -3639,13 +4010,13 @@ func _adv_draw() -> void:
 	_txt("AIR %d" % int(ceil(oxy)), Vector2(360, 192), 38, acol, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	draw_rect(Rect2(380, 200, 300, 12), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(380, 200, 300.0 * clampf(oxy / oxy_max, 0.0, 1.0), 12), acol)
-	var hpf := clampf(float(hp) / float(hp_max), 0.0, 1.0)
+	var hpf := clampf(float(hp) / float(hp_cap()), 0.0, 1.0)
 	draw_rect(Rect2(380, 222, 300, 24), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(380, 222, 300.0 * hpf, 24), Color("e8505b") if hpf > 0.3 else Color("ff2b3d"))
-	_txt("HP %d / %d" % [hp, hp_max], Vector2(380, 240), 18, Color.WHITE, 300.0)
+	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
 	draw_rect(Rect2(380, 252, 300, 16), Color(1, 1, 1, 0.12))
 	if sh > 0:
-		draw_rect(Rect2(380, 252, 300.0 * clampf(float(sh) / float(sh_max), 0.0, 1.0), 16), Color("5aa8ff"))
+		draw_rect(Rect2(380, 252, 300.0 * clampf(float(sh) / float(sh_cap()), 0.0, 1.0), 16), Color("5aa8ff"))
 		_txt("SHIELD %d" % sh, Vector2(380, 265), 14, Color.WHITE, 300.0)
 	var okp := adv_pts >= adv_req
 	var ptxt := "POINTS %d / %d" % [adv_pts, adv_req]
@@ -3694,7 +4065,15 @@ func _adv_draw() -> void:
 
 
 func _inv_tab_rect(i: int) -> Rect2:
-	return Rect2(40 + i * 165, 186, 155, 50)
+	return Rect2(40 + i * 130, 186, 122, 50)
+
+
+func _gear_btn_rect(i: int) -> Rect2:
+	return Rect2(540, 262 + i * 98 + 20, 120, 50)
+
+
+func _pack_rect(k: int, which: int) -> Rect2:
+	return Rect2(430 + which * 120, 262 + k * 100 + 8 + 16, 110, 52)
 
 
 func _inv_use_rect(i: int) -> Rect2:
@@ -3714,10 +4093,11 @@ func _inv_input(p: Vector2) -> void:
 		state = PLAY
 		_sfx("ui")
 		return
-	for i in 4:
+	for i in 5:
 		if _inv_tab_rect(i).has_point(p):
 			inv_tab = i
 			inv_page = 0
+			pack_page = 0
 			_sfx("ui")
 			return
 	if inv_tab == 1:
@@ -3734,25 +4114,58 @@ func _inv_input(p: Vector2) -> void:
 		elif btn_inx.has_point(p):
 			inv_page = (inv_page + 1) % pages
 			_sfx("ui")
+	elif inv_tab == 3:
+		for i in GEAR_SLOTS.size():
+			if _gear_btn_rect(i).has_point(p):
+				if _adv_unequip(String(GEAR_SLOTS[i])):
+					_sfx("ui")
+				else:
+					_sfx("blocked")
+				return
+	elif inv_tab == 4:
+		var pages2 := maxi(1, (bag.size() + 5) / 6)
+		pack_page = mini(pack_page, pages2 - 1)
+		if btn_ipv.has_point(p):
+			pack_page = (pack_page + pages2 - 1) % pages2
+			_sfx("ui")
+			return
+		if btn_inx.has_point(p):
+			pack_page = (pack_page + 1) % pages2
+			_sfx("ui")
+			return
+		for k in 6:
+			var idx := pack_page * 6 + k
+			if idx >= bag.size():
+				break
+			if _pack_rect(k, 0).has_point(p):
+				_adv_equip(bag[idx])
+				_sfx("shield")
+				return
+			if _pack_rect(k, 1).has_point(p):
+				var gd: Dictionary = gear_defs[bag[idx]]
+				coins += int(gd["price"]) / 2
+				bag.remove_at(idx)
+				_sfx("coin")
+				return
 
 
 func _draw_inv(acc: Color) -> void:
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
-	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR"]
-	for i in 4:
+	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR", "PACK"]
+	for i in 5:
 		var tr := _inv_tab_rect(i)
 		var tc := Color("ffd84f") if i == inv_tab else Color(1, 1, 1, 0.5)
 		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == inv_tab else 0.06))
 		draw_rect(tr, tc, false, 2.0)
-		_ctext(tabs[i], tr.get_center(), 22, tc)
+		_ctext(tabs[i], tr.get_center(), 19, tc)
 	if inv_tab == 0:
 		var rows := [
 			["LEVEL", "%d" % level, "Each level adds attack and max health."],
 			["XP", "%d / %d" % [xp, xp_need()], "Kills, potions and vaults give XP. Monsters grow with you."],
-			["HEALTH", "%d / %d" % [hp, hp_max], "Reach 0 and you die. Medkits heal 40%."],
+			["HEALTH", "%d / %d" % [hp, hp_cap()], "Reach 0 and you die. Medkits heal 40%."],
 			["ATTACK", "%d" % p_atk(), "Damage per hit: your level plus bonuses."],
-			["ARMOUR", "%d" % armor, "Reduces every hit you take (minimum 1)."],
-			["SHIELD", "%d / %d" % [sh, sh_max], "Soaks damage before your health does."],
+			["ARMOUR", "%d" % armor_total(), "Reduces every hit you take (minimum 1)."],
+			["SHIELD", "%d / %d" % [sh, sh_cap()], "Soaks damage before your health does."],
 			["AIR", "%d / %d" % [int(ceil(oxy)), int(oxy_max)], "Walking costs air. O2 stations refill it."],
 			["POINTS", "%d / %d" % [adv_pts, adv_req], "Reach the total to unlock the exit. Coins: %d" % coins],
 		]
@@ -3798,25 +4211,52 @@ func _draw_inv(acc: Color) -> void:
 			_button(btn_ipv, "< PREV", acc, 22)
 			_button(btn_inx, "NEXT >", acc, 22)
 			_txt("Page %d / %d" % [inv_page + 1, pages], Vector2(0, 1106), 20, Color(1, 1, 1, 0.55))
+	elif inv_tab == 3:
+		for i in GEAR_SLOTS.size():
+			var slot := String(GEAR_SLOTS[i])
+			var y := 262.0 + i * 98.0
+			var col := _gear_col(slot)
+			draw_rect(Rect2(40, y, 640, 90), Color(col.r, col.g, col.b, 0.08))
+			draw_rect(Rect2(40, y, 640, 90), Color(col.r, col.g, col.b, 0.6), false, 2.0)
+			_txt(slot.to_upper(), Vector2(58, y + 26), 18, col, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+			var gid := String(equip.get(slot, ""))
+			if gid == "":
+				_txt("Empty", Vector2(58, y + 62), 26, Color(1, 1, 1, 0.4), 400.0, HORIZONTAL_ALIGNMENT_LEFT)
+				_txt("Find gear in crates or buy it from an outfitter", Vector2(58, y + 84), 16, Color(1, 1, 1, 0.4), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
+			else:
+				var gd: Dictionary = gear_defs[gid]
+				_txt(String(gd["name"]), Vector2(58, y + 58), 26, _tier_col(int(gd["tier"])), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
+				_txt(_gear_desc(gd), Vector2(58, y + 82), 16, Color(1, 1, 1, 0.7), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
+				_button(_gear_btn_rect(i), "REMOVE", col, 20)
 	else:
-		var slots := [
-			["WEAPON", "Fists: damage equals your level.", "Weapons will add damage and special effects."],
-			["ARMOUR", "Plating +%d: every hit you take is reduced by %d." % [armor, armor] if armor > 0 else "", "Armour pieces will add protection and perks."],
-			["TRINKET", "", "Trinkets will add passive bonuses."],
-		]
-		for i in slots.size():
-			var y := 290.0 + i * 150.0
-			draw_rect(Rect2(40, y, 640, 134), Color(1, 1, 1, 0.05))
-			draw_rect(Rect2(40, y, 640, 134), Color(1, 1, 1, 0.3), false, 2.0)
-			_txt(String(slots[i][0]), Vector2(60, y + 38), 26, Color("ffd84f"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-			var cur := String(slots[i][1])
-			_txt(cur if cur != "" else "Empty", Vector2(60, y + 76), 24, Color.WHITE if cur != "" else Color(1, 1, 1, 0.4), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(slots[i][2]), Vector2(60, y + 110), 19, Color(1, 1, 1, 0.55), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var pages2 := maxi(1, (bag.size() + 5) / 6)
+		pack_page = mini(pack_page, pages2 - 1)
+		_txt("Pack: %d / %d     Selling gives half the price" % [bag.size(), BAG_MAX], Vector2(0, 258), 20, Color(1, 1, 1, 0.6))
+		if bag.is_empty():
+			_txt("Your pack is empty.", Vector2(0, 520), 26, Color(1, 1, 1, 0.5))
+		for k in 6:
+			var idx := pack_page * 6 + k
+			if idx >= bag.size():
+				break
+			var gd2: Dictionary = gear_defs[bag[idx]]
+			var gc := _gear_col(String(gd2["slot"]))
+			var y2 := 262.0 + k * 100.0 + 8.0
+			draw_rect(Rect2(40, y2, 640, 90), Color(gc.r, gc.g, gc.b, 0.08))
+			draw_rect(Rect2(40, y2, 640, 90), Color(gc.r, gc.g, gc.b, 0.6), false, 2.0)
+			_txt(String(gd2["name"]), Vector2(58, y2 + 32), 24, _tier_col(int(gd2["tier"])), 370.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(gd2["slot"]).to_upper(), Vector2(58, y2 + 54), 15, gc, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(_gear_desc(gd2), Vector2(58, y2 + 78), 15, Color(1, 1, 1, 0.7), 370.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_button(Rect2(430, y2 + 16, 110, 52), "EQUIP", gc, 20)
+			_button(Rect2(550, y2 + 16, 110, 52), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 18)
+		if pages2 > 1:
+			_button(btn_ipv, "< PREV", acc, 22)
+			_button(btn_inx, "NEXT >", acc, 22)
 	_button(btn_icl, "CLOSE", acc, 26)
 
 
 func _adv_selftest() -> void:
 	var bad := 0
+	mode = "adv"
 	cls = "scout"
 	for f in range(1, 41):
 		floor_n = f
@@ -3877,7 +4317,11 @@ func _adv_selftest() -> void:
 	cls = "brute"
 	adv_seed = 99
 	_adv_init_run()
-	_adv_gen()
+	for sd in 40:
+		adv_seed = 99 + sd
+		_adv_gen()
+		if merchants.size() > 0:
+			break
 	_adv_snapshot()
 	_adv_begin()
 	var steps_ok := 0
@@ -3900,7 +4344,34 @@ func _adv_selftest() -> void:
 	_adv_hunters()
 	_adv_step(start, true)
 	_adv_gain_xp(500)
-	print("combat sim ok hp %d sh %d armor %d level %d state %d" % [hp, sh, armor, level, state])
+	for gd in gear_list:
+		_adv_give_gear(String(gd["id"]))
+	for i in 5:
+		if bag.size() > 0:
+			_adv_equip(bag[0])
+	_adv_unequip("weapon")
+	var okc := 0
+	for c in merchants:
+		okc += 1
+	var gcount := 0
+	for ic in items:
+		if String(items[ic]).begins_with("gear_"):
+			gcount += 1
+	print("gear sim: equipped %d bag %d atk %d armour %d hpcap %d merchants %d crates %d gear_defs %d" % [equip.size(), bag.size(), p_atk(), armor_total(), hp_cap(), okc, gcount, gear_defs.size()])
+	if merchants.size() > 0:
+		var mc: Vector2i = merchants.keys()[0]
+		coins = 999
+		bag.clear()
+		inv.clear()
+		_adv_open_trade(mc)
+		_trade_input(_trade_rect(0).get_center())
+		_trade_input(_trade_rect(3).get_center())
+		print("trade sim ok coins %d state %d" % [coins, state])
+	relics["phoenix"] = 1
+	hp = 1
+	_die("test")
+	print("phoenix sim hp %d cap %d state %d" % [hp, hp_cap(), state])
+	print("combat sim ok hp %d sh %d armor %d level %d state %d" % [hp, sh, armor_total(), level, state])
 	print("ADV TEST DONE bad=%d" % bad)
 
 
