@@ -23,3 +23,12 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 - **Shop:** coins are banked on death and buy permanent upgrades (Veteran, Iron Will, Packed Shield, Lucky Finds). Saved in `user://best.cfg`.
 - Dev URLs: `?floor=5`, `?demo=relic`, `?demo=shop`.
 - **Scaling:** monster levels grow with depth (`_scaled()`), keep pace with 70% of your permanent power (Veteran + Vanguard), more monsters appear on deeper floors, the dark speeds up every 3 floors, sleepers get stronger, and gates ask for a larger share of the board.
+
+## v5 systems
+- **Classes** (Scout, Brute, Mystic, Gambler) chosen at the start of each run.
+- **Relics** now include cursed ones (Glass Cannon, Greedy Pact, Hungry Blade, Ember Lantern) mixed with normal ones, plus synergies between some pairs.
+- **Tools** (2-4 slots): Bomb, Time Crystal, Blink Scroll, Shadow Cloak, Elixir, Magnet, Pickaxe, Zap Rod. Found on floors, in vaults, from the Merchant, or as class kits. The generator never relies on them, so floors stay winnable without them.
+- **Paths:** after each floor choose a door: Steady, Perilous, Quiet, Vault or Merchant.
+- **Boss floors** every 5th floor (colossus / king / warden rules).
+- **Vaults:** a key on the floor opens a locked vault (+10 coins, +1 level, a free tool).
+- Dev URLs: `?floor=5&class=brute`, `?demo=relic|fork|market|shop`.

@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET }
 
 var themes: Array = []
 var font: Font = ThemeDB.fallback_font
@@ -52,6 +52,23 @@ var kinds: Dictionary = {}       # Vector2i -> "sleeper" | "feeder" | "thief"
 var thief_held: Dictionary = {}  # Vector2i -> coins the thief is holding
 var relics: Dictionary = {}      # id -> count (this run only)
 var relic_defs: Array = []
+var synergies: Array = []
+var use_defs: Dictionary = {}
+var class_defs: Array = []
+var door_defs: Dictionary = {}
+var cls := "scout"
+var inv: Array[String] = []
+var aim := -1
+var boost := 0
+var keys := 0
+var vaults: Dictionary = {}
+var boss_floor := false
+var boss_kind := "warden"
+var boss_base := 5
+var fmod := "standard"
+var door_choices: Array = []
+var market_stock: Array = []
+var shop_return := 0
 var relic_choices: Array = []
 var shop_defs: Array = []
 var bank := 0
@@ -70,6 +87,7 @@ var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 880, 400, 76)
 var btn_shop := Rect2(160, 970, 400, 76)
 var btn_back := Rect2(160, 1030, 400, 76)
+var btn_shop2 := Rect2(160, 1130, 400, 76)
 
 const SR_SFX := 22050
 const SR_MUS := 11025
@@ -91,22 +109,46 @@ func _ready() -> void:
 	for i in 60:
 		stars.append([rs.randf() * 720.0, rs.randf() * 1280.0, rs.randf() * 6.28, 1.0 + rs.randf() * 2.0])
 	var args := OS.get_cmdline_user_args()
-	if OS.has_feature("web"):
-		var q = JavaScriptBridge.eval("new URLSearchParams(location.search).get('floor')")
-		if q != null and int(q) > 0:
-			floor_n = int(q)
+	if "--gen" in args:
+		cls = "gambler"
+		for r in 12:
+			var t0 := Time.get_ticks_msec()
+			_new_run(10)
+			print("gen run %d relics %s tries? ms %d boss %s" % [r, relics, Time.get_ticks_msec() - t0, boss_floor])
+		get_tree().quit()
+		return
 	if "--test" in args:
 		await _self_test()
 		get_tree().quit()
 		return
 	_setup_audio()
 	_new_floor()
+	state = CLASS
 	if OS.has_feature("web"):
 		var demo = JavaScriptBridge.eval("new URLSearchParams(location.search).get('demo')")
+		var fq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('floor')")
+		var cq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('class')")
+		if cq != null:
+			cls = String(cq)
+		if fq != null and int(fq) > 0:
+			_new_run(int(fq))
 		if demo == "relic":
+			if fq == null:
+				_new_run()
 			_clear()
+		elif demo == "fork":
+			if fq == null:
+				_new_run()
+			relic_choices = []
+			_finish_clear()
+		elif demo == "market":
+			if fq == null:
+				_new_run()
+			coins = 20
+			_open_market()
 		elif demo == "shop":
 			bank = 40
+			shop_return = CLASS
 			state = SHOP
 
 
@@ -147,7 +189,43 @@ func _make_defs() -> void:
 		{"id": "lantern", "name": "Lantern Bearer", "desc": "Lanterns hold the dark back twice as long", "max": 1},
 		{"id": "skeleton", "name": "Skeleton Key", "desc": "Gates need 1 less level", "max": 2},
 		{"id": "alchemist", "name": "Alchemist", "desc": "Potions and power cells give +1 extra level", "max": 1},
+		{"id": "slayer", "name": "Slayer", "desc": "Gold-star elites give +1 extra level", "max": 1},
+		{"id": "bandolier", "name": "Bandolier", "desc": "+1 item slot", "max": 1},
+		{"id": "scavenger", "name": "Scavenger", "desc": "One extra tool appears on every floor", "max": 1},
+		{"id": "glass", "name": "Glass Cannon", "desc": "+3 starting levels, but the dark is 3 steps faster", "max": 1, "curse": true},
+		{"id": "greedy", "name": "Greedy Pact", "desc": "Coins are worth triple, but every monster gets +1 level", "max": 1, "curse": true},
+		{"id": "blade", "name": "Hungry Blade", "desc": "Every kill gives +1 extra level, but gates need 3 more", "max": 1, "curse": true},
+		{"id": "ember", "name": "Ember Lantern", "desc": "Lanterns hold the dark back 12 steps, but spikes cost 2 more", "max": 1, "curse": true},
 	]
+	synergies = [
+		{"a": "vanguard", "b": "alchemist", "text": "Potions give +1 more level"},
+		{"a": "slowdark", "b": "lantern", "text": "Lanterns hold the dark back 12 steps"},
+		{"a": "skeleton", "b": "boots", "text": "Gates need 1 less level again"},
+		{"a": "phoenix", "b": "aegis", "text": "Phoenix revive also gives +1 level"},
+	]
+	use_defs = {
+		"bomb": {"name": "Bomb", "desc": "Destroys adjacent walls, spikes and weak monsters", "col": Color("ff7a45")},
+		"crystal": {"name": "Time Crystal", "desc": "Pushes the dark back 6 steps", "col": Color("4fd1ff")},
+		"blink": {"name": "Blink Scroll", "desc": "Teleport to any free tile (costs 1 step)", "col": Color("c07cff")},
+		"cloak": {"name": "Shadow Cloak", "desc": "Your next fight counts as +3 levels", "col": Color("9aa3c7")},
+		"draught": {"name": "Elixir", "desc": "+2 levels right now", "col": Color("6dff9a")},
+		"magnet": {"name": "Magnet", "desc": "Pulls in every coin on the board", "col": Color("ff5d5d")},
+		"pick": {"name": "Pickaxe", "desc": "Breaks any one wall", "col": Color("c9a55a")},
+		"zap": {"name": "Zap Rod", "desc": "Zaps a monster within 2 tiles (up to your level +1)", "col": Color("ffe14f")},
+	}
+	class_defs = [
+		{"id": "scout", "name": "Scout", "desc": "The dark waits +1 step per ring. Starts with a Blink Scroll and a Time Crystal.", "col": Color("4fd1ff"), "lvl": 0, "per": 1, "kit": ["blink", "crystal"]},
+		{"id": "brute", "name": "Brute", "desc": "+2 starting levels, but the dark is 1 step faster. Starts with a Bomb.", "col": Color("ff6a5c"), "lvl": 2, "per": -1, "kit": ["bomb"]},
+		{"id": "mystic", "name": "Mystic", "desc": "A shield every floor and +1 item slot. Starts with a Shadow Cloak.", "col": Color("c07cff"), "lvl": 0, "per": 0, "kit": ["cloak"]},
+		{"id": "gambler", "name": "Gambler", "desc": "Begins with 2 random relics (maybe cursed!) and sees 4 relic cards, not 3.", "col": Color("ffd84f"), "lvl": 0, "per": 0, "kit": []},
+	]
+	door_defs = {
+		"standard": {"name": "Steady Path", "desc": "A normal floor.", "col": Color("9fb3d9")},
+		"danger": {"name": "Perilous Path", "desc": "Monsters +2 levels, coins worth +1, and an extra relic card afterwards.", "col": Color("ff6a5c")},
+		"calm": {"name": "Quiet Path", "desc": "Monsters -1 level and the dark waits 2 steps longer, but no relic afterwards.", "col": Color("7dffb0")},
+		"vault": {"name": "Vault Path", "desc": "A locked vault and its key are on this floor. Worth a detour?", "col": Color("ffd84f")},
+		"market": {"name": "Merchant", "desc": "Spend your run coins on tools, then continue to a normal floor.", "col": Color("c07cff")},
+	}
 	shop_defs = [
 		{"id": "vet", "name": "Veteran", "desc": "Start every run with +1 level", "costs": [15, 35, 60]},
 		{"id": "iron", "name": "Iron Will", "desc": "The dark waits 1 step longer per ring", "costs": [20, 40, 70]},
@@ -160,28 +238,79 @@ func relic_n(id: String) -> int:
 	return int(relics.get(id, 0))
 
 
+func syn(a: String, b: String) -> bool:
+	return relic_n(a) > 0 and relic_n(b) > 0
+
+
+func cdef() -> Dictionary:
+	for d in class_defs:
+		if d["id"] == cls:
+			return d
+	return class_defs[0]
+
+
 func start_lvl() -> int:
-	return START_LEVEL + int(ups["vet"]) + relic_n("vanguard")
+	return START_LEVEL + int(ups["vet"]) + relic_n("vanguard") + 3 * relic_n("glass") + int(cdef()["lvl"])
 
 
 func pot_g() -> int:
-	return 1 + relic_n("alchemist")
+	return 1 + relic_n("alchemist") + (1 if syn("vanguard", "alchemist") else 0)
 
 
 func big_g() -> int:
-	return 2 + relic_n("alchemist")
+	return 2 + relic_n("alchemist") + (1 if syn("vanguard", "alchemist") else 0)
 
 
 func lamp_amt() -> int:
+	if relic_n("ember") > 0 or syn("slowdark", "lantern"):
+		return 12
 	return 8 if relic_n("lantern") > 0 else 4
 
 
 func spike_x() -> int:
-	return 0 if relic_n("boots") > 0 else 2
+	if relic_n("boots") > 0:
+		return 0
+	return 2 + (2 if relic_n("ember") > 0 else 0)
 
 
 func start_shield() -> bool:
-	return relic_n("aegis") > 0 or int(ups["packed"]) > 0
+	return relic_n("aegis") > 0 or int(ups["packed"]) > 0 or cls == "mystic"
+
+
+func slots_n() -> int:
+	return 2 + (1 if cls == "mystic" else 0) + relic_n("bandolier")
+
+
+func kill_gain(c: Vector2i) -> int:
+	return (2 + relic_n("slayer") if elite.has(c) else 1) + relic_n("blade")
+
+
+func coin_val() -> int:
+	var v := 1
+	if relic_n("midas") > 0:
+		v *= 2
+	if relic_n("greedy") > 0:
+		v *= 3
+	if fmod == "danger":
+		v += 1
+	return v
+
+
+func req_adjust() -> int:
+	return 3 * relic_n("blade") - relic_n("skeleton") - (1 if syn("skeleton", "boots") else 0)
+
+
+func stairs_blocked() -> bool:
+	return boss_floor or level < req
+
+
+func _boss_level(m: int) -> int:
+	var dp := mini(m / period, maxd)
+	if boss_kind == "colossus":
+		return boss_base + 2 * dp
+	if boss_kind == "king":
+		return boss_base + (6 if dp >= 1 else 0)
+	return boss_base
 
 
 func _scaled(lv: int) -> int:
@@ -192,7 +321,12 @@ func _scaled(lv: int) -> int:
 		r += (floor_n - 1) / 2
 	else:
 		r += (floor_n - 1) / 4
-	return r
+	r += relic_n("greedy")
+	if fmod == "danger":
+		r += 2
+	elif fmod == "calm":
+		r -= 1
+	return maxi(1, r)
 
 
 func sleeper_bonus() -> int:
@@ -261,7 +395,7 @@ func _tex_from_rows(rows: Array, pal: Dictionary) -> ImageTexture:
 
 
 func _player_tex() -> ImageTexture:
-	var key := "player%d" % tidx()
+	var key := "player_" + cls
 	if tex_cache.has(key):
 		return tex_cache[key]
 	var rows := [
@@ -282,7 +416,7 @@ func _player_tex() -> ImageTexture:
 		".obbbo..obbbo.",
 		".ooooo..ooooo.",
 	]
-	var acc: Color = cur_theme()["accent"]
+	var acc: Color = cdef()["col"]
 	var pal := {
 		"o": Color("10131f"), "w": Color("eef2ff"), "l": Color("aab3d1"), "v": acc, "V": acc.darkened(0.45),
 		"h": Color("ffffff"), "r": Color("ff5d5d"), "y": Color("ffd84f"), "b": Color("5a6280"),
@@ -636,28 +770,34 @@ func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
 func _setup_size() -> void:
 	N = 6 if floor_n <= 2 else (7 if floor_n <= 4 else 8)
 	cell = GW / N
-	period = maxi(5, 8 + (N - 5) + int(ups["iron"]) + 2 * relic_n("slowdark") - (floor_n - 1) / 3)
+	period = maxi(5, 8 + (N - 5) + int(ups["iron"]) + 2 * relic_n("slowdark") - 3 * relic_n("glass") + int(cdef()["per"]) + (2 if fmod == "calm" else 0) - (floor_n - 1) / 3)
 	maxd = (N + 1) / 2 - 1
 
 
 func _new_floor() -> void:
 	_setup_size()
+	var gen_t0 := Time.get_ticks_msec()
 	var tries := 0
 	while true:
 		_random_layout(tries)
 		tries += 1
 		if _solvable():
 			break
-		if tries >= 60:
+		if tries >= 24:
 			walls.clear()
 			portals.clear()
 			spikes.clear()
-			req = start_lvl()
+			vaults.clear()
+			boss_kind = "warden"
+			boss_base = maxi(1, start_lvl() - 1)
+			req = boss_base + 1 if boss_floor else start_lvl()
 			break
+	print("floor %d generated in %d ms (%d tries)" % [floor_n, Time.get_ticks_msec() - gen_t0, tries])
 	saved = {
 		"mons": mons.duplicate(), "elite": elite.duplicate(), "items": items.duplicate(), "spikes": spikes.duplicate(),
 		"coin_at": coin_at.duplicate(), "walls": walls.duplicate(), "portals": portals.duplicate(),
 		"coins": coins, "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
+		"vaults": vaults.duplicate(), "inv": inv.duplicate(),
 	}
 	_begin_floor()
 	_play_music(tidx())
@@ -668,10 +808,16 @@ func _begin_floor() -> void:
 	moves = 0
 	shield = start_shield()
 	pos = start
+	keys = 0
+	boost = 0
+	aim = -1
 	walk.clear()
 	pops.clear()
 	state = PLAY
-	msg = "Reach Lv %d to open the %s" % [req, cur_theme()["gate"]]
+	if boss_floor:
+		msg = "BOSS FLOOR: defeat the %s to leave" % cur_theme()["boss"]
+	else:
+		msg = "Reach Lv %d to open the %s" % [req, cur_theme()["gate"]]
 
 
 func _reset_floor() -> void:
@@ -684,6 +830,10 @@ func _reset_floor() -> void:
 	portals = saved["portals"].duplicate()
 	kinds = saved["kinds"].duplicate()
 	thief_held = saved["thief_held"].duplicate()
+	vaults = saved["vaults"].duplicate()
+	inv.clear()
+	for it in saved["inv"]:
+		inv.append(String(it))
 	coins = saved["coins"]
 	_begin_floor()
 
@@ -692,8 +842,18 @@ func _take(free: Array[Vector2i]) -> Vector2i:
 	return free.pop_front()
 
 
+func _take_ring(free: Array[Vector2i], lo: int, hi: int) -> Vector2i:
+	for c in free:
+		var r := ring(c)
+		if r >= lo and r <= hi:
+			free.erase(c)
+			return c
+	return free.pop_front()
+
+
 func _random_layout(tries: int) -> void:
 	var k := N - 6
+	boss_floor = floor_n % 5 == 0
 	var cells: Array[Vector2i] = []
 	for x in N:
 		for y in N:
@@ -722,15 +882,16 @@ func _random_layout(tries: int) -> void:
 	coin_at.clear()
 	walls.clear()
 	portals.clear()
+	vaults.clear()
 	boss_cell = Vector2i(-1, -1)
-	var nm: int = [6, 8, 10][k] + mini((floor_n - 1) / 3, 2)
+	var nm: int = [6, 8, 10][k] + mini((floor_n - 1) / 3, 2) - (3 if boss_floor else 0)
 	var base := [1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 6, 7, 7]
 	var levels: Array[int] = []
 	for i in nm:
 		levels.append(_scaled(base[i]))
 	levels.sort()
 	levels.reverse()
-	var first := true
+	var first := not boss_floor
 	for lv in levels:
 		var spot := Vector2i(-1, -1)
 		if first:
@@ -745,7 +906,7 @@ func _random_layout(tries: int) -> void:
 			spot = free[0]
 		free.erase(spot)
 		mons[spot] = lv
-	var ne: int = [1, 2, 2][k]
+	var ne: int = [1, 2, 2][k] + (1 if fmod == "danger" else 0) + (1 if boss_floor else 0)
 	var cand: Array[Vector2i] = []
 	for c in mons:
 		if c != boss_cell and int(mons[c]) >= 2:
@@ -781,21 +942,35 @@ func _random_layout(tries: int) -> void:
 		items[_take(free)] = "lamp"
 	for i in nshield:
 		items[_take(free)] = "shield"
+	var uids := use_defs.keys()
+	var nuse := 1 + (1 if k >= 1 else 0) + relic_n("scavenger")
+	for i in nuse:
+		items[_take(free)] = "use_" + String(uids[randi() % uids.size()])
 	var npairs: int = [1, 1, 2][k]
 	for i in npairs:
 		var a := _take(free)
 		var b := _take(free)
 		portals[a] = b
 		portals[b] = a
-	for i in [3, 5, 7][k]:
+	for i in [3, 5, 7][k] if tries < 8 else 1:
 		walls[_take(free)] = true
-	for i in [2, 3, 4][k]:
+	for i in [2, 3, 4][k] if tries < 8 else 1:
 		spikes[_take(free)] = true
+	if floor_n >= 3 and (fmod == "vault" or randf() < 0.4):
+		vaults[_take_ring(free, 1, maxd)] = true
+		items[_take_ring(free, 0, 0)] = "key"
 	for i in N + 2:
 		coin_at[_take(free)] = true
-	var total := nm + elite.size() + np * pot_g() + nbig * big_g()
-	var ratio := maxf(0.3, minf(0.7, 0.55 + 0.012 * (floor_n - 1)) - 0.04 * (tries / 2))
-	req = maxi(start_lvl(), start_lvl() + int(total * ratio) - relic_n("skeleton"))
+	var total := nm * (1 + relic_n("blade")) + elite.size() + np * pot_g() + nbig * big_g()
+	var ratio := maxf(0.2, minf(0.7, 0.55 + 0.012 * (floor_n - 1)) - 0.04 * (tries / 2))
+	var target := start_lvl() + int(total * ratio)
+	req = maxi(start_lvl(), target + req_adjust())
+	if boss_floor:
+		var bk := ["colossus", "king", "warden"]
+		boss_kind = bk[(floor_n / 5) % 3]
+		var adj := 3 if boss_kind == "colossus" else (4 if boss_kind == "king" else 0)
+		boss_base = maxi(3, target + 1 + floor_n / 5 - adj - tries / 3 + req_adjust())
+		req = boss_base + 1
 
 
 func _solvable() -> bool:
@@ -803,10 +978,12 @@ func _solvable() -> bool:
 	var gain: Array[int] = []
 	for c in mons:
 		list.append(c)
-		gain.append(2 if elite.has(c) else 1)
+		gain.append(kill_gain(c))
 	for c in items:
-		list.append(c)
 		var kd: String = items[c]
+		if kd == "key" or kd.begins_with("use_"):
+			continue
+		list.append(c)
 		gain.append(pot_g() if kd == "pot" else (big_g() if kd == "big" else 0))
 	var idx: Dictionary = {}
 	for i in list.size():
@@ -819,7 +996,7 @@ func _solvable() -> bool:
 	var pops_n := 0
 	while stack.size() > 0:
 		pops_n += 1
-		if pops_n > 15000:
+		if pops_n > 8000:
 			return false
 		var s: Array = stack.pop_back()
 		var p: Vector2i = s[0]
@@ -829,7 +1006,7 @@ func _solvable() -> bool:
 		var sh: int = s[4]
 		for d in dirs:
 			var nc: Vector2i = p + d
-			if not in_b(nc) or walls.has(nc):
+			if not in_b(nc) or walls.has(nc) or vaults.has(nc):
 				continue
 			var m2 := mini(m + 1 + (spike_x() if spikes.has(nc) else 0), cap)
 			var dp := mini(m2 / period, maxd)
@@ -845,7 +1022,10 @@ func _solvable() -> bool:
 			var sh2 := sh
 			var m3 := m2
 			if nc == stairs:
-				if lvl >= req:
+				if boss_floor:
+					if lvl > _boss_level(m):
+						return true
+				elif lvl >= req:
 					return true
 				continue
 			if idx.has(nc) and not (mask & (1 << int(idx[nc]))):
@@ -879,6 +1059,22 @@ func _pop(c: Vector2i, text: String, col: Color) -> void:
 	pops.append({"p": _cell_rect(c).get_center(), "s": text, "c": col, "t": t})
 
 
+func _use_name(id: String) -> String:
+	return String(use_defs[id]["name"])
+
+
+func _give_use(id: String) -> bool:
+	if inv.size() >= slots_n():
+		return false
+	inv.append(id)
+	return true
+
+
+func _random_use() -> String:
+	var ids := use_defs.keys()
+	return String(ids[randi() % ids.size()])
+
+
 func _step(nc: Vector2i) -> void:
 	var th := cur_theme()
 	var names: Array = th["mons"]
@@ -889,21 +1085,23 @@ func _step(nc: Vector2i) -> void:
 	if mons.has(nc):
 		var lv: int = _mon_level(nc)
 		var nm: String = th["boss"] if nc == boss_cell else names[(int(mons[nc]) - 1) % names.size()]
-		if level > lv:
-			var gain := 2 if elite.has(nc) else 1
+		if level + boost > lv:
+			var gain := kill_gain(nc)
 			var back := 0
 			if thief_held.has(nc):
 				back = int(thief_held[nc])
 				coins += back
 			_remove_mon(nc)
 			level += gain
+			boost = 0
 			msg = "Beat %s! Level %d" % [nm, level]
 			if back > 0:
 				msg += "  (+%d coins back)" % back
 			_pop(nc, "LEVEL +%d" % gain, Color("6dff9a"))
-			snd = "elite" if gain == 2 else "win"
+			snd = "elite" if gain >= 2 else "win"
 		elif shield:
 			shield = false
+			boost = 0
 			_remove_mon(nc)
 			msg = "Shield shattered! %s defeated" % nm
 			_pop(nc, "SHIELD!", Color("7db2ff"))
@@ -913,15 +1111,66 @@ func _step(nc: Vector2i) -> void:
 			_die("%s (Lv %d) was too strong" % [nm, lv])
 			return
 	elif nc == stairs:
-		if level < req:
+		if boss_floor:
+			var bl := _boss_level(moves)
+			if level + boost > bl:
+				boost = 0
+				msg = "The %s falls!" % th["boss"]
+				_pop(nc, "BOSS DOWN", Color("ffd84f"))
+				snd = "elite"
+			elif shield:
+				shield = false
+				msg = "Your shield blocks the boss! It shatters"
+				_pop(nc, "BLOCKED", Color("7db2ff"))
+				_sfx("shieldbreak")
+				walk.clear()
+				return
+			else:
+				pos = nc
+				_die("The %s (Lv %d) crushed you" % [th["boss"], bl])
+				return
+		elif level < req:
 			msg = "%s needs Lv %d" % [th["gate"], req]
+			_sfx("blocked")
+			walk.clear()
+			return
+	elif vaults.has(nc):
+		if keys > 0:
+			keys -= 1
+			vaults.erase(nc)
+			coins += 10
+			level += 1
+			var got := _random_use()
+			var gm := ""
+			if _give_use(got):
+				gm = " + " + _use_name(got)
+			msg = "Vault opened! +10 coins, +1 level%s" % gm
+			_pop(nc, "VAULT!", Color("ffd84f"))
+			snd = "big"
+		else:
+			msg = "Locked vault - find the key first"
 			_sfx("blocked")
 			walk.clear()
 			return
 	elif items.has(nc):
 		var kind: String = items[nc]
 		items.erase(nc)
-		if kind == "pot":
+		if kind.begins_with("use_"):
+			var uid := kind.substr(4)
+			if _give_use(uid):
+				msg = "Got %s: %s" % [_use_name(uid), use_defs[uid]["desc"]]
+				_pop(nc, _use_name(uid), use_defs[uid]["col"])
+				snd = "pot"
+			else:
+				items[nc] = kind
+				msg = "Inventory full! Use a tool first"
+				snd = "blocked"
+		elif kind == "key":
+			keys += 1
+			msg = "Key! Find the locked vault"
+			_pop(nc, "KEY", Color("ffd84f"))
+			snd = "coin"
+		elif kind == "pot":
 			level += pot_g()
 			msg = "%s! Level %d" % [th["pot"], level]
 			_pop(nc, "+%d" % pot_g(), Color("ffd84f"))
@@ -951,7 +1200,7 @@ func _step(nc: Vector2i) -> void:
 			msg = "Heavy Boots shrug off the spikes"
 	elif coin_at.has(nc):
 		coin_at.erase(nc)
-		var cv := 2 if relic_n("midas") > 0 else 1
+		var cv := coin_val()
 		coins += cv
 		msg = "Coin! %d total" % coins
 		_pop(nc, "+%d coin" % cv, Color("ffc93c"))
@@ -992,6 +1241,12 @@ func _remove_mon(c: Vector2i) -> void:
 	thief_held.erase(c)
 
 
+func _kill_free(c: Vector2i) -> void:
+	if thief_held.has(c):
+		coins += int(thief_held[c])
+	_remove_mon(c)
+
+
 func _thief_check() -> void:
 	for c in kinds:
 		if String(kinds[c]) != "thief" or not mons.has(c) or thief_held.has(c):
@@ -1010,10 +1265,14 @@ func _die(why: String) -> void:
 		relics.erase("phoenix")
 		_reset_floor()
 		msg = "Phoenix Feather burns up! The floor restarts"
+		if syn("phoenix", "aegis"):
+			level += 1
+			msg += " (+1 level)"
 		_sfx("shield")
 		return
 	state = DEAD
 	walk.clear()
+	aim = -1
 	var reached := floor_n - 1
 	if reached > best:
 		best = reached
@@ -1028,38 +1287,112 @@ func _die(why: String) -> void:
 
 func _clear() -> void:
 	walk.clear()
+	aim = -1
 	_sfx("clear")
-	over_title = "FLOOR %d CLEAR" % floor_n
-	var nxt := floor_n + 1
-	over_sub = "Next: floor %d" % nxt
-	if (nxt - 1) % 3 == 0:
-		over_sub += "  -  new sector ahead!"
-	elif nxt == 3 or nxt == 5:
-		over_sub += "  -  the station grows"
-	relic_choices = _roll_relics()
+	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEAR" % floor_n
+	over_sub = "Next: floor %d" % (floor_n + 1)
+	var extra_cards := 0
+	if boss_floor:
+		coins += 10
+		var it := _random_use()
+		var tail := ""
+		if _give_use(it):
+			tail = " + " + _use_name(it)
+		over_sub += "  -  +10 coins%s" % tail
+		extra_cards += 1
+	if fmod == "danger":
+		extra_cards += 1
+	if fmod == "calm" and not boss_floor:
+		relic_choices = []
+	else:
+		relic_choices = _roll_relics(extra_cards)
 	state = RELIC if relic_choices.size() > 0 else CLEAR
 
 
-func _roll_relics() -> Array:
-	var pool: Array = []
+func _roll_relics(extra: int) -> Array:
+	var normal: Array = []
+	var cursed: Array = []
 	for d in relic_defs:
 		if relic_n(String(d["id"])) < int(d["max"]):
-			pool.append(d)
+			if d.has("curse"):
+				cursed.append(d)
+			else:
+				normal.append(d)
+	normal.shuffle()
+	cursed.shuffle()
+	var n := 3 + int(ups["lucky"]) + (1 if cls == "gambler" else 0) + extra
+	var out: Array = []
+	if cursed.size() > 0 and randf() < 0.65:
+		out.append(cursed.pop_front())
+	if n >= 5 and cursed.size() > 0 and randf() < 0.4:
+		out.append(cursed.pop_front())
+	while out.size() < n and normal.size() > 0:
+		out.append(normal.pop_front())
+	while out.size() < n and cursed.size() > 0:
+		out.append(cursed.pop_front())
+	out.shuffle()
+	return out
+
+
+func _finish_clear() -> void:
+	if (floor_n + 1) % 5 == 0:
+		_go_floor("standard")
+	else:
+		door_choices = _roll_doors()
+		state = FORK
+
+
+func _go_floor(fm: String) -> void:
+	floor_n += 1
+	fmod = fm
+	_new_floor()
+
+
+func _roll_doors() -> Array:
+	var pool := ["danger", "calm", "vault", "market"]
 	pool.shuffle()
-	var n := 4 if int(ups["lucky"]) > 0 else 3
-	return pool.slice(0, mini(n, pool.size()))
+	var doors: Array = ["standard", pool[0]]
+	if randf() < 0.7:
+		doors.append(pool[1])
+	doors.shuffle()
+	return doors
+
+
+func _open_market() -> void:
+	var ids := use_defs.keys()
+	ids.shuffle()
+	market_stock.clear()
+	for i in 3:
+		market_stock.append({"id": String(ids[i]), "price": randi_range(5, 8) + floor_n / 5})
+	state = MARKET
 
 
 func _relic_rect(i: int) -> Rect2:
-	return Rect2(50, 400 + i * 160, 620, 142)
+	return Rect2(50, 380 + i * 150, 620, 134)
 
 
 func _shop_rect(i: int) -> Rect2:
 	return Rect2(50, 360 + i * 150, 620, 132)
 
 
+func _class_rect(i: int) -> Rect2:
+	return Rect2(50, 270 + i * 190, 620, 172)
+
+
+func _door_rect(i: int) -> Rect2:
+	return Rect2(50, 380 + i * 200, 620, 180)
+
+
+func _market_rect(i: int) -> Rect2:
+	return Rect2(50, 380 + i * 150, 620, 134)
+
+
+func _slot_rect(i: int) -> Rect2:
+	return Rect2(40 + i * 118, 982, 108, 62)
+
+
 func _blocking(c: Vector2i) -> bool:
-	return mons.has(c) or spikes.has(c)
+	return mons.has(c) or spikes.has(c) or (vaults.has(c) and keys == 0)
 
 
 func _plan(target: Vector2i) -> void:
@@ -1067,7 +1400,7 @@ func _plan(target: Vector2i) -> void:
 		target = portals[target]
 		if target == pos:
 			return
-	# BFS through free cells; portals are edges; monsters and spikes are only entered as the final step.
+	# BFS through free cells; portals are edges; monsters, spikes and locked things are only entered as the final step.
 	var dist: Dictionary = {pos: 0}
 	var prev: Dictionary = {}
 	var via: Dictionary = {}
@@ -1079,7 +1412,7 @@ func _plan(target: Vector2i) -> void:
 			var n: Vector2i = c + d
 			if not in_b(n) or is_dark(n) or walls.has(n) or _blocking(n):
 				continue
-			if n == stairs and level < req:
+			if n == stairs and stairs_blocked():
 				continue
 			var dest := n
 			if portals.has(n):
@@ -1095,7 +1428,7 @@ func _plan(target: Vector2i) -> void:
 			q.append(dest)
 	var goal := target
 	var attack := false
-	if _blocking(target) or (target == stairs and level < req):
+	if _blocking(target) or (target == stairs and stairs_blocked()):
 		var bestd := 999
 		var bestc := Vector2i(-1, -1)
 		for d in dirs:
@@ -1125,11 +1458,142 @@ func _plan(target: Vector2i) -> void:
 	walk_t = 0.1
 
 
-func _new_run() -> void:
-	floor_n = 1
+# ----- usable tools -----
+
+func _aim_valid(id: String, c: Vector2i) -> bool:
+	if not in_b(c) or is_dark(c):
+		return false
+	if id == "blink":
+		return not walls.has(c) and not mons.has(c) and not vaults.has(c) and c != stairs and c != pos and not portals.has(c)
+	if id == "pick":
+		return walls.has(c)
+	if id == "zap":
+		return mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) <= 2 and _mon_level(c) <= level + 1
+	return false
+
+
+func _aim_any(id: String) -> bool:
+	for x in N:
+		for y in N:
+			if _aim_valid(id, Vector2i(x, y)):
+				return true
+	return false
+
+
+func _use_slot(i: int) -> void:
+	if state != PLAY or i >= inv.size():
+		return
+	if aim == i:
+		aim = -1
+		msg = "Cancelled"
+		return
+	var id: String = inv[i]
+	aim = -1
+	walk.clear()
+	if id == "bomb":
+		var hit := 0
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				var c := pos + Vector2i(dx, dy)
+				if c == pos:
+					continue
+				if walls.has(c):
+					walls.erase(c)
+					hit += 1
+				if spikes.has(c):
+					spikes.erase(c)
+					hit += 1
+				if mons.has(c) and _mon_level(c) <= level + 1:
+					_pop(c, "BOOM", Color("ff7a45"))
+					_kill_free(c)
+					hit += 1
+		if hit == 0:
+			msg = "Nothing nearby to blast"
+			_sfx("blocked")
+			return
+		msg = "Boom! Cleared %d things" % hit
+		_sfx("spike")
+	elif id == "crystal":
+		moves = maxi(moves - 6, depth_for(moves) * period)
+		msg = "Time Crystal shatters: the dark is held back"
+		_sfx("lamp")
+	elif id == "draught":
+		level += 2
+		msg = "Elixir! Level %d" % level
+		_pop(pos, "+2", Color("6dff9a"))
+		_sfx("big")
+	elif id == "cloak":
+		if boost > 0:
+			msg = "Cloak already active"
+			return
+		boost = 3
+		msg = "Shadow Cloak: your next fight counts +3 levels"
+		_sfx("shield")
+	elif id == "magnet":
+		var n := 0
+		for c in coin_at.keys():
+			if not is_dark(c):
+				coin_at.erase(c)
+				n += 1
+		if n == 0:
+			msg = "No coins to pull in"
+			_sfx("blocked")
+			return
+		coins += n * coin_val()
+		msg = "Magnet! +%d coins" % (n * coin_val())
+		_sfx("coin")
+	else:
+		if not _aim_any(id):
+			msg = "No valid target right now"
+			_sfx("blocked")
+			return
+		aim = i
+		msg = "%s: tap a highlighted tile (tap the tool again to cancel)" % _use_name(id)
+		_sfx("ui")
+		return
+	inv.remove_at(i)
+
+
+func _aim_apply(c: Vector2i) -> void:
+	var id: String = inv[aim]
+	if not _aim_valid(id, c):
+		msg = "Not a valid target"
+		_sfx("blocked")
+		return
+	inv.remove_at(aim)
+	aim = -1
+	if id == "blink":
+		_sfx("warp")
+		_step(c)
+	elif id == "pick":
+		walls.erase(c)
+		_pop(c, "CRACK", Color("c9a55a"))
+		msg = "The wall crumbles"
+		_sfx("spike")
+	elif id == "zap":
+		_pop(c, "ZAP", Color("ffe14f"))
+		_kill_free(c)
+		msg = "Zap!"
+		_sfx("elite")
+
+
+# ----- run flow -----
+
+func _new_run(start_floor := 1) -> void:
+	floor_n = start_floor
 	coins = 0
 	run_banked = 0
 	relics.clear()
+	inv.clear()
+	fmod = "standard"
+	for id in cdef()["kit"]:
+		inv.append(String(id))
+	if cls == "gambler":
+		var pool: Array = relic_defs.duplicate()
+		pool.shuffle()
+		for i in 2:
+			var d: Dictionary = pool[i]
+			relics[d["id"]] = 1
 	_new_floor()
 
 
@@ -1142,9 +1606,20 @@ func _gui_input(event: InputEvent) -> void:
 		_apply_sound()
 		_sfx("ui")
 		return
+	if state == CLASS:
+		for i in class_defs.size():
+			if _class_rect(i).has_point(p):
+				cls = String(class_defs[i]["id"])
+				_sfx("big")
+				_new_run()
+				return
+		if btn_shop2.has_point(p):
+			shop_return = CLASS
+			state = SHOP
+			_sfx("ui")
+		return
 	if state == CLEAR:
-		floor_n += 1
-		_new_floor()
+		_finish_clear()
 		return
 	if state == RELIC:
 		for i in relic_choices.size():
@@ -1152,13 +1627,39 @@ func _gui_input(event: InputEvent) -> void:
 				var id: String = relic_choices[i]["id"]
 				relics[id] = relic_n(id) + 1
 				_sfx("big")
-				floor_n += 1
-				_new_floor()
+				_finish_clear()
+				return
+		return
+	if state == FORK:
+		for i in door_choices.size():
+			if _door_rect(i).has_point(p):
+				var dc: String = door_choices[i]
+				_sfx("big")
+				if dc == "market":
+					_open_market()
+				else:
+					_go_floor(dc)
+				return
+		return
+	if state == MARKET:
+		if btn_back.has_point(p):
+			_go_floor("standard")
+			return
+		for i in market_stock.size():
+			if _market_rect(i).has_point(p):
+				var it: Dictionary = market_stock[i]
+				if coins >= int(it["price"]) and inv.size() < slots_n():
+					coins -= int(it["price"])
+					inv.append(String(it["id"]))
+					market_stock.remove_at(i)
+					_sfx("coin")
+				else:
+					_sfx("blocked")
 				return
 		return
 	if state == SHOP:
 		if btn_back.has_point(p):
-			state = DEAD
+			state = shop_return
 			_sfx("ui")
 			return
 		for i in shop_defs.size():
@@ -1179,21 +1680,31 @@ func _gui_input(event: InputEvent) -> void:
 			_reset_floor()
 			_sfx("ui")
 		elif btn_newrun.has_point(p):
-			_new_run()
+			state = CLASS
 			_sfx("ui")
 		elif btn_shop.has_point(p):
+			shop_return = DEAD
 			state = SHOP
 			_sfx("ui")
 		return
+	# playing
 	if btn_reset.has_point(p):
 		_reset_floor()
 		_sfx("ui")
 		return
+	for i in slots_n():
+		if _slot_rect(i).has_point(p):
+			_use_slot(i)
+			return
 	if p.x < GX or p.y < GY:
 		return
 	var cx := int((p.x - GX) / cell)
 	var cy := int((p.y - GY) / cell)
 	var target := Vector2i(cx, cy)
+	if aim >= 0:
+		if in_b(target):
+			_aim_apply(target)
+		return
 	if not in_b(target) or target == pos or is_dark(target) or walls.has(target):
 		return
 	_plan(target)
@@ -1242,6 +1753,10 @@ func _button(r: Rect2, label: String, col: Color, size := 20) -> void:
 	_ctext(label, r.get_center(), size, col)
 
 
+func _para(s: String, p: Vector2, size: int, col: Color, w: float) -> void:
+	draw_multiline_string(font, p, s, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1, col)
+
+
 func _star(c: Vector2, r: float, col: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 10:
@@ -1267,6 +1782,73 @@ func _draw_spikes(ctr: Vector2) -> void:
 			draw_circle(Vector2(bx, by - w * 0.14), 1.8, Color("ff5d5d"))
 
 
+func _draw_vault(ctr: Vector2) -> void:
+	var w := cell * 0.7
+	draw_rect(Rect2(ctr.x - w * 0.5, ctr.y - w * 0.12, w, w * 0.52), Color("7a4a1e"))
+	draw_rect(Rect2(ctr.x - w * 0.5, ctr.y - w * 0.4, w, w * 0.3), Color("9a5f28"))
+	draw_rect(Rect2(ctr.x - w * 0.5, ctr.y - w * 0.4, w, w * 0.8), Color("3a2410"), false, 2.0)
+	draw_rect(Rect2(ctr.x - w * 0.1, ctr.y - w * 0.4, w * 0.2, w * 0.8), Color("e0b030"))
+	draw_circle(ctr + Vector2(0, -w * 0.02), w * 0.1, Color("ffd84f"))
+	draw_circle(ctr + Vector2(0, -w * 0.02), w * 0.04, Color("3a2410"))
+
+
+func _draw_key(ctr: Vector2, s: float) -> void:
+	var gold := Color("ffd84f")
+	draw_arc(ctr + Vector2(-s * 0.25, 0), s * 0.2, 0, TAU, 16, gold, s * 0.09)
+	draw_line(ctr + Vector2(-s * 0.05, 0), ctr + Vector2(s * 0.42, 0), gold, s * 0.09)
+	draw_line(ctr + Vector2(s * 0.3, 0), ctr + Vector2(s * 0.3, s * 0.16), gold, s * 0.08)
+	draw_line(ctr + Vector2(s * 0.42, 0), ctr + Vector2(s * 0.42, s * 0.12), gold, s * 0.08)
+
+
+func _use_icon(id: String, c: Vector2, s: float) -> void:
+	var col: Color = use_defs[id]["col"]
+	var r := s * 0.5
+	draw_circle(c, r, Color(0.07, 0.08, 0.13))
+	draw_arc(c, r, 0, TAU, 20, col, 2.0)
+	if id == "bomb":
+		draw_circle(c + Vector2(0, r * 0.12), r * 0.5, Color("2b2f3a"))
+		draw_circle(c + Vector2(-r * 0.15, 0), r * 0.1, Color(1, 1, 1, 0.5))
+		draw_line(c + Vector2(r * 0.25, -r * 0.3), c + Vector2(r * 0.5, -r * 0.62), Color("c9a55a"), 2.0)
+		draw_circle(c + Vector2(r * 0.5, -r * 0.65), r * 0.14, Color("ffd84f"))
+	elif id == "crystal":
+		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.62), c + Vector2(r * 0.42, 0), c + Vector2(0, r * 0.62), c + Vector2(-r * 0.42, 0)]), col)
+		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.62), c + Vector2(-r * 0.42, 0), c + Vector2(-r * 0.1, -r * 0.05)]), col.lightened(0.5))
+	elif id == "blink":
+		draw_arc(c, r * 0.45, 0.6, 4.6, 14, col, 3.0)
+		draw_arc(c, r * 0.22, 3.6, 7.6, 10, Color.WHITE, 2.0)
+	elif id == "cloak":
+		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r * 0.58), c + Vector2(r * 0.52, r * 0.58), c + Vector2(-r * 0.52, r * 0.58)]), col)
+		draw_circle(c + Vector2(-r * 0.15, -r * 0.05), r * 0.09, Color("151515"))
+		draw_circle(c + Vector2(r * 0.15, -r * 0.05), r * 0.09, Color("151515"))
+	elif id == "draught":
+		draw_circle(c + Vector2(0, r * 0.15), r * 0.42, col)
+		draw_rect(Rect2(c.x - r * 0.12, c.y - r * 0.62, r * 0.24, r * 0.42), col.lightened(0.35))
+		draw_circle(c + Vector2(-r * 0.12, r * 0.05), r * 0.09, Color(1, 1, 1, 0.6))
+	elif id == "magnet":
+		draw_arc(c + Vector2(0, -r * 0.02), r * 0.42, PI, TAU, 12, col, r * 0.26)
+		draw_rect(Rect2(c.x - r * 0.55, c.y - r * 0.02, r * 0.26, r * 0.55), col)
+		draw_rect(Rect2(c.x + r * 0.29, c.y - r * 0.02, r * 0.26, r * 0.55), col)
+		draw_rect(Rect2(c.x - r * 0.55, c.y + r * 0.35, r * 0.26, r * 0.18), Color.WHITE)
+		draw_rect(Rect2(c.x + r * 0.29, c.y + r * 0.35, r * 0.26, r * 0.18), Color.WHITE)
+	elif id == "pick":
+		draw_line(c + Vector2(-r * 0.42, r * 0.55), c + Vector2(r * 0.25, -r * 0.35), Color("8a5a2b"), 3.0)
+		draw_line(c + Vector2(-r * 0.3, -r * 0.5), c + Vector2(r * 0.6, 0.1 * r), Color("c8cfdc"), 4.0)
+	elif id == "zap":
+		draw_colored_polygon(PackedVector2Array([c + Vector2(r * 0.18, -r * 0.62), c + Vector2(-r * 0.32, r * 0.05), c + Vector2(0, r * 0.05), c + Vector2(-r * 0.16, r * 0.62), c + Vector2(r * 0.34, -r * 0.1), c + Vector2(0, -r * 0.1)]), col)
+
+
+func _mod_label() -> String:
+	if boss_floor:
+		return "   BOSS FLOOR"
+	if fmod == "danger":
+		return "   PERILOUS"
+	if fmod == "calm":
+		return "   QUIET"
+	if fmod == "vault":
+		return "   VAULT"
+	return ""
+
+
 func _draw() -> void:
 	if themes.is_empty():
 		return
@@ -1285,12 +1867,20 @@ func _draw() -> void:
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 	_button(btn_reset, "RESET", acc)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
-	_txt("FLOOR %d    BEST %d" % [floor_n, best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
+	_txt("FLOOR %d    BEST %d%s" % [floor_n, best, _mod_label()], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 256), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var sx := 40.0
 	if shield:
-		_spr(_item_tex("shield"), Vector2(262, 188), 40)
-		_txt("SHIELD", Vector2(286, 196), 20, Color("7db2ff"), 120.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_spr(_item_tex("shield"), Vector2(sx + 14, 266), 28)
+		_txt("SHIELD", Vector2(sx + 32, 272), 18, Color("7db2ff"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
+		sx += 112.0
+	if boost > 0:
+		_txt("CLOAK +%d" % boost, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
+		sx += 120.0
+	if keys > 0:
+		_draw_key(Vector2(sx + 14, 266), 26)
+		_txt("KEY x%d" % keys, Vector2(sx + 36, 272), 18, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var depth := depth_for(moves)
 	var dark_txt := "DARK FINAL"
 	var frac := 1.0
@@ -1305,7 +1895,15 @@ func _draw() -> void:
 	_txt(dark_txt, Vector2(360, 200), 44, dcol, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	draw_rect(Rect2(380, 218, 300, 14), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(380, 218, 300 * frac, 14), dcol)
-	_txt("%s: Lv %d" % [th["gate"], req], Vector2(0, 298), 28, Color.WHITE if level >= req else Color(1, 1, 1, 0.55))
+	if boss_floor:
+		var hint := "steady"
+		if boss_kind == "colossus":
+			hint = "+2 per ring of dark"
+		elif boss_kind == "king":
+			hint = "+6 once the dark moves"
+		_txt("BOSS %s: Lv %d (%s)" % [th["boss"], _boss_level(moves), hint], Vector2(0, 306), 24, Color("ffd84f") if level + boost > _boss_level(moves) else Color("ff8a8a"))
+	else:
+		_txt("%s: Lv %d" % [th["gate"], req], Vector2(0, 306), 26, Color.WHITE if level >= req else Color(1, 1, 1, 0.55))
 	# grid
 	var names: Array = th["mons"]
 	var wall_tex := _wall_tex(ti)
@@ -1326,6 +1924,8 @@ func _draw() -> void:
 			if walls.has(c):
 				draw_texture_rect(wall_tex, r.grow(-1.0), false)
 			elif c == stairs:
+				if boss_floor:
+					continue
 				var ok := level >= req
 				var dc := Color("6dff9a") if ok else Color(1, 1, 1, 0.4)
 				var hw := cell * 0.28
@@ -1340,7 +1940,7 @@ func _draw() -> void:
 				var kind := String(kinds.get(c, ""))
 				var asleep := kind == "sleeper" and depth < 1
 				var is_boss := c == boss_cell
-				var safe := level > lv
+				var safe := level + boost > lv
 				var mc := Color("49d17a") if safe else (Color("ffb02e") if shield else Color("ef4b55"))
 				var sz := cell * (0.92 if is_boss else 0.8)
 				if is_boss:
@@ -1374,18 +1974,29 @@ func _draw() -> void:
 						_ctext("steals coins", Vector2(r.end.x - cell * 0.38, r.end.y - 8), 11, Color("ffd84f"))
 				elif N <= 7:
 					_txt(names[(base_lv - 1) % names.size()], Vector2(r.position.x, r.end.y - 5), 13, Color(1, 1, 1, 0.65), cell)
+			elif vaults.has(c):
+				_draw_vault(ctr + Vector2(0, bob * 0.3))
+				_txt("vault", Vector2(r.position.x, r.end.y - 6), 13, Color("ffd84f"), cell)
 			elif items.has(c):
-				var kind: String = items[c]
+				var kind2: String = items[c]
 				draw_circle(ctr + Vector2(0, cell * 0.25), cell * 0.2, Color(0, 0, 0, 0.25))
-				_spr(_item_tex(kind), ctr + Vector2(0, bob), cell * 0.58)
-				if kind == "pot":
-					_txt("+1", Vector2(r.position.x, r.end.y - 6), 15, Color("ffd84f"), cell)
-				elif kind == "big":
-					_txt("+2", Vector2(r.position.x, r.end.y - 6), 15, Color("4fd1ff"), cell)
-				elif kind == "shield":
-					_txt("shield", Vector2(r.position.x, r.end.y - 6), 13, Color("7db2ff"), cell)
+				if kind2.begins_with("use_"):
+					var uid := kind2.substr(4)
+					_use_icon(uid, ctr + Vector2(0, bob), cell * 0.55)
+					_txt(_use_name(uid), Vector2(r.position.x, r.end.y - 6), 11, use_defs[uid]["col"], cell)
+				elif kind2 == "key":
+					_draw_key(ctr + Vector2(0, bob), cell * 0.8)
+					_txt("key", Vector2(r.position.x, r.end.y - 6), 13, Color("ffd84f"), cell)
 				else:
-					_txt("light", Vector2(r.position.x, r.end.y - 6), 13, Color("ffe9a0"), cell)
+					_spr(_item_tex(kind2), ctr + Vector2(0, bob), cell * 0.58)
+					if kind2 == "pot":
+						_txt("+%d" % pot_g(), Vector2(r.position.x, r.end.y - 6), 15, Color("ffd84f"), cell)
+					elif kind2 == "big":
+						_txt("+%d" % big_g(), Vector2(r.position.x, r.end.y - 6), 15, Color("4fd1ff"), cell)
+					elif kind2 == "shield":
+						_txt("shield", Vector2(r.position.x, r.end.y - 6), 13, Color("7db2ff"), cell)
+					else:
+						_txt("light", Vector2(r.position.x, r.end.y - 6), 13, Color("ffe9a0"), cell)
 			elif spikes.has(c):
 				_draw_spikes(ctr)
 			elif coin_at.has(c):
@@ -1396,11 +2007,36 @@ func _draw() -> void:
 				draw_arc(ctr, cell * 0.32, t * 3.0, t * 3.0 + PI * 1.3, 18, pc, 4.0)
 				draw_arc(ctr, cell * 0.2, -t * 4.0, -t * 4.0 + PI * 1.3, 14, Color("e6c8ff"), 3.0)
 				draw_circle(ctr, cell * 0.07, pc)
+	# boss on top of its cell
+	if boss_floor:
+		var br := _cell_rect(stairs)
+		var bc := br.get_center()
+		var bl := _boss_level(moves)
+		var bsafe := level + boost > bl
+		draw_circle(bc, cell * 0.85, Color(acc.r, acc.g, acc.b, 0.14 + 0.08 * sin(t * 2.5)))
+		draw_circle(bc + Vector2(0, cell * 0.45), cell * 0.5, Color(0, 0, 0, 0.35))
+		_spr(_monster_tex(ti, 9 + (floor_n / 5) % 3, true), bc + Vector2(0, -cell * 0.1 + sin(t * 2.0) * 3.0), cell * 1.6)
+		var bp2 := bc + Vector2(cell * 0.62, -cell * 0.62)
+		draw_circle(bp2, cell * 0.26, Color("0a0c14"))
+		draw_circle(bp2, cell * 0.22, Color("49d17a") if bsafe else Color("ef4b55"))
+		_ctext(str(bl), bp2, int(cell * 0.3), Color.WHITE)
+	# aim highlights
+	if aim >= 0 and aim < inv.size():
+		var aid: String = inv[aim]
+		for x in N:
+			for y in N:
+				var ac := Vector2i(x, y)
+				if _aim_valid(aid, ac):
+					var ar := _cell_rect(ac).grow(-3)
+					draw_rect(ar, Color(1, 0.88, 0.3, 0.15 + 0.1 * sin(t * 8.0)))
+					draw_rect(ar, Color("ffe14f"), false, 3.0)
 	# player
 	var prc := _cell_rect(pos).get_center()
 	draw_circle(prc + Vector2(0, cell * 0.3), cell * 0.25, Color(0, 0, 0, 0.35))
 	if shield:
 		draw_arc(prc, cell * 0.46, 0, TAU, 28, Color(0.5, 0.7, 1.0, 0.5 + 0.2 * sin(t * 5.0)), 3.0)
+	if boost > 0:
+		draw_arc(prc, cell * 0.52, 0, TAU, 28, Color(0.7, 0.72, 0.9, 0.5), 2.0)
 	_spr(_player_tex(), prc + Vector2(0, sin(t * 4.0) * 2.0), cell * 0.78)
 	# floating pops
 	for pp in pops:
@@ -1409,75 +2045,163 @@ func _draw() -> void:
 		pcol.a = 1.0 - age / 0.9
 		var pp_pos: Vector2 = pp["p"]
 		_ctext(pp["s"], pp_pos + Vector2(0, -cell * 0.3 - age * 50.0), 26, pcol)
+	# tool slots
+	for i in slots_n():
+		var sr := _slot_rect(i)
+		var has := i < inv.size()
+		var scol := Color(1, 1, 1, 0.25)
+		if has:
+			scol = use_defs[inv[i]]["col"]
+		if aim == i:
+			scol = Color("ffe14f")
+		draw_rect(sr, Color(scol.r, scol.g, scol.b, 0.12))
+		draw_rect(sr, scol, false, 2.0)
+		if has:
+			_use_icon(inv[i], Vector2(sr.position.x + 25, sr.position.y + 31), 38)
+			draw_multiline_string(font, Vector2(sr.position.x + 50, sr.position.y + 26), _use_name(inv[i]), HORIZONTAL_ALIGNMENT_LEFT, 56, 13, 3, Color.WHITE)
+		else:
+			_ctext("empty", sr.get_center(), 14, Color(1, 1, 1, 0.3))
+	_txt("TOOLS: tap one to use it", Vector2(40 + slots_n() * 118 + 8, 1020), 17, Color(1, 1, 1, 0.45), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	# footer
-	_txt(msg, Vector2(0, 1040), 30, Color.WHITE)
-	_txt("Green badge = you win the fight. Red = you die. Equal loses!", Vector2(0, 1100), 23, Color(1, 1, 1, 0.55))
-	_txt("Gold star = +2 levels. Shield saves you once. Spikes cost steps.", Vector2(0, 1134), 23, Color(1, 1, 1, 0.55))
+	_txt(msg, Vector2(0, 1084), 26, Color.WHITE, 720.0)
+	_txt("Green badge = you win the fight. Red = you die. Equal loses!", Vector2(0, 1122), 22, Color(1, 1, 1, 0.55))
+	_txt("Gold star = +2 levels. Shield saves you once. Spikes cost steps.", Vector2(0, 1150), 22, Color(1, 1, 1, 0.55))
 	var tips := [
-		"Sleepers (zZ) gain +3 levels once the dark first moves. Kill them early!",
+		"Sleepers (zZ) gain levels once the dark first moves. Kill them early!",
 		"Feeders (violet +) grow +1 level every time the dark advances.",
 		"Thieves ($) steal coins when you stand beside them. Beat one to get them back.",
 		"Coins are banked when you die and buy permanent upgrades in the SHOP.",
-		"Relics last the whole run. You pick one after every floor.",
+		"Relics last the whole run. Cursed ones are powerful but risky.",
+		"A key opens a vault: coins, +1 level and a free tool.",
+		"Every 5th floor is a boss. Read its rule in the line under the dark meter.",
 		"Portals warp you. Lanterns hold the dark back.",
 	]
-	_txt(tips[int(t / 5.0) % tips.size()], Vector2(0, 1168), 21, Color(acc.r, acc.g, acc.b, 0.85))
+	_txt(tips[int(t / 5.0) % tips.size()], Vector2(0, 1180), 20, Color(acc.r, acc.g, acc.b, 0.85))
+	_txt("Tap a tile to walk there. The dark eats the outer ring.", Vector2(0, 1208), 22, Color(1, 1, 1, 0.55))
 	if relics.size() > 0:
 		var parts: Array[String] = []
 		for d in relic_defs:
 			var n := relic_n(String(d["id"]))
 			if n > 0:
 				parts.append(String(d["name"]) + (" x%d" % n if n > 1 else ""))
-		_txt("RELICS: " + ", ".join(parts), Vector2(20, 1252), 17, Color(1, 1, 1, 0.6), 680.0)
-	_txt("Tap a tile to walk there. The dark eats the outer ring.", Vector2(0, 1202), 23, Color(1, 1, 1, 0.55))
+		_para("RELICS: " + ", ".join(parts), Vector2(20, 1240), 15, Color(1, 1, 1, 0.6), 680.0)
 	if state != PLAY:
-		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
-		var tc := Color("ff5d5d") if state == DEAD else acc
-		if state == DEAD:
-			_txt(over_title, Vector2(0, 540), 64, tc)
-			var ly := 620
-			for line in over_sub.split("\n"):
-				_txt(line, Vector2(0, ly), 28, Color.WHITE)
-				ly += 42
-			_button(btn_retry, "RETRY THIS FLOOR", acc, 28)
-			_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
-			_button(btn_shop, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
-		elif state == CLEAR:
-			_txt(over_title, Vector2(0, 560), 64, tc)
-			_txt(over_sub, Vector2(0, 630), 28, Color.WHITE)
-			_txt("Tap to continue", Vector2(0, 700), 28, Color(1, 1, 1, 0.6))
-		elif state == RELIC:
-			_txt(over_title, Vector2(0, 250), 54, tc)
-			_txt(over_sub, Vector2(0, 296), 24, Color(1, 1, 1, 0.7))
-			_txt("Choose a relic for the rest of the run", Vector2(0, 360), 28, Color.WHITE)
-			for i in relic_choices.size():
-				var d: Dictionary = relic_choices[i]
-				var rr := _relic_rect(i)
-				draw_rect(rr, Color(acc.r, acc.g, acc.b, 0.12))
-				draw_rect(rr, acc, false, 2.0)
-				var own := relic_n(String(d["id"]))
-				var title := String(d["name"]) + ("   (you have %d)" % own if own > 0 else "")
-				_txt(title, Vector2(rr.position.x + 24, rr.position.y + 54), 34, acc, rr.size.x - 40, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt(String(d["desc"]), Vector2(rr.position.x + 24, rr.position.y + 100), 24, Color.WHITE, rr.size.x - 40, HORIZONTAL_ALIGNMENT_LEFT)
-		elif state == SHOP:
-			_txt("SHOP", Vector2(0, 250), 60, Color("ffc93c"))
-			_txt("Bank: %d coins" % bank, Vector2(0, 310), 32, Color.WHITE)
-			for i in shop_defs.size():
-				var d2: Dictionary = shop_defs[i]
-				var rr2 := _shop_rect(i)
-				var lv: int = int(ups[d2["id"]])
-				var costs: Array = d2["costs"]
-				var maxed := lv >= costs.size()
-				var can := (not maxed) and bank >= int(costs[lv])
-				var col := Color("6dff9a") if can else Color(1, 1, 1, 0.45)
-				draw_rect(rr2, Color(col.r, col.g, col.b, 0.1))
-				draw_rect(rr2, col, false, 2.0)
-				_txt("%s  (%d/%d)" % [d2["name"], lv, costs.size()], Vector2(rr2.position.x + 24, rr2.position.y + 48), 30, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt(String(d2["desc"]), Vector2(rr2.position.x + 24, rr2.position.y + 92), 21, Color(1, 1, 1, 0.7), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
-				var ptxt := "MAXED" if maxed else "%d coins" % int(costs[lv])
-				_txt(ptxt, Vector2(rr2.end.x - 190, rr2.position.y + 78), 30, col, 170.0, HORIZONTAL_ALIGNMENT_RIGHT)
-			_button(btn_back, "BACK", acc, 28)
-		_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
+		_draw_overlay(acc)
+
+
+func _draw_overlay(acc: Color) -> void:
+	draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
+	if state == DEAD:
+		_txt(over_title, Vector2(0, 540), 64, Color("ff5d5d"))
+		var ly := 620
+		for line in over_sub.split("\n"):
+			_txt(line, Vector2(0, ly), 28, Color.WHITE)
+			ly += 42
+		_button(btn_retry, "RETRY THIS FLOOR", acc, 28)
+		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
+		_button(btn_shop, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
+	elif state == CLEAR:
+		_txt(over_title, Vector2(0, 560), 64, acc)
+		_txt(over_sub, Vector2(0, 630), 26, Color.WHITE)
+		_txt("Tap to continue", Vector2(0, 700), 28, Color(1, 1, 1, 0.6))
+	elif state == RELIC:
+		_txt(over_title, Vector2(0, 230), 52, acc)
+		_txt(over_sub, Vector2(0, 276), 22, Color(1, 1, 1, 0.7))
+		_txt("Choose a relic for the rest of the run", Vector2(0, 340), 28, Color.WHITE)
+		for i in relic_choices.size():
+			var d: Dictionary = relic_choices[i]
+			var rr := _relic_rect(i)
+			var cursed := d.has("curse")
+			var col := Color("ff6a5c") if cursed else acc
+			draw_rect(rr, Color(col.r, col.g, col.b, 0.12))
+			draw_rect(rr, col, false, 2.0)
+			var own := relic_n(String(d["id"]))
+			var title := String(d["name"]) + ("   (you have %d)" % own if own > 0 else "")
+			_txt(title, Vector2(rr.position.x + 22, rr.position.y + 40), 30, col, rr.size.x - 40, HORIZONTAL_ALIGNMENT_LEFT)
+			if cursed:
+				_txt("CURSED", Vector2(rr.end.x - 150, rr.position.y + 40), 22, Color("ff6a5c"), 130.0, HORIZONTAL_ALIGNMENT_RIGHT)
+			_para(String(d["desc"]), Vector2(rr.position.x + 22, rr.position.y + 74), 21, Color.WHITE, rr.size.x - 44)
+			for sy in synergies:
+				var other := ""
+				if sy["a"] == d["id"]:
+					other = String(sy["b"])
+				elif sy["b"] == d["id"]:
+					other = String(sy["a"])
+				if other != "":
+					var have := relic_n(other) > 0
+					var oname := other
+					for dd in relic_defs:
+						if dd["id"] == other:
+							oname = String(dd["name"])
+					var stxt := ("SYNERGY ACTIVE: " + String(sy["text"])) if have else ("Synergy with %s: %s" % [oname, sy["text"]])
+					_txt(stxt, Vector2(rr.position.x + 22, rr.end.y - 10), 16, Color("ffd84f") if have else Color(1, 1, 1, 0.45), rr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
+					break
+	elif state == FORK:
+		_txt("CHOOSE YOUR PATH", Vector2(0, 250), 54, acc)
+		_txt("Floor %d awaits" % (floor_n + 1), Vector2(0, 310), 26, Color(1, 1, 1, 0.7))
+		for i in door_choices.size():
+			var dd: Dictionary = door_defs[String(door_choices[i])]
+			var dr := _door_rect(i)
+			var dcol: Color = dd["col"]
+			draw_rect(dr, Color(dcol.r, dcol.g, dcol.b, 0.12))
+			draw_rect(dr, dcol, false, 3.0)
+			draw_rect(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), Color(dcol.r, dcol.g, dcol.b, 0.25))
+			draw_rect(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), dcol, false, 3.0)
+			_txt(String(dd["name"]), Vector2(dr.position.x + 110, dr.position.y + 62), 36, dcol, 480.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(String(dd["desc"]), Vector2(dr.position.x + 110, dr.position.y + 106), 23, Color.WHITE, 480.0)
+	elif state == MARKET:
+		_txt("MERCHANT", Vector2(0, 250), 56, Color("c07cff"))
+		_txt("Your coins: %d      Tool slots: %d / %d" % [coins, inv.size(), slots_n()], Vector2(0, 310), 26, Color("ffc93c"))
+		for i in market_stock.size():
+			var it: Dictionary = market_stock[i]
+			var mr := _market_rect(i)
+			var uid: String = it["id"]
+			var can := coins >= int(it["price"]) and inv.size() < slots_n()
+			var mcol := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
+			draw_rect(mr, Color(mcol.r, mcol.g, mcol.b, 0.1))
+			draw_rect(mr, mcol, false, 2.0)
+			_use_icon(uid, Vector2(mr.position.x + 56, mr.position.y + 67), 70)
+			_txt(_use_name(uid), Vector2(mr.position.x + 110, mr.position.y + 50), 30, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(String(use_defs[uid]["desc"]), Vector2(mr.position.x + 110, mr.position.y + 84), 19, Color(1, 1, 1, 0.75), 340.0)
+			_txt("%d coins" % int(it["price"]), Vector2(mr.end.x - 170, mr.position.y + 76), 28, mcol, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		if market_stock.is_empty():
+			_txt("Sold out!", Vector2(0, 520), 32, Color(1, 1, 1, 0.6))
+		_button(btn_back, "LEAVE", acc, 28)
+	elif state == CLASS:
+		_txt("CHOOSE YOUR CLASS", Vector2(0, 180), 52, acc)
+		_txt("Best: %d floors   Bank: %d coins" % [best, bank], Vector2(0, 230), 24, Color(1, 1, 1, 0.6))
+		for i in class_defs.size():
+			var cd: Dictionary = class_defs[i]
+			var cr := _class_rect(i)
+			var ccol: Color = cd["col"]
+			draw_rect(cr, Color(ccol.r, ccol.g, ccol.b, 0.12))
+			draw_rect(cr, ccol, false, 3.0)
+			_txt(String(cd["name"]), Vector2(cr.position.x + 24, cr.position.y + 54), 40, ccol, 500.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(String(cd["desc"]), Vector2(cr.position.x + 24, cr.position.y + 98), 23, Color.WHITE, 570.0)
+			var kx := cr.end.x - 40.0
+			for kid in cd["kit"]:
+				_use_icon(String(kid), Vector2(kx, cr.position.y + 40), 44)
+				kx -= 56.0
+		_button(btn_shop2, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
+	elif state == SHOP:
+		_txt("SHOP", Vector2(0, 250), 60, Color("ffc93c"))
+		_txt("Bank: %d coins" % bank, Vector2(0, 310), 32, Color.WHITE)
+		for i in shop_defs.size():
+			var d2: Dictionary = shop_defs[i]
+			var rr2 := _shop_rect(i)
+			var lv: int = int(ups[d2["id"]])
+			var costs: Array = d2["costs"]
+			var maxed := lv >= costs.size()
+			var can2 := (not maxed) and bank >= int(costs[lv])
+			var col2 := Color("6dff9a") if can2 else Color(1, 1, 1, 0.45)
+			draw_rect(rr2, Color(col2.r, col2.g, col2.b, 0.1))
+			draw_rect(rr2, col2, false, 2.0)
+			_txt("%s  (%d/%d)" % [d2["name"], lv, costs.size()], Vector2(rr2.position.x + 24, rr2.position.y + 48), 30, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(d2["desc"]), Vector2(rr2.position.x + 24, rr2.position.y + 92), 21, Color(1, 1, 1, 0.7), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
+			var ptxt := "MAXED" if maxed else "%d coins" % int(costs[lv])
+			_txt(ptxt, Vector2(rr2.end.x - 190, rr2.position.y + 78), 30, col2, 170.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		_button(btn_back, "BACK", acc, 28)
+	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 
 
 # ---------- audio (all synthesized in code) ----------
@@ -1741,18 +2465,25 @@ func _self_test() -> void:
 		floor_n = f
 		relics.clear()
 		ups = {"vet": 0, "iron": 0, "packed": 0, "lucky": 0}
+		cls = ["scout", "brute", "mystic", "gambler"][f % 4]
+		fmod = ["standard", "danger", "calm", "vault"][(f / 2) % 4]
 		if f > 6:
 			relics = {"vanguard": 2, "slowdark": 1, "aegis": 1, "boots": 1, "alchemist": 1, "lantern": 1, "skeleton": 1}
 			ups = {"vet": 2, "iron": 3, "packed": 1, "lucky": 1}
+		if f > 14 and f % 2 == 0:
+			relics["glass"] = 1
+			relics["greedy"] = 1
+			relics["blade"] = 1
+			relics["ember"] = 1
 		_setup_size()
 		var t0 := Time.get_ticks_msec()
 		var tries := 0
 		var ok := false
-		while tries < 60 and not ok:
+		while tries < 24 and not ok:
 			_random_layout(tries)
 			tries += 1
 			ok = _solvable()
-		print("floor %d N %d %s tries %d solvable %s req %d mons %d %dms" % [f, N, cur_theme()["name"], tries, ok, req, mons.size(), Time.get_ticks_msec() - t0])
+		print("floor %d N %d %s cls %s fmod %s boss %s(%s %d) vault %d tries %d solvable %s req %d mons %d %dms" % [f, N, cur_theme()["name"].substr(0, 6), cls, fmod, boss_floor, boss_kind, boss_base, vaults.size(), tries, ok, req, mons.size(), Time.get_ticks_msec() - t0])
 		if not ok:
 			bad += 1
 		if ring(stairs) != maxd:
