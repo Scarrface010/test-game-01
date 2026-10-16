@@ -37,3 +37,11 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 - Relic screen has a SKIP button (+3 coins), so cursed relics are never forced.
 - Shop is paged (6 per page) with 10 new permanent upgrades: Deep Pockets, Treasure Hunter, Lantern Oil, Toolbox, Gate Whisperer, Steel Boots, Haggler, Head Start, Phoenix Ash, Interest.
 - Class screen has a two-tap RESET ALL PROGRESS button (wipes bank, upgrades, best).
+
+## v7: Adventure mode
+- New mode selector before class select: **Puzzle** (the original) and **Adventure**.
+- Adventure: sprawling rooms-and-corridors station (36x36 growing to 56x56), scrolling camera, tap-to-walk, fog of war (you only see nearby; explored areas are remembered, monsters only show when in sight), a minimap, and an exit that needs X points (kills, coins, items, vaults) before it opens.
+- Air replaces the dark: every step costs air, air pods refill it, running out kills you. Leftover air becomes bonus coins. Class/relic/shop "dark" perks are reinterpreted as air/sight/points perks.
+- Hunters chase at half speed, thieves steal coins, every 5th floor a boss guards the exit, key + vault rooms, scanners reveal the map.
+- Maps are generated so everything is reachable and monsters can always be beaten in ascending order; check with `godot --headless --path godot-project -- --advtest`.
+- Dev URL: `?mode=adv&class=scout&floor=N`.
