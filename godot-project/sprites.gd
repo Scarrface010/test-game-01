@@ -155,8 +155,8 @@ func _text(cv: Cv, s: String, x: int, y: int, c: Color) -> void:
 
 # ---------------------------------------------------------------- player
 
-func player(accent: Color, cls: String) -> ImageTexture:
-	var key := "player_" + cls
+func player(accent: Color, cls: String, frame: int = 0) -> ImageTexture:
+	var key := "player_%s_%d" % [cls, frame]
 	if cache.has(key):
 		return cache[key]
 	var cv := Cv.new(32, 32)
@@ -169,10 +169,12 @@ func player(accent: Color, cls: String) -> ImageTexture:
 	cv.rrect(7, 12, 18, 11, 2.0, metal)
 	cv.rrect(4, 14, 4, 8, 1.5, dark)
 	cv.rrect(24, 14, 4, 8, 1.5, dark)
-	cv.rrect(10, 21, 5, 8, 1.5, suit_d)
-	cv.rrect(17, 21, 5, 8, 1.5, suit_d)
-	cv.rrect(9, 26, 7, 5, 1.5, dark)
-	cv.rrect(16, 26, 7, 5, 1.5, dark)
+	var dl := -3 if frame == 1 else 0
+	var dr := -3 if frame == 2 else 0
+	cv.rrect(10, 21 + dl, 5, 8, 1.5, suit_d)
+	cv.rrect(17, 21 + dr, 5, 8, 1.5, suit_d)
+	cv.rrect(9, 26 + dl, 7, 5, 1.5, dark)
+	cv.rrect(16, 26 + dr, 7, 5, 1.5, dark)
 	cv.rrect(9, 13, 14, 10, 2.5, suit)
 	cv.rrect(5, 14, 5, 9, 2.0, suit)
 	cv.rrect(22, 14, 5, 9, 2.0, suit)
@@ -198,10 +200,15 @@ func player(accent: Color, cls: String) -> ImageTexture:
 	cv.line(10, 14, 21, 14, suit_d)
 	cv.rect(10, 17, 1, 4, suit_d)
 	cv.rect(21, 17, 1, 4, suit_d)
-	cv.rect(11, 24, 4, 1, accent.darkened(0.2))
-	cv.rect(17, 24, 4, 1, accent.darkened(0.2))
-	cv.rect(10, 28, 5, 1, metal)
-	cv.rect(17, 28, 5, 1, metal)
+	cv.rect(11, 24 + dl, 4, 1, accent.darkened(0.2))
+	cv.rect(17, 24 + dr, 4, 1, accent.darkened(0.2))
+	cv.rect(10, 28 + dl, 5, 1, metal)
+	cv.rect(17, 28 + dr, 5, 1, metal)
+	# arm swing opposite to the raised leg
+	if frame == 1:
+		cv.rect(23, 20, 4, 2, dark)
+	elif frame == 2:
+		cv.rect(5, 20, 4, 2, dark)
 	if cls == "scout":
 		cv.line(23, 4, 25, 0, dark)
 		cv.disc(25, 1, 1.4, accent.lightened(0.5))
@@ -790,8 +797,8 @@ func wall_tile(ti: int) -> ImageTexture:
 
 # ---------------------------------------------------------------- monsters
 
-func monster(ti: int, lvl: int, boss: bool) -> ImageTexture:
-	var key := "m%d_%d_%d" % [ti, lvl, 1 if boss else 0]
+func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture:
+	var key := "m%d_%d_%d_%d" % [ti, lvl, 1 if boss else 0, 1 if blink else 0]
 	if cache.has(key):
 		return cache[key]
 	var cols: Array = themes[ti]["mcols"]
@@ -863,6 +870,9 @@ func monster(ti: int, lvl: int, boss: bool) -> ImageTexture:
 			cv.ell(ex, ey, 2.6, 3.1, glow)
 			cv.disc(ex + sgn * -0.2, ey + 0.8, 1.5, Color("14141c") if not boss else Color("2a0a0a"))
 			cv.px(int(ex - 1), int(ey - 1), Color.WHITE)
+			if blink:
+				cv.ell(ex, ey, 3.6, 4.1, body.darkened(0.08))
+				cv.line(ex - 3, ey + 1, ex + 3, ey + 1, Color("14141c"))
 	elif etype == 1:
 		cv.ell(16, ey, 5.2, 5.0, Color("14141c"))
 		cv.ell(16, ey, 4.4, 4.2, glow)
@@ -870,6 +880,10 @@ func monster(ti: int, lvl: int, boss: bool) -> ImageTexture:
 		cv.disc(16, ey + 0.5, 1.3, Color("14141c"))
 		cv.px(14, int(ey - 1), Color.WHITE)
 		cv.px(15, int(ey - 2), Color.WHITE)
+		if blink:
+			cv.ell(16, ey, 5.5, 5.3, body.darkened(0.08))
+			cv.line(11, ey + 1, 21, ey + 1, Color("14141c"))
+			cv.line(12, ey + 2, 20, ey + 2, body.darkened(0.3))
 	else:
 		for sgn in [-1, 1]:
 			var ex2: float = 16.0 + sgn * 5.0
@@ -878,6 +892,11 @@ func monster(ti: int, lvl: int, boss: bool) -> ImageTexture:
 			cv.px(int(ex2), int(ey - 1), Color("14141c"))
 		cv.disc(16, ey + 3, 1.6, Color("14141c"))
 		cv.px(16, int(ey + 3), glow)
+		if blink:
+			for sgn2 in [-1, 1]:
+				cv.disc(16.0 + sgn2 * 5.0, ey - 1, 2.5, body.darkened(0.08))
+				cv.line(16.0 + sgn2 * 5.0 - 2, ey, 16.0 + sgn2 * 5.0 + 2, ey, Color("14141c"))
+			cv.disc(16, ey + 3, 2.0, body.darkened(0.08))
 	# brow
 	var browy := int(ey - 4.5)
 	cv.line(10, browy + 1, 14, browy + (2 if etype != 1 else 1), dk.darkened(0.3))
@@ -918,5 +937,20 @@ func monster(ti: int, lvl: int, boss: bool) -> ImageTexture:
 	cv.outline(body.darkened(0.82))
 	cv.img.fix_alpha_edges()
 	var t := cv.tex()
+	cache[key] = t
+	return t
+
+
+func white(tex: ImageTexture) -> ImageTexture:
+	var key := "white_%d" % tex.get_instance_id()
+	if cache.has(key):
+		return cache[key]
+	var img := tex.get_image().duplicate() as Image
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a > 0.0:
+				img.set_pixel(x, y, Color(1, 1, 1, c.a))
+	var t := ImageTexture.create_from_image(img)
 	cache[key] = t
 	return t

@@ -19,6 +19,34 @@ const AMY := 644.0
 var themes: Array = []
 var font: Font = ThemeDB.fallback_font
 var tex_cache: Dictionary = {}
+var vis_pos := Vector2.ZERO
+var pface := 1.0
+var walk_phase := 0.0
+var idle_t := 0.0
+var fx: Array = []
+var mon_slide: Dictionary = {}
+var mon_hit: Dictionary = {}
+var mon_lunge: Dictionary = {}
+var p_hit_t0 := -10.0
+var p_atk_t0 := -10.0
+var p_atk_dir := Vector2.ZERO
+var shake_amp := 0.0
+var shake_t0 := -10.0
+var shake_dur := 0.3
+var tr_base := Vector2.ZERO
+var reveal: Dictionary = {}
+var vfade: Dictionary = {}
+var anim_floor := -1
+var anim_mode := ""
+var anim_level := 0
+var door_prev := false
+var door_t0 := -10.0
+var lvl_t0 := -10.0
+var lvl_n := 0
+var pick_c := Vector2i(-1, -1)
+var pick_kind := ""
+var amb: Array = []
+var fx_demo := false
 var spr_gen
 const SpritesLib := preload("res://sprites.gd")
 
@@ -179,6 +207,10 @@ func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_make_themes()
 	spr_gen = SpritesLib.new(themes)
+	var ar := RandomNumberGenerator.new()
+	ar.seed = 99
+	for i in 40:
+		amb.append([ar.randf() * 720.0, ar.randf() * 1280.0, ar.randf_range(0.3, 1.0), ar.randf() * TAU, ar.randf_range(2.0, 4.5)])
 	var cfg := ConfigFile.new()
 	if cfg.load("user://best.cfg") == OK:
 		best = int(cfg.get_value("s", "best", 0))
@@ -217,6 +249,7 @@ func _ready() -> void:
 		var fq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('floor')")
 		var cq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('class')")
 		var mq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('mode')")
+		fx_demo = demo != null and String(demo) == "fx"
 		if mq != null and String(mq) == "adv":
 			mode = "adv"
 		if cq != null:
@@ -530,8 +563,8 @@ func _tex_from_rows(rows: Array, pal: Dictionary) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-func _player_tex() -> ImageTexture:
-	return spr_gen.player((cdef()["col"] as Color), cls)
+func _player_tex(frame := 0) -> ImageTexture:
+	return spr_gen.player((cdef()["col"] as Color), cls, frame)
 
 
 func _item_tex(kind: String) -> ImageTexture:
@@ -546,8 +579,8 @@ func _wall_tex(ti: int) -> ImageTexture:
 	return spr_gen.wall_tile(ti)
 
 
-func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
-	return spr_gen.monster(ti, lvl, boss)
+func _monster_tex(ti: int, lvl: int, boss: bool, blink := false) -> ImageTexture:
+	return spr_gen.monster(ti, lvl, boss, blink)
 
 
 func _setup_size() -> void:
@@ -841,8 +874,39 @@ func _solvable() -> bool:
 
 # ---------- gameplay ----------
 
+func _pvf() -> Vector2:
+	return vis_pos
+
+
 func _pop(c: Vector2i, text: String, col: Color) -> void:
 	pops.append({"p": _cell_rect(c).get_center(), "cell": c, "s": text, "c": col, "t": t})
+	var cf := Vector2(c)
+	if text == "VAULT!":
+		_fx_burst(cf, Color("ffd84f"), 24, 4.2, 0.8, 6.0)
+		_fx_ring(cf, Color("ffd84f"), 1.1, 0.5, 4.0)
+		_shake(3.0, 0.2)
+	elif text == "SHIELD!" or text == "BLOCKED":
+		_fx_ring(cf, Color("7db2ff"), 1.0, 0.4, 5.0)
+		_fx_burst(cf, Color("7db2ff"), 12, 3.4, 0.5, 5.0)
+	elif text == "BOSS DOWN":
+		_fx_burst(cf, Color("ffd84f"), 40, 5.0, 0.9, 7.0)
+		_fx_ring(cf, Color("ffd84f"), 2.0, 0.7, 6.0)
+		_shake(9.0, 0.5)
+	elif text == "OUCH":
+		_fx_burst(_pvf(), Color("ff7a7a"), 12, 3.0, 0.4, 5.0)
+		_fx_ring(_pvf(), Color("ff5d5d"), 0.8, 0.35, 4.0)
+		p_hit_t0 = t
+		_shake(4.0, 0.22)
+	elif text == "AIR FULL":
+		_fx_ring(cf, Color("7fd8ff"), 1.3, 0.6, 5.0)
+		for i in 10:
+			_fx_spark(cf + Vector2(randf_range(-0.3, 0.3), 0.2), Vector2(randf_range(-0.4, 0.4), randf_range(-2.4, -1.0)), Color("c8f1ff"), randf_range(0.6, 1.0), randf_range(3.0, 6.0), 1.2)
+	elif text == "SCAN":
+		_fx_ring(cf, Color("ffe9a0"), 3.0, 0.7, 4.0)
+		_fx_ring(cf, Color("ffe9a0"), 5.0, 0.9, 2.0, 0.12)
+	elif text == "ARMOUR":
+		_fx_ring(cf, Color("c9d3f0"), 1.0, 0.45, 5.0)
+		_fx_burst(cf, Color("c9d3f0"), 10, 3.0, 0.5, 5.0)
 
 
 func _use_name(id: String) -> String:
@@ -944,6 +1008,8 @@ func _step(nc: Vector2i) -> void:
 	elif items.has(nc):
 		var kind: String = items[nc]
 		items.erase(nc)
+		pick_c = nc
+		pick_kind = kind
 		if kind.begins_with("use_"):
 			var uid := kind.substr(4)
 			if _give_use(uid):
@@ -989,6 +1055,8 @@ func _step(nc: Vector2i) -> void:
 			msg = "Heavy Boots shrug off the spikes"
 	elif coin_at.has(nc):
 		coin_at.erase(nc)
+		pick_c = nc
+		pick_kind = "coin"
 		var cv := coin_val()
 		coins += cv
 		msg = "Coin! %d total" % coins
@@ -1024,6 +1092,7 @@ func _step(nc: Vector2i) -> void:
 
 
 func _remove_mon(c: Vector2i) -> void:
+	_fx_death(c)
 	mons.erase(c)
 	mon_hp.erase(c)
 	elite.erase(c)
@@ -1596,8 +1665,9 @@ func _gui_input(event: InputEvent) -> void:
 
 func _process(dt: float) -> void:
 	t += dt
+	_anim_update(dt)
 	if state == PLAY and mode == "adv":
-		cam = cam.lerp(Vector2(pos), minf(1.0, dt * 9.0))
+		cam = cam.lerp(vis_pos, minf(1.0, dt * 12.0))
 		if walk.size() > 0:
 			walk_t += dt
 			if walk_t >= 0.11:
@@ -1619,6 +1689,539 @@ func _process(dt: float) -> void:
 			pops.remove_at(i)
 		i -= 1
 	queue_redraw()
+
+
+# ---------- animation layer ----------
+
+func _wp(cf: Vector2) -> Vector2:
+	if mode == "adv":
+		return Vector2(AMX + (cf.x - cam.x) * AC, AMY + (cf.y - cam.y) * AC)
+	return Vector2(GX + (cf.x + 0.5) * cell, GY + (cf.y + 0.5) * cell)
+
+
+func _fx_band() -> Rect2:
+	if mode == "adv":
+		return Rect2(0, 318, 720, 652)
+	return Rect2(GX, GY, N * cell, N * cell)
+
+
+func _shake(amp: float, dur := 0.25) -> void:
+	var age := t - shake_t0
+	var cur := 0.0
+	if age < shake_dur:
+		cur = shake_amp * (1.0 - age / shake_dur)
+	if amp >= cur:
+		shake_amp = amp
+		shake_t0 = t
+		shake_dur = dur
+
+
+func _shake_off() -> Vector2:
+	var age := t - shake_t0
+	if age >= shake_dur:
+		return Vector2.ZERO
+	var k := 1.0 - age / shake_dur
+	return Vector2(sin(t * 83.0), cos(t * 71.0)) * shake_amp * k * k
+
+
+func _map_begin() -> void:
+	tr_base = _shake_off()
+	draw_set_transform(tr_base)
+
+
+func _map_end() -> void:
+	tr_base = Vector2.ZERO
+	draw_set_transform(Vector2.ZERO)
+
+
+func _spr_ex(tex: Texture2D, ctr: Vector2, ssz: float, mod: Color, flip: float, rot: float, sx: float, sy: float) -> void:
+	draw_set_transform_matrix(Transform2D(rot, Vector2(sx * flip, sy), 0.0, ctr + tr_base))
+	draw_texture_rect(tex, Rect2(-ssz * 0.5, -ssz * 0.5, ssz, ssz), false, mod)
+	draw_set_transform(tr_base)
+
+
+func _fx_spark(p: Vector2, v: Vector2, col: Color, life: float, size: float, drag := 3.0) -> void:
+	if fx.size() > 420:
+		return
+	fx.append({"k": "spark", "p": p, "v": v, "t0": t, "life": life, "col": col, "s": size, "drag": drag})
+
+
+func _fx_burst(p: Vector2, col: Color, n: int, speed: float, life := 0.5, size := 6.0) -> void:
+	for i in n:
+		var a := randf() * TAU
+		var sp := speed * (0.35 + randf() * 0.85)
+		_fx_spark(p, Vector2(cos(a), sin(a)) * sp, col.lerp(Color.WHITE, randf() * 0.4), life * (0.7 + randf() * 0.6), size * (0.6 + randf() * 0.8))
+
+
+func _fx_ring(p: Vector2, col: Color, r1: float, life := 0.45, w := 4.0, delay := 0.0, scr := false) -> void:
+	if fx.size() > 420:
+		return
+	fx.append({"k": "ring", "p": p, "t0": t, "d": delay, "life": life, "col": col, "r": r1, "w": w, "scr": scr})
+
+
+func _fx_hit(c: Vector2i, crit: bool, lunge := true) -> void:
+	var cf := Vector2(c)
+	var dv := Vector2(c - pos).normalized() if c != pos else Vector2(0, -1)
+	if lunge:
+		p_atk_t0 = t
+		p_atk_dir = dv
+	mon_hit[c] = [t, dv, 0]
+	var col := Color("ffd84f") if crit else Color("fff0d0")
+	fx.append({"k": "slash", "p": cf, "t0": t, "life": 0.3, "ang": dv.angle(), "col": col, "crit": crit})
+	_fx_burst(cf, col, 14 if crit else 7, 3.6 if crit else 2.8, 0.35, 5.0)
+	_shake(6.0 if crit else 2.6, 0.3 if crit else 0.18)
+	if crit:
+		_fx_ring(cf, col, 0.8, 0.35, 5.0)
+
+
+func _fx_death(c: Vector2i) -> void:
+	if not mons.has(c) or themes.is_empty():
+		return
+	var base_lv: int = mons[c]
+	var is_boss := boss_floor and c == boss_cell
+	var ti := tidx()
+	var cols: Array = themes[ti]["mcols"]
+	var body: Color = cols[(base_lv - 1) % cols.size()]
+	var big := is_boss or elite.has(c)
+	var cf := Vector2(c)
+	fx.append({"k": "ghost", "p": cf, "t0": t, "life": 0.55, "ti": ti, "lv": base_lv, "boss": is_boss})
+	_fx_burst(cf, body, 40 if is_boss else (26 if big else 16), 4.4 if big else 3.4, 0.7, 7.0)
+	_fx_burst(cf, Color.WHITE, 8, 5.0, 0.3, 4.0)
+	_fx_ring(cf, body.lightened(0.4), 0.9, 0.45, 5.0)
+	if big:
+		_fx_burst(cf, Color("ffd84f"), 16, 5.0, 0.8, 6.0)
+		_fx_ring(cf, Color("ffd84f"), 1.4, 0.6, 4.0, 0.08)
+	if is_boss:
+		_fx_ring(cf, Color.WHITE, 2.2, 0.8, 5.0, 0.18)
+	_shake(9.0 if is_boss else (5.0 if big else 3.0), 0.5 if is_boss else 0.3)
+
+
+func _fx_pickup(c: Vector2i, kind: String) -> void:
+	var from := _wp(Vector2(c))
+	var tgt := Vector2(110, 232)
+	var col := Color("ffc93c")
+	if kind == "coin":
+		pass
+	elif kind == "pot" or kind == "big":
+		tgt = Vector2(170, 251)
+		col = Color("ffd84f") if kind == "pot" else Color("4fd1ff")
+	elif kind == "hp" or kind == "armor" or kind == "shield":
+		tgt = Vector2(530, 234)
+		col = Color("ff8a9a") if kind == "hp" else Color("9fb3d9")
+	elif kind == "pod":
+		tgt = Vector2(530, 206)
+		col = Color("7fd8ff")
+	elif kind == "key":
+		tgt = Vector2(70, 266)
+		col = Color("ffd84f")
+	elif kind.begins_with("use_"):
+		tgt = Vector2(90, 1000)
+		col = use_defs[kind.substr(4)]["col"]
+	elif kind.begins_with("gear_"):
+		tgt = Vector2(648, 43)
+		col = _gear_col(String(gear_defs[kind.substr(5)]["slot"]))
+	else:
+		tgt = _wp(vis_pos)
+		col = Color("ffe9a0")
+	fx.append({"k": "fly", "sp": from, "tp": tgt, "t0": t, "life": 0.6, "col": col, "kind": kind})
+	_fx_burst(Vector2(c), col, 8, 2.6, 0.4, 4.0)
+	_fx_ring(Vector2(c), col, 0.5, 0.3, 3.0)
+
+
+func _fx_levelup() -> void:
+	lvl_t0 = t
+	lvl_n = level
+	var cf := vis_pos
+	_fx_ring(cf, Color("ffd84f"), 0.9, 0.5, 6.0)
+	_fx_ring(cf, Color.WHITE, 1.5, 0.6, 4.0, 0.1)
+	_fx_ring(cf, Color("ffd84f"), 2.2, 0.7, 3.0, 0.2)
+	for i in 26:
+		var a := randf_range(-PI * 0.95, -PI * 0.05)
+		_fx_spark(cf + Vector2(randf_range(-0.4, 0.4), 0.1), Vector2(cos(a) * 1.6, sin(a) * 4.2), Color("ffe680").lerp(Color.WHITE, randf() * 0.5), randf_range(0.7, 1.2), randf_range(4.0, 8.0), 1.6)
+	_shake(3.0, 0.2)
+
+
+func _fx_door() -> void:
+	door_t0 = t
+	var cf := Vector2(stairs)
+	_fx_burst(cf, Color("6dff9a"), 30, 4.0, 0.8, 6.0)
+	_fx_ring(cf, Color("6dff9a"), 1.2, 0.6, 5.0)
+	_fx_ring(cf, Color.WHITE, 1.9, 0.8, 3.0, 0.12)
+	_shake(4.0, 0.3)
+	_sfx("big")
+
+
+func _fx_bolt(a: Vector2, b: Vector2) -> void:
+	var pts: Array = [a]
+	var n := 7
+	var d := b - a
+	var perp := Vector2(-d.y, d.x).normalized()
+	for i in range(1, n):
+		pts.append(a + d * (float(i) / n) + perp * randf_range(-0.22, 0.22))
+	pts.append(b)
+	fx.append({"k": "bolt", "pts": pts, "t0": t, "life": 0.3, "col": Color("ffe14f")})
+	_fx_burst(b, Color("ffe14f"), 10, 3.5, 0.4, 5.0)
+	_shake(4.0, 0.22)
+
+
+func _p_off() -> Vector2:
+	var o := Vector2.ZERO
+	var a := t - p_atk_t0
+	if a < 0.2:
+		o += p_atk_dir * cell * 0.28 * sin(a / 0.2 * PI)
+	var h := t - p_hit_t0
+	if h < 0.25:
+		o += Vector2(sin(h * 90.0), 0.0) * 5.0 * (1.0 - h / 0.25)
+	return o
+
+
+func _mon_off(c: Vector2i) -> Vector2:
+	var o := Vector2.ZERO
+	if mon_slide.has(c):
+		var sl: Array = mon_slide[c]
+		var k := clampf((t - float(sl[1])) / 0.22, 0.0, 1.0)
+		var e := k * k * (3.0 - 2.0 * k)
+		o += (sl[0] as Vector2) * (1.0 - e) * cell
+	if mon_hit.has(c):
+		var h: Array = mon_hit[c]
+		var a := t - float(h[0])
+		if a < 0.3:
+			var kk := 1.0 - a / 0.3
+			o += (h[1] as Vector2) * cell * 0.22 * kk * kk + Vector2(sin(a * 95.0) * 4.0 * kk, 0.0)
+	if mon_lunge.has(c):
+		var l: Array = mon_lunge[c]
+		var a2 := t - float(l[0])
+		if a2 >= 0.0 and a2 < 0.26:
+			o += (l[1] as Vector2) * cell * 0.34 * sin(a2 / 0.26 * PI)
+	return o
+
+
+func _draw_player(prc: Vector2, sz: float) -> void:
+	var moving := vis_pos.distance_to(Vector2(pos)) > 0.05
+	var fr := 0
+	var hop := 0.0
+	var wob := 0.0
+	var sy := 1.0 + 0.025 * sin(t * 2.6)
+	var lean := 0.0
+	if moving:
+		fr = 1 + int(walk_phase) % 2
+		var sn := absf(sin(walk_phase * PI))
+		hop = sn * sz * 0.1
+		sy = 1.0 + 0.06 * sn - 0.05 * (1.0 - sn)
+		wob = sin(walk_phase * PI) * 0.05
+		lean = clampf(Vector2(pos).x - vis_pos.x, -1.0, 1.0) * 0.1
+	var sx := 1.0 + (1.0 - sy) * 0.8
+	var feet := -(sy - 1.0) * sz * 0.5
+	var tex := _player_tex(fr)
+	var at := prc + Vector2(0, -hop + feet)
+	_spr_ex(tex, at, sz, Color.WHITE, pface, wob + lean, sx, sy)
+	var fl := clampf(1.0 - (t - p_hit_t0) / 0.3, 0.0, 1.0)
+	if fl > 0.0:
+		_spr_ex(spr_gen.white(tex), at, sz, Color(1.0, 0.35, 0.35, fl * 0.85), pface, wob + lean, sx, sy)
+
+
+func _draw_mon_sprite(c: Vector2i, ctr: Vector2, ti: int, base_lv: int, is_boss: bool, sz: float, mod := Color.WHITE, asleep := false, yoff := 0.0) -> void:
+	var hop := 0.0
+	var fl := 0.0
+	var squash := 1.0
+	if mon_slide.has(c):
+		var sl: Array = mon_slide[c]
+		var k := clampf((t - float(sl[1])) / 0.22, 0.0, 1.0)
+		if k < 1.0:
+			hop = sin(k * PI) * sz * 0.14
+			squash = 1.0 + 0.08 * sin(k * PI)
+	if mon_hit.has(c):
+		var h: Array = mon_hit[c]
+		var a := t - float(h[0])
+		if a < 0.3:
+			var kk := 1.0 - a / 0.3
+			fl = kk
+			squash *= 1.0 - 0.18 * kk
+	var ph := t * 2.2 + float(c.x * 7 + c.y * 13)
+	var sy := squash * (1.0 + (0.0 if asleep else 0.035 * sin(ph)))
+	var sx := 1.0 + (1.0 - sy) * 0.7
+	var bl := asleep or fmod(t * 0.42 + float(c.x * 37 + c.y * 91) * 0.173, 1.0) > 0.93
+	var tex := _monster_tex(ti, base_lv, is_boss, bl)
+	var at := ctr + Vector2(0, -hop + yoff - (sy - 1.0) * sz * 0.5)
+	_spr_ex(tex, at, sz, mod, 1.0, 0.0, sx, sy)
+	if fl > 0.0:
+		_spr_ex(spr_gen.white(tex), at, sz, Color(1, 1, 1, fl * 0.85), 1.0, 0.0, sx, sy)
+
+
+func _glint(c: Vector2, gs: float, ph: float, col := Color(1, 1, 0.9)) -> void:
+	var g := pow(maxf(0.0, sin(t * 1.9 + ph)), 16.0)
+	if g < 0.06:
+		return
+	var l := gs * g
+	var cc := Color(col.r, col.g, col.b, g)
+	draw_line(c + Vector2(-l, 0), c + Vector2(l, 0), cc, 2.0)
+	draw_line(c + Vector2(0, -l), c + Vector2(0, l), cc, 2.0)
+	draw_line(c + Vector2(-l, -l) * 0.5, c + Vector2(l, l) * 0.5, Color(cc.r, cc.g, cc.b, g * 0.5), 1.5)
+	draw_line(c + Vector2(l, -l) * 0.5, c + Vector2(-l, l) * 0.5, Color(cc.r, cc.g, cc.b, g * 0.5), 1.5)
+	draw_circle(c, 1.5 + 2.0 * g, Color(1, 1, 1, g))
+
+
+func _draw_coin(ctr: Vector2, bob: float, csz: float, ph: float) -> void:
+	var spin := absf(cos(t * 3.2 + ph))
+	var w := csz * (0.18 + 0.82 * spin)
+	draw_texture_rect(_item_tex("coin"), Rect2(ctr.x - w * 0.5, ctr.y + bob - csz * 0.5, w, csz), false)
+	_glint(ctr + Vector2(csz * 0.28, -csz * 0.3 + bob), csz * 0.4, ph * 1.7)
+
+
+func _fog_a(c: Vector2i, dim: float) -> float:
+	var rv: float = reveal.get(c, 0.0)
+	var vf: float = vfade.get(c, 0.0)
+	return 1.0 - rv * (1.0 - dim * (1.0 - vf))
+
+
+func _amb_draw(band: Rect2, ti: int) -> void:
+	var cx := cam.x * AC * 0.35 if mode == "adv" else 0.0
+	var cy := cam.y * AC * 0.35 if mode == "adv" else 0.0
+	for a in amb:
+		var sp: float = a[2]
+		var ph: float = a[3]
+		var sz: float = a[4]
+		var x := fposmod(float(a[0]) - cx + sin(t * sp + ph) * 24.0, 720.0)
+		var y := 0.0
+		if ti == 0:
+			y = fposmod(float(a[1]) - cy + t * 7.0 * sp, 1280.0)
+		elif ti == 1:
+			y = fposmod(float(a[1]) - cy - t * 15.0 * sp, 1280.0)
+		else:
+			y = fposmod(float(a[1]) - cy - t * 30.0 * sp, 1280.0)
+		if not band.has_point(Vector2(x, y)):
+			continue
+		if ti == 0:
+			var al := 0.12 + 0.12 * sin(t * sp * 3.0 + ph)
+			draw_rect(Rect2(x, y, sz * 0.7, sz * 0.7), Color(0.75, 0.88, 1.0, al))
+			if sin(t * sp * 7.0 + ph * 5.0) > 0.985:
+				var cc := Color(0.6, 0.9, 1.0, 0.9)
+				draw_line(Vector2(x - 5, y), Vector2(x + 5, y), cc, 2.0)
+				draw_line(Vector2(x, y - 5), Vector2(x, y + 5), cc, 2.0)
+		elif ti == 1:
+			var g := 0.5 + 0.5 * sin(t * 1.6 * sp + ph)
+			var col := Color(0.55, 1.0, 0.65) if int(ph * 10.0) % 3 != 0 else Color(1.0, 0.65, 0.85)
+			draw_circle(Vector2(x, y), sz * 2.4, Color(col.r, col.g, col.b, 0.07 + 0.08 * g))
+			draw_circle(Vector2(x, y), sz * 0.55, Color(col.r, col.g, col.b, 0.35 + 0.5 * g))
+		else:
+			var fl := 0.5 + 0.5 * sin(t * 9.0 * sp + ph * 3.0)
+			var col2 := Color(1.0, 0.55 + 0.25 * fl, 0.2)
+			draw_circle(Vector2(x, y), sz * 1.6, Color(col2.r, col2.g, col2.b, 0.08))
+			draw_rect(Rect2(x, y, sz * 0.5, sz * 0.5), Color(col2.r, col2.g, col2.b, 0.35 + 0.45 * fl))
+
+
+func _fx_draw() -> void:
+	for f in fx:
+		var k: String = f["k"]
+		if k == "fly" or (k == "ring" and f["scr"]):
+			continue
+		var age := t - float(f["t0"]) - float(f.get("d", 0.0))
+		if age < 0.0:
+			continue
+		var u := age / float(f["life"])
+		if k == "spark":
+			var drag: float = f["drag"]
+			var wp: Vector2 = (f["p"] as Vector2) + (f["v"] as Vector2) * ((1.0 - exp(-drag * age)) / drag)
+			var sp := _wp(wp)
+			var col: Color = f["col"]
+			var s := float(f["s"]) * (1.0 - u * 0.75)
+			draw_circle(sp, s * 1.9, Color(col.r, col.g, col.b, 0.2 * (1.0 - u)))
+			draw_rect(Rect2(sp - Vector2(s, s) * 0.5, Vector2(s, s)), Color(col.r, col.g, col.b, 1.0 - u * u))
+		elif k == "ring":
+			var col3: Color = f["col"]
+			var e := 1.0 - (1.0 - u) * (1.0 - u)
+			var rr := float(f["r"]) * cell * (0.25 + 0.75 * e)
+			var cc2 := _wp(f["p"])
+			draw_arc(cc2, rr, 0, TAU, 40, Color(col3.r, col3.g, col3.b, (1.0 - u) * 0.9), maxf(1.0, float(f["w"]) * (1.0 - u)))
+			draw_arc(cc2, rr * 0.82, 0, TAU, 36, Color(col3.r, col3.g, col3.b, (1.0 - u) * 0.3), 2.0)
+		elif k == "slash":
+			var col4: Color = f["col"]
+			var cc3 := _wp(f["p"])
+			var dd := Vector2.from_angle(float(f["ang"]) + 0.9)
+			var pp := Vector2(-dd.y, dd.x)
+			var lens := cell * (0.62 if f["crit"] else 0.48)
+			for j in range(-1, 2):
+				var off := pp * j * cell * 0.13
+				var a0 := cc3 + off - dd * lens
+				var a1 := cc3 + off + dd * lens
+				var hd := a0.lerp(a1, clampf(u * 2.4, 0.0, 1.0))
+				var tl := a0.lerp(a1, clampf(u * 2.4 - 0.7, 0.0, 1.0))
+				var w := (7.0 if j == 0 else 3.5) * (1.0 - u * 0.6)
+				draw_line(tl, hd, Color(col4.r, col4.g, col4.b, (1.0 - u) * 0.95), w)
+			draw_circle(cc3, cell * 0.3 * (1.0 - u), Color(1, 1, 1, 0.35 * (1.0 - u)))
+		elif k == "ghost":
+			var tex := _monster_tex(int(f["ti"]), int(f["lv"]), bool(f["boss"]))
+			var gsz := cell * (0.98 if f["boss"] else 0.8)
+			var gc := _wp(f["p"])
+			if u < 0.2:
+				var q := u / 0.2
+				var sc := 1.0 + 0.25 * q
+				_spr_ex(tex, gc + Vector2(0, -4), gsz, Color.WHITE, 1.0, 0.0, sc, sc)
+				_spr_ex(spr_gen.white(tex), gc + Vector2(0, -4), gsz, Color(1, 1, 1, 0.9 - 0.4 * q), 1.0, 0.0, sc, sc)
+			else:
+				var q2 := (u - 0.2) / 0.8
+				var sc2 := 1.25 * (1.0 - q2) * (1.0 - q2)
+				_spr_ex(tex, gc + Vector2(0, -4 - q2 * 14.0), gsz, Color(1, 1, 1, 1.0 - q2), 1.0, q2 * 0.9, sc2, sc2)
+				_spr_ex(spr_gen.white(tex), gc + Vector2(0, -4 - q2 * 14.0), gsz, Color(1, 1, 1, 0.5 * (1.0 - q2)), 1.0, q2 * 0.9, sc2, sc2)
+		elif k == "bolt":
+			var pts: Array = f["pts"]
+			var pl := PackedVector2Array()
+			for pt in pts:
+				pl.append(_wp(pt))
+			var bc: Color = f["col"]
+			draw_polyline(pl, Color(bc.r, bc.g, bc.b, (1.0 - u) * 0.4), 10.0)
+			draw_polyline(pl, Color(1, 1, 0.8, 1.0 - u), 3.0)
+
+
+func _bez(a: Vector2, b: Vector2, c: Vector2, u: float) -> Vector2:
+	return a.lerp(b, u).lerp(b.lerp(c, u), u)
+
+
+func _fx_draw_top() -> void:
+	var band := _fx_band()
+	for f in fx:
+		var k: String = f["k"]
+		var age := t - float(f["t0"]) - float(f.get("d", 0.0))
+		if age < 0.0:
+			continue
+		var u := age / float(f["life"])
+		if k == "fly":
+			var sp: Vector2 = f["sp"]
+			var tp: Vector2 = f["tp"]
+			var col: Color = f["col"]
+			var ctl := (sp + tp) * 0.5 + Vector2(0, -150)
+			var e := u * u * (3.0 - 2.0 * u)
+			var p := _bez(sp, ctl, tp, e)
+			for j in range(1, 7):
+				var pj := _bez(sp, ctl, tp, maxf(0.0, e - j * 0.05))
+				draw_circle(pj, 6.0 - j * 0.8, Color(col.r, col.g, col.b, 0.5 * (1.0 - j / 7.0)))
+			var kind: String = f["kind"]
+			var fsz := 44.0 * (1.0 - 0.5 * u)
+			if kind == "coin":
+				var w := fsz * (0.2 + 0.8 * absf(cos(age * 14.0)))
+				draw_texture_rect(_item_tex("coin"), Rect2(p.x - w * 0.5, p.y - fsz * 0.5, w, fsz), false)
+			elif kind in ["pot", "big", "shield", "hp", "armor", "lamp"]:
+				_spr(_item_tex(kind), p, fsz)
+			else:
+				draw_circle(p, fsz * 0.5, Color(col.r, col.g, col.b, 0.3))
+				draw_circle(p, fsz * 0.24, col.lightened(0.3))
+				draw_circle(p, fsz * 0.1, Color.WHITE)
+		elif k == "ring" and f["scr"]:
+			var col2: Color = f["col"]
+			var rr := float(f["r"]) * (0.3 + 0.7 * (1.0 - (1.0 - u) * (1.0 - u)))
+			draw_arc(f["p"], rr, 0, TAU, 28, Color(col2.r, col2.g, col2.b, 1.0 - u), 3.0)
+	# level-up flash and banner
+	var a := t - lvl_t0
+	if a < 1.7:
+		var fk := clampf(1.0 - a / 0.4, 0.0, 1.0)
+		if fk > 0.0:
+			draw_rect(band, Color(1, 0.96, 0.7, 0.3 * fk))
+		var e2 := minf(a / 0.25, 1.0)
+		var fs := int(66.0 * (0.4 + 0.6 * e2 + 0.18 * sin(e2 * PI)))
+		var al := clampf((1.7 - a) / 0.5, 0.0, 1.0)
+		var y := band.position.y + band.size.y * 0.36 - a * 14.0
+		_txt("LEVEL UP!", Vector2(3, y + 4), fs, Color(0, 0, 0, 0.6 * al))
+		_txt("LEVEL UP!", Vector2(0, y), fs, Color(1, 0.85, 0.25, al))
+		_txt("LV %d" % lvl_n, Vector2(0, y + 52), 36, Color(1, 1, 1, al))
+	# damage and low air vignettes
+	var hurt := clampf(1.0 - (t - p_hit_t0) / 0.5, 0.0, 1.0)
+	var low := 0.0
+	if mode == "adv" and state == PLAY and oxy < oxy_max * 0.25:
+		low = 0.5 + 0.5 * sin(t * 5.0)
+	if hurt > 0.0 or low > 0.0:
+		for i in 7:
+			var fade := 1.0 - i / 7.0
+			var rr2 := Rect2(band.position.x + i * 7, band.position.y + i * 7, band.size.x - i * 14, band.size.y - i * 14)
+			if hurt > 0.0:
+				draw_rect(rr2, Color(1, 0.1, 0.1, 0.5 * hurt * fade), false, 7.0)
+			if low > 0.0:
+				draw_rect(rr2, Color(1, 0.2, 0.2, 0.25 * low * fade), false, 7.0)
+
+
+func _anim_update(dt: float) -> void:
+	if themes.is_empty():
+		return
+	var tgt := Vector2(pos)
+	if anim_floor != floor_n or anim_mode != mode:
+		anim_floor = floor_n
+		anim_mode = mode
+		vis_pos = tgt
+		reveal.clear()
+		vfade.clear()
+		mon_slide.clear()
+		mon_hit.clear()
+		mon_lunge.clear()
+		fx.clear()
+		door_prev = mode == "adv" and adv_pts >= adv_req
+		anim_level = level
+	var d := tgt - vis_pos
+	var dist := d.length()
+	if dist > 2.6:
+		vis_pos = tgt
+		dist = 0.0
+	elif dist > 0.001:
+		vis_pos = vis_pos.move_toward(tgt, dt * 10.5)
+	if dist > 0.05:
+		walk_phase += dt * 9.0
+		idle_t = 0.0
+		if absf(d.x) > 0.02:
+			pface = 1.0 if d.x > 0.0 else -1.0
+	else:
+		idle_t += dt
+		if idle_t > 0.12:
+			walk_phase = 0.0
+	var steps := adv_steps if mode == "adv" else moves
+	if level < anim_level:
+		anim_level = level
+	elif level > anim_level:
+		if steps > 0 and state == PLAY:
+			_fx_levelup()
+		anim_level = level
+	if mode == "adv" and state == PLAY:
+		var op := adv_pts >= adv_req
+		if op and not door_prev:
+			_fx_door()
+		door_prev = op
+		for cx in range(int(floor(vis_pos.x)) - 7, int(floor(vis_pos.x)) + 8):
+			for cy in range(int(floor(vis_pos.y)) - 7, int(floor(vis_pos.y)) + 8):
+				var c := Vector2i(cx, cy)
+				if not _ain(c):
+					continue
+				reveal[c] = move_toward(float(reveal.get(c, 0.0)), 1.0 if _aseen(c) else 0.0, dt * 4.0)
+				vfade[c] = move_toward(float(vfade.get(c, 0.0)), 1.0 if adv_vis.has(c) else 0.0, dt * 3.5)
+	if fx_demo and state == PLAY and t > 3.0:
+		fx_demo = false
+		mons[pos + Vector2i(2, 0)] = 3
+		_fx_hit(pos + Vector2i(1, 0), true)
+		_fx_death(pos + Vector2i(2, 0))
+		mons.erase(pos + Vector2i(2, 0))
+		_fx_pickup(pos + Vector2i(-1, 0), "coin")
+		_fx_pickup(pos + Vector2i(-1, 1), "hp")
+		_fx_levelup()
+		_fx_bolt(vis_pos, Vector2(pos + Vector2i(0, -2)))
+		p_hit_t0 = t
+	if pick_kind != "":
+		var gone := not coin_at.has(pick_c) if pick_kind == "coin" else not items.has(pick_c)
+		if gone:
+			_fx_pickup(pick_c, pick_kind)
+		pick_kind = ""
+	for key in mon_slide.keys():
+		if t - float(mon_slide[key][1]) > 0.6:
+			mon_slide.erase(key)
+	for key2 in mon_hit.keys():
+		if t - float(mon_hit[key2][0]) > 0.6:
+			mon_hit.erase(key2)
+	for key3 in mon_lunge.keys():
+		if t - float(mon_lunge[key3][0]) > 0.8:
+			mon_lunge.erase(key3)
+	var i := fx.size() - 1
+	while i >= 0:
+		var f: Dictionary = fx[i]
+		if t - float(f["t0"]) - float(f.get("d", 0.0)) > float(f["life"]):
+			if f["k"] == "fly":
+				_fx_ring(f["tp"], f["col"], 26.0, 0.3, 3.0, 0.0, true)
+			fx.remove_at(i)
+		i -= 1
 
 
 # ---------- drawing ----------
@@ -1700,6 +2303,7 @@ func _draw() -> void:
 	var acc: Color = th["accent"]
 	if mode == "adv" and state != MODE and state != CLASS and state != SHOP:
 		_adv_draw()
+		_fx_draw_top()
 		if state != PLAY:
 			_draw_overlay(acc)
 		return
@@ -1758,6 +2362,7 @@ func _draw() -> void:
 	else:
 		_txt("%s: Lv %d" % [th["gate"], req], Vector2(0, 306), 26, Color.WHITE if level >= req else Color(1, 1, 1, 0.55))
 	# grid
+	_map_begin()
 	var names: Array = th["mons"]
 	var wall_tex := _wall_tex(ti)
 	for x in N:
@@ -1800,7 +2405,7 @@ func _draw() -> void:
 					draw_circle(ctr, cell * 0.5, Color(acc.r, acc.g, acc.b, 0.12 + 0.08 * sin(t * 3.0)))
 				draw_circle(ctr + Vector2(0, cell * 0.3), cell * 0.28, Color(0, 0, 0, 0.3))
 				var mmod := Color(0.62, 0.7, 1.0) if asleep else Color.WHITE
-				_spr(_monster_tex(ti, base_lv, is_boss), ctr + Vector2(0, 0 if asleep else bob), sz, mmod)
+				_draw_mon_sprite(c, ctr + _mon_off(c), ti, base_lv, is_boss, sz, mmod, asleep, 0.0 if asleep else bob)
 				if elite.has(c):
 					_star(Vector2(r.position.x + cell * 0.2, r.position.y + cell * 0.2 + bob), cell * 0.16, Color("ffd84f"))
 				var bp := Vector2(r.end.x - cell * 0.2, r.position.y + cell * 0.2)
@@ -1853,13 +2458,14 @@ func _draw() -> void:
 			elif spikes.has(c):
 				_draw_spikes(ctr)
 			elif coin_at.has(c):
-				_spr(_item_tex("coin"), ctr + Vector2(0, bob), cell * 0.42)
+				_draw_coin(ctr, bob, cell * 0.42, float(x * 5 + y * 3))
 			elif portals.has(c):
 				var pc := Color("c07cff")
 				draw_circle(ctr, cell * 0.34, Color(pc.r, pc.g, pc.b, 0.18))
 				draw_arc(ctr, cell * 0.32, t * 3.0, t * 3.0 + PI * 1.3, 18, pc, 4.0)
 				draw_arc(ctr, cell * 0.2, -t * 4.0, -t * 4.0 + PI * 1.3, 14, Color("e6c8ff"), 3.0)
 				draw_circle(ctr, cell * 0.07, pc)
+	_amb_draw(_fx_band(), ti)
 	# boss on top of its cell
 	if boss_floor:
 		var br := _cell_rect(stairs)
@@ -1884,13 +2490,14 @@ func _draw() -> void:
 					draw_rect(ar, Color(1, 0.88, 0.3, 0.15 + 0.1 * sin(t * 8.0)))
 					draw_rect(ar, Color("ffe14f"), false, 3.0)
 	# player
-	var prc := _cell_rect(pos).get_center()
+	var prc := _wp(vis_pos) + _p_off()
 	draw_circle(prc + Vector2(0, cell * 0.3), cell * 0.25, Color(0, 0, 0, 0.35))
 	if shield:
 		draw_arc(prc, cell * 0.46, 0, TAU, 28, Color(0.5, 0.7, 1.0, 0.5 + 0.2 * sin(t * 5.0)), 3.0)
 	if boost > 0:
 		draw_arc(prc, cell * 0.52, 0, TAU, 28, Color(0.7, 0.72, 0.9, 0.5), 2.0)
-	_spr(_player_tex(), prc + Vector2(0, sin(t * 4.0) * 2.0), cell * 0.78)
+	_draw_player(prc, cell * 0.78)
+	_fx_draw()
 	# floating pops
 	for pp in pops:
 		var age: float = t - float(pp["t"])
@@ -1898,6 +2505,7 @@ func _draw() -> void:
 		pcol.a = 1.0 - age / 0.9
 		var pp_pos: Vector2 = pp["p"]
 		_ctext(pp["s"], pp_pos + Vector2(0, -cell * 0.3 - age * 50.0), 26, pcol)
+	_map_end()
 	# tool slots
 	for i in slots_n():
 		var sr := _slot_rect(i)
@@ -1938,6 +2546,7 @@ func _draw() -> void:
 			if n > 0:
 				parts.append(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else ""))
 		_para("RELICS: " + ", ".join(parts), Vector2(20, 1240), 15, Color(1, 1, 1, 0.6), 680.0)
+	_fx_draw_top()
 	if state != PLAY:
 		_draw_overlay(acc)
 
@@ -2488,6 +3097,7 @@ func _adv_level_up(n: int) -> void:
 func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	if randf() * 100.0 < gear("dodge"):
 		_pop(pos, "DODGE", Color("9fe8ff"))
+		_fx_ring(vis_pos, Color("9fe8ff"), 1.1, 0.35, 3.0)
 		msg += "   You dodge %s!" % who
 		return true
 	var d := dmg_taken(a)
@@ -2495,6 +3105,13 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	sh -= absorbed
 	hp -= d - absorbed
 	_pop(pos, "-%d" % d, Color("ff6a6a") if absorbed < d else Color("7db2ff"))
+	if absorbed > 0:
+		_fx_ring(vis_pos, Color("7db2ff"), 0.9, 0.35, 5.0)
+		_fx_burst(vis_pos, Color("7db2ff"), 8, 3.0, 0.4, 5.0)
+	if absorbed < d:
+		p_hit_t0 = t
+		_fx_burst(vis_pos, Color("ff5d5d"), 10, 3.2, 0.45, 5.0)
+		_shake(4.0 + minf(4.0, d * 0.3), 0.25)
 	msg += "   %s hits you for %d" % [who, d]
 	_sfx("spike")
 	var th := int(gear("thorns"))
@@ -2510,6 +3127,7 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 func _adv_damage_mon(c: Vector2i, dmg: int) -> void:
 	var left := mon_hp_now(c) - dmg
 	_pop(c, "-%d" % dmg, Color("ff9a3c"))
+	_fx_hit(c, false, false)
 	if left <= 0:
 		adv_pts += _mon_level(c) / 2 + (25 if (boss_floor and c == boss_cell) else 0)
 		_adv_gain_xp((3 + _mon_level(c)) / 2)
@@ -3003,6 +3621,7 @@ func _adv_fight(nc: Vector2i) -> int:
 		dmg *= 2
 	var left := mon_hp_now(nc) - dmg
 	_pop(nc, ("CRIT -%d" % dmg) if crit else ("-%d" % dmg), Color("ffd84f") if crit else Color.WHITE)
+	_fx_hit(nc, crit)
 	var lk := int(gear("leech"))
 	if lk > 0 and hp < hp_cap():
 		hp = mini(hp_cap(), hp + lk)
@@ -3012,6 +3631,7 @@ func _adv_fight(nc: Vector2i) -> int:
 	mon_hp[nc] = left
 	msg = "You hit %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(nc)]
 	_sfx("step")
+	mon_lunge[nc] = [t + 0.12, Vector2(pos - nc).normalized()]
 	if not _adv_hurt(mon_atk(nc), nm, nc):
 		return 0
 	return 2
@@ -3060,6 +3680,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	elif items.has(nc):
 		var kind: String = items[nc]
 		items.erase(nc)
+		pick_c = nc
+		pick_kind = kind
 		if kind.begins_with("use_"):
 			var uid := kind.substr(4)
 			if _give_use(uid):
@@ -3155,6 +3777,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			msg = "Heavy Boots shrug off the spikes"
 	elif coin_at.has(nc):
 		coin_at.erase(nc)
+		pick_c = nc
+		pick_kind = "coin"
 		var cv := coin_val()
 		coins += cv
 		adv_pts += 1
@@ -3207,6 +3831,10 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 
 
 func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
+	mon_slide[b] = [Vector2(a - b), t]
+	if mon_hit.has(a):
+		mon_hit[b] = mon_hit[a]
+		mon_hit.erase(a)
 	mons[b] = mons[a]
 	mons.erase(a)
 	if mon_hp.has(a):
@@ -3238,6 +3866,7 @@ func _adv_hunters() -> void:
 		var bd: int = dist[c]
 		if bd == 1:
 			walk.clear()
+			mon_lunge[c] = [t, Vector2(pos - c).normalized()]
 			msg = "%s attacks!" % _adv_mname(c)
 			if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
 				return
@@ -3317,14 +3946,24 @@ func _adv_use_slot(i: int) -> void:
 			_sfx("blocked")
 			return
 		msg = "Boom! Cleared %d things" % hit
+		_fx_ring(vis_pos, Color("ff9a3c"), 2.0, 0.5, 8.0)
+		_fx_ring(vis_pos, Color("ffe14f"), 1.2, 0.4, 5.0)
+		_fx_burst(vis_pos, Color("ff7a45"), 36, 5.5, 0.7, 8.0)
+		_fx_burst(vis_pos, Color("ffe14f"), 14, 4.0, 0.5, 5.0)
+		_shake(9.0, 0.4)
 		_sfx("spike")
 		_adv_update_vis()
 	elif id == "crystal":
 		oxy = minf(oxy_max, oxy + 20.0)
+		_fx_ring(vis_pos, Color("7fd8ff"), 1.2, 0.5, 5.0)
+		for k in 10:
+			_fx_spark(vis_pos + Vector2(randf_range(-0.3, 0.3), 0.1), Vector2(randf_range(-0.4, 0.4), randf_range(-2.4, -1.0)), Color("c8f1ff"), randf_range(0.6, 1.0), randf_range(3.0, 6.0), 1.2)
 		msg = "Air Canister: +20 air"
 		_sfx("lamp")
 	elif id == "draught":
 		_adv_gain_xp(30)
+		_fx_burst(vis_pos, Color("6dff9a"), 18, 3.0, 0.8, 5.0)
+		_fx_ring(vis_pos, Color("6dff9a"), 1.1, 0.5, 5.0)
 		msg = "Elixir! +30 XP"
 		_pop(pos, "+30 XP", Color("6dff9a"))
 		_sfx("big")
@@ -3333,6 +3972,7 @@ func _adv_use_slot(i: int) -> void:
 			msg = "Cloak already active"
 			return
 		boost = 3
+		_fx_burst(vis_pos, Color("9aa3c7"), 16, 2.6, 0.7, 6.0)
 		msg = "Shadow Cloak: +3 attack until your next kill"
 		_sfx("shield")
 	elif id == "magnet":
@@ -3340,6 +3980,7 @@ func _adv_use_slot(i: int) -> void:
 		for c in coin_at.keys():
 			if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 7:
 				coin_at.erase(c)
+				_fx_pickup(c, "coin")
 				n += 1
 		if n == 0:
 			msg = "No coins nearby"
@@ -3371,9 +4012,14 @@ func _adv_aim_apply(c: Vector2i) -> void:
 	aim = -1
 	if id == "blink":
 		_sfx("warp")
+		_fx_burst(vis_pos, Color("b57cff"), 16, 3.0, 0.5, 5.0)
+		_fx_ring(vis_pos, Color("b57cff"), 1.0, 0.4, 4.0)
 		_adv_step(c, true)
+		_fx_burst(Vector2(c), Color("b57cff"), 16, 3.0, 0.5, 5.0)
+		_fx_ring(Vector2(c), Color("e6c8ff"), 1.0, 0.4, 4.0)
 	elif id == "zap":
 		_pop(c, "ZAP", Color("ffe14f"))
+		_fx_bolt(vis_pos, Vector2(c))
 		_adv_damage_mon(c, 12)
 		msg = "Zap! 12 damage"
 		_sfx("elite")
@@ -3419,11 +4065,12 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	var oc := _adv_outcome(c)
 	var mc := Color("49d17a") if oc == 0 else (Color("ffb02e") if oc == 1 else Color("ef4b55"))
 	var sz := AC * (0.98 if is_boss else 0.8)
-	var bob := sin(t * 3.0 + c.x * 1.7 + c.y) * 2.0
+	var bob := 0.0
+	ctr += _mon_off(c)
 	if is_boss:
 		draw_circle(ctr, AC * 0.55, Color(acc.r, acc.g, acc.b, 0.15 + 0.08 * sin(t * 3.0)))
 	draw_circle(ctr + Vector2(0, AC * 0.3), AC * 0.28, Color(0, 0, 0, 0.3))
-	_spr(_monster_tex(ti, base_lv, is_boss), ctr + Vector2(0, bob - 4.0), sz)
+	_draw_mon_sprite(c, ctr, ti, base_lv, is_boss, sz, Color.WHITE, false, -4.0)
 	if elite.has(c):
 		_star(ctr + Vector2(-AC * 0.3, -AC * 0.3 + bob), AC * 0.16, Color("ffd84f"))
 	var bp := ctr + Vector2(AC * 0.3, -AC * 0.3)
@@ -3452,8 +4099,18 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 
 func _draw_station(ctr: Vector2) -> void:
 	var pc := Color("7fd8ff")
-	draw_circle(ctr, AC * 0.46, Color(pc.r, pc.g, pc.b, 0.12 + 0.06 * sin(t * 3.0)))
+	var fl := 0.5 + 0.5 * sin(t * 3.0)
+	var flick := 0.85 + 0.15 * sin(t * 17.0) * sin(t * 5.3)
+	draw_circle(ctr, AC * 0.6, Color(pc.r, pc.g, pc.b, 0.06 * flick))
+	draw_circle(ctr, AC * 0.46, Color(pc.r, pc.g, pc.b, (0.12 + 0.06 * fl) * flick))
 	_spr(spr_gen.icon("station"), ctr, AC * 0.85)
+	draw_arc(ctr, AC * 0.4, t * 1.6, t * 1.6 + PI * 0.7, 14, Color(0.9, 0.97, 1.0, 0.75), 2.5)
+	draw_arc(ctr, AC * 0.4, t * 1.6 + PI, t * 1.6 + PI * 1.7, 14, Color(0.9, 0.97, 1.0, 0.75), 2.5)
+	for bi in 6:
+		var ph := fmod(t * 0.45 + bi * 0.167, 1.0)
+		var bp := Vector2(ctr.x + sin(bi * 2.3 + t) * AC * 0.18, ctr.y + AC * 0.15 - ph * AC * 0.6)
+		var ba := sin(ph * PI) * 0.75
+		draw_arc(bp, 1.8 + (bi % 3) * 0.9, 0, TAU, 8, Color(0.85, 0.97, 1.0, ba), 1.3)
 
 
 func _draw_pod(ctr: Vector2, s: float) -> void:
@@ -3466,6 +4123,8 @@ func _adv_draw() -> void:
 	var acc: Color = th["accent"]
 	var names: Array = th["mons"]
 	draw_rect(Rect2(0, 0, 720, 1280), th["dark"])
+	_map_begin()
+	var mlist: Array = []
 	var wall_tex := _wall_tex(ti)
 	var x0 := int(floor(cam.x)) - 5
 	var y0 := int(floor(cam.y)) - 5
@@ -3481,8 +4140,9 @@ func _adv_draw() -> void:
 			var vis := adv_vis.has(c)
 			if not _aopen(c):
 				draw_texture_rect(wall_tex, r.grow(-1.0), false)
-				if not vis:
-					draw_rect(r, Color(0, 0, 0, 0.6))
+				var wfa := _fog_a(c, 0.6)
+				if wfa > 0.01:
+					draw_rect(r, Color(0, 0, 0, wfa))
 				continue
 			draw_texture_rect(_floor_tex(ti, (cx + cy) & 1, (cx * 7 + cy * 3) % 3), r.grow(-1.0), false)
 			var bob := sin(t * 3.0 + cx * 1.7 + cy) * 2.0
@@ -3491,7 +4151,26 @@ func _adv_draw() -> void:
 				var dc := Color("6dff9a") if ok else Color(1, 1, 1, 0.45)
 				var hw := AC * 0.28
 				var hh := AC * 0.38
-				_spr(spr_gen.icon("door_open" if ok else "door_locked"), ctr, AC * 0.92)
+				var dk := clampf((t - door_t0) / 0.6, 0.0, 1.0)
+				if ok:
+					var pulse := 0.5 + 0.5 * sin(t * 2.4)
+					draw_circle(ctr, AC * 0.56, Color(0.4, 1.0, 0.6, 0.08 + 0.07 * pulse))
+					for ri in 5:
+						var rang := -PI / 2.0 + (ri - 2) * 0.3
+						var rl := AC * (0.52 + 0.12 * sin(t * 3.0 + ri))
+						draw_line(ctr + Vector2.from_angle(rang) * AC * 0.2, ctr + Vector2.from_angle(rang) * rl, Color(0.6, 1.0, 0.75, 0.22), 3.0)
+					if dk < 1.0:
+						_spr(spr_gen.icon("door_locked"), ctr, AC * 0.92, Color(1, 1, 1, 1.0 - dk))
+						_spr(spr_gen.icon("door_open"), ctr, AC * (0.92 + 0.14 * sin(dk * PI)), Color(1, 1, 1, dk))
+					else:
+						_spr(spr_gen.icon("door_open"), ctr, AC * 0.92)
+					for si in 4:
+						var sph := fmod(t * 0.6 + si * 0.25, 1.0)
+						draw_circle(ctr + Vector2((si - 1.5) * AC * 0.11, AC * 0.28 - sph * AC * 0.7), 2.2, Color(0.7, 1.0, 0.8, sin(sph * PI) * 0.8))
+				else:
+					_spr(spr_gen.icon("door_locked"), ctr, AC * 0.92)
+					if fmod(t, 1.4) < 0.18:
+						draw_circle(ctr + Vector2(0, -AC * 0.42), 3.5, Color(1, 0.3, 0.3, 0.9))
 				_ctext("EXIT" if ok else "%d" % adv_req, ctr + Vector2(0, AC * 0.1), int(AC * 0.2), dc)
 			elif stations.has(c):
 				_draw_station(ctr)
@@ -3514,14 +4193,20 @@ func _adv_draw() -> void:
 					_spr(_item_tex(kind2), ctr + Vector2(0, bob), AC * 0.56)
 				else:
 					_spr(_item_tex(kind2), ctr + Vector2(0, bob), AC * 0.58)
+				_glint(ctr + Vector2(AC * 0.2, -AC * 0.2 + bob), AC * 0.16, float(cx * 3 + cy * 5))
 			elif spikes.has(c):
 				_draw_spikes(ctr)
 			elif coin_at.has(c):
-				_spr(_item_tex("coin"), ctr + Vector2(0, bob), AC * 0.42)
+				_draw_coin(ctr, bob, AC * 0.42, float(cx * 5 + cy * 3))
 			if vis and mons.has(c):
-				_adv_draw_mon(c, ctr, ti, names, acc)
-			if not vis:
-				draw_rect(r, Color(0, 0, 0, 0.55))
+				mlist.append([c, ctr])
+			var ffa := _fog_a(c, 0.55)
+			if ffa > 0.01:
+				draw_rect(r, Color(0, 0, 0, ffa))
+	mlist.sort_custom(func(a, b): return a[1].y < b[1].y)
+	for mm2 in mlist:
+		_adv_draw_mon(mm2[0], mm2[1], ti, names, acc)
+	_amb_draw(Rect2(0, 318, 720, 652), ti)
 	if aim >= 0 and aim < inv.size():
 		var aid: String = inv[aim]
 		for dx in range(-8, 9):
@@ -3531,7 +4216,10 @@ func _adv_draw() -> void:
 					var ar := Rect2(_actr(ac) - Vector2(AC, AC) * 0.5, Vector2(AC, AC)).grow(-3)
 					draw_rect(ar, Color(1, 0.88, 0.3, 0.15 + 0.1 * sin(t * 8.0)))
 					draw_rect(ar, Color("ffe14f"), false, 3.0)
-	var prc := _actr(pos)
+	var prc := _wp(vis_pos) + _p_off()
+	var lf := 1.0 + 0.04 * sin(t * 7.0) * sin(t * 3.1)
+	for hi in 5:
+		draw_circle(prc, AC * (1.3 - hi * 0.2) * lf, Color(1.0, 0.95, 0.8, 0.014))
 	draw_circle(prc + Vector2(0, AC * 0.3), AC * 0.25, Color(0, 0, 0, 0.35))
 	if sh > 0:
 		draw_arc(prc, AC * 0.46, 0, TAU, 28, Color(0.5, 0.7, 1.0, 0.5 + 0.2 * sin(t * 5.0)), 3.0)
@@ -3539,13 +4227,15 @@ func _adv_draw() -> void:
 		draw_arc(prc, AC * 0.52, 0, TAU, 28, Color(0.7, 0.72, 0.9, 0.5), 2.0)
 	if scan_steps > 0:
 		draw_arc(prc, AC * (1.0 + 0.4 * sin(t * 6.0)), 0, TAU, 32, Color(1, 0.9, 0.6, 0.4), 2.0)
-	_spr(_player_tex(), prc + Vector2(0, sin(t * 4.0) * 2.0), AC * 0.78)
+	_draw_player(prc, AC * 0.78)
+	_fx_draw()
 	for pp in pops:
 		var age: float = t - float(pp["t"])
 		var pcol: Color = pp["c"]
 		pcol.a = 1.0 - age / 0.9
 		var pc2: Vector2 = _actr(pp["cell"])
 		_ctext(pp["s"], pc2 + Vector2(0, -AC * 0.3 - age * 50.0), 26, pcol)
+	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
 	draw_rect(Rect2(0, 970, 720, 310), th["bg"])
