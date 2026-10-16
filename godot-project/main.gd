@@ -96,6 +96,17 @@ var adv_seed := 0
 var cam := Vector2.ZERO
 var scan_steps := 0
 var scan_r := 0
+var hp := 24
+var hp_max := 24
+var armor := 0
+var sh := 0
+var sh_max := 16
+var mon_hp: Dictionary = {}
+var stations: Dictionary = {}
+var adv_names := {
+	"slowdark": "Deep Lungs", "lantern": "Wide Scanner", "ember": "Overclock Scanner",
+	"iron": "Iron Lungs", "oil": "Air Filter", "crystal": "Air Canister",
+}
 var adv_mini: ImageTexture
 var btn_modeback := Rect2(20, 76, 160, 44)
 var btn_mode_p := Rect2(50, 330, 620, 270)
@@ -108,7 +119,15 @@ var adv_text := {
 	"iron": "+8 starting air per level", "oil": "Air pods give +5 air; +1 sight per 2 levels",
 	"steel": "Spikes cost 3 less air", "gate": "The exit needs 4 fewer points per level",
 	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.",
-	"cls_brute": "+2 starting levels, but 10 less air. Starts with a Bomb.",
+	"cls_brute": "+2 starting levels, +1 armour, but 10 less air. Starts with a Bomb.",
+	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
+	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
+	"phoenix": "Survive one death: the floor restarts",
+	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters for 10",
+	"tool_zap": "Zaps a monster within 3 tiles for 12 damage",
+	"tool_crystal": "+20 air", "tool_cloak": "+3 attack until your next kill",
+	"tool_draught": "+2 levels (attack and health)", "tool_magnet": "Pulls in coins within 7 tiles",
+	"tool_blink": "Teleport to a nearby explored tile",
 }
 var reset_armed := -10.0
 var btn_skip := Rect2(160, 1140, 400, 70)
@@ -295,6 +314,12 @@ func _make_defs() -> void:
 
 func up(id: String) -> int:
 	return int(ups.get(id, 0))
+
+
+func _aname(id: String, fb: String) -> String:
+	if mode == "adv" and adv_names.has(id):
+		return String(adv_names[id])
+	return fb
 
 
 func _atext(id: String, fb: String) -> String:
@@ -1136,7 +1161,7 @@ func _pop(c: Vector2i, text: String, col: Color) -> void:
 
 
 func _use_name(id: String) -> String:
-	return String(use_defs[id]["name"])
+	return _aname(id, String(use_defs[id]["name"]))
 
 
 func _give_use(id: String) -> bool:
@@ -1148,7 +1173,10 @@ func _give_use(id: String) -> bool:
 
 func _random_use() -> String:
 	var ids := use_defs.keys()
-	return String(ids[randi() % ids.size()])
+	var id := String(ids[randi() % ids.size()])
+	while mode == "adv" and id == "pick":
+		id = String(ids[randi() % ids.size()])
+	return id
 
 
 func _step(nc: Vector2i) -> void:
@@ -1312,6 +1340,7 @@ func _step(nc: Vector2i) -> void:
 
 func _remove_mon(c: Vector2i) -> void:
 	mons.erase(c)
+	mon_hp.erase(c)
 	elite.erase(c)
 	kinds.erase(c)
 	thief_held.erase(c)
@@ -1842,10 +1871,6 @@ func _gui_input(event: InputEvent) -> void:
 	if mode == "adv":
 		_adv_input(p)
 		return
-	if btn_reset.has_point(p):
-		_reset_floor()
-		_sfx("ui")
-		return
 	for i in slots_n():
 		if _slot_rect(i).has_point(p):
 			_use_slot(i)
@@ -2035,7 +2060,6 @@ func _draw() -> void:
 		return
 	# HUD
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
-	_button(btn_reset, "RESET", acc)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("FLOOR %d    BEST %d%s" % [floor_n, best, _mod_label()], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -2253,7 +2277,7 @@ func _draw() -> void:
 		for d in relic_defs:
 			var n := relic_n(String(d["id"]))
 			if n > 0:
-				parts.append(String(d["name"]) + (" x%d" % n if n > 1 else ""))
+				parts.append(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else ""))
 		_para("RELICS: " + ", ".join(parts), Vector2(20, 1240), 15, Color(1, 1, 1, 0.6), 680.0)
 	if state != PLAY:
 		_draw_overlay(acc)
@@ -2300,7 +2324,7 @@ func _draw_overlay(acc: Color) -> void:
 			draw_rect(rr, Color(col.r, col.g, col.b, 0.12))
 			draw_rect(rr, col, false, 2.0)
 			var own := relic_n(String(d["id"]))
-			var title := String(d["name"]) + ("   (you have %d)" % own if own > 0 else "")
+			var title := _aname(String(d["id"]), String(d["name"])) + ("   (you have %d)" % own if own > 0 else "")
 			_txt(title, Vector2(rr.position.x + 22, rr.position.y + 40), 30, col, rr.size.x - 40, HORIZONTAL_ALIGNMENT_LEFT)
 			if cursed:
 				_txt("CURSED", Vector2(rr.end.x - 150, rr.position.y + 40), 22, Color("ff6a5c"), 130.0, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -2387,7 +2411,7 @@ func _draw_overlay(acc: Color) -> void:
 			var col2 := Color("6dff9a") if can2 else Color(1, 1, 1, 0.45)
 			draw_rect(rr2, Color(col2.r, col2.g, col2.b, 0.1))
 			draw_rect(rr2, col2, false, 2.0)
-			_txt("%s  (%d/%d)" % [d2["name"], lv, costs.size()], Vector2(rr2.position.x + 20, rr2.position.y + 38), 26, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt("%s  (%d/%d)" % [_aname(String(d2["id"]), String(d2["name"])), lv, costs.size()], Vector2(rr2.position.x + 20, rr2.position.y + 38), 26, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_txt(_atext(String(d2["id"]), String(d2["desc"])), Vector2(rr2.position.x + 20, rr2.position.y + 76), 19, Color(1, 1, 1, 0.7), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
 			var ptxt := "MAXED" if maxed else "%d coins" % int(costs[lv])
 			_txt(ptxt, Vector2(rr2.end.x - 170, rr2.position.y + 62), 26, col2, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -2555,7 +2579,32 @@ func _adv_gen() -> void:
 	var pts := 0
 	var gain := 0
 	var mon_cells: Array[Vector2i] = []
-	var tool_ids := use_defs.keys()
+	var tool_ids: Array = []
+	for k in use_defs.keys():
+		if k != "pick":
+			tool_ids.append(k)
+	stations.clear()
+	mon_hp.clear()
+	stations[start] = true
+	var smin: Dictionary = dist.duplicate()
+	for guard in 8:
+		var worst := -1
+		var wd := 0
+		for i in range(1, adv_rooms.size()):
+			var dd2: int = smin.get(_rc(adv_rooms[i]), 0)
+			if dd2 > wd:
+				wd = dd2
+				worst = i
+		if worst < 0 or wd <= 28:
+			break
+		var stc := _adv_pick(rng, adv_rooms[worst], true, taken)
+		if stc.x < 0:
+			break
+		stations[stc] = true
+		var d3 := _adv_bfs(stc)
+		for k in d3:
+			if int(d3[k]) < int(smin.get(k, 99999)):
+				smin[k] = d3[k]
 	for i in adv_rooms.size():
 		var r: Rect2i = adv_rooms[i]
 		var is_start := i == 0
@@ -2588,7 +2637,7 @@ func _adv_gen() -> void:
 				items[bc] = "big"
 				pts += 4
 				gain += big_g()
-		if rng.randf() < (0.5 if is_start else 0.85):
+		if rng.randf() < (0.3 if is_start else 0.45):
 			var oc := _adv_pick(rng, r, false, taken)
 			if oc.x >= 0:
 				items[oc] = "pod"
@@ -2597,6 +2646,16 @@ func _adv_gen() -> void:
 			if sc.x >= 0:
 				items[sc] = "shield"
 				pts += 2
+		if rng.randf() < 0.6:
+			var hc := _adv_pick(rng, r, false, taken)
+			if hc.x >= 0:
+				items[hc] = "hp"
+				pts += 1
+		if rng.randf() < 0.2:
+			var arc := _adv_pick(rng, r, false, taken)
+			if arc.x >= 0:
+				items[arc] = "armor"
+				pts += 3
 		if rng.randf() < 0.18:
 			var lc := _adv_pick(rng, r, false, taken)
 			if lc.x >= 0:
@@ -2657,6 +2716,85 @@ func _adv_gen() -> void:
 	adv_req = maxi(6, int(pts * minf(0.5, 0.35 + 0.015 * floor_n)) + 4 * req_adjust())
 
 
+func p_atk() -> int:
+	return level + boost
+
+
+func mon_atk(c: Vector2i) -> int:
+	return maxi(1, _mon_level(c))
+
+
+func mon_hp_max(c: Vector2i) -> int:
+	var h := 2 + 2 * _mon_level(c)
+	if elite.has(c):
+		h = int(h * 1.5)
+	if boss_floor and c == boss_cell:
+		h *= 2
+	return h
+
+
+func mon_hp_now(c: Vector2i) -> int:
+	return int(mon_hp.get(c, mon_hp_max(c)))
+
+
+func dmg_taken(a: int) -> int:
+	return maxi(1, a - armor)
+
+
+func _adv_cost(c: Vector2i) -> int:
+	var hits := int(ceil(float(mon_hp_now(c)) / float(maxi(1, p_atk()))))
+	return maxi(0, hits - 1) * dmg_taken(mon_atk(c))
+
+
+func _adv_outcome(c: Vector2i) -> int:
+	var cost := _adv_cost(c)
+	var pool := hp + sh
+	if cost >= pool:
+		return 2
+	if cost * 2 >= pool:
+		return 1
+	return 0
+
+
+func _adv_mname(c: Vector2i) -> String:
+	var th := cur_theme()
+	var names: Array = th["mons"]
+	if boss_floor and c == boss_cell:
+		return String(th["boss"])
+	return String(names[(int(mons[c]) - 1) % names.size()])
+
+
+func _adv_level_up(n: int) -> void:
+	level += n
+	hp_max += 3 * n
+	hp += 3 * n
+
+
+func _adv_hurt(a: int, who: String) -> bool:
+	var d := dmg_taken(a)
+	var absorbed := mini(sh, d)
+	sh -= absorbed
+	hp -= d - absorbed
+	_pop(pos, "-%d" % d, Color("ff6a6a") if absorbed < d else Color("7db2ff"))
+	msg += "   %s hits you for %d" % [who, d]
+	_sfx("spike")
+	if hp <= 0:
+		hp = 0
+		_die("%s was too strong" % who)
+		return false
+	return true
+
+
+func _adv_damage_mon(c: Vector2i, dmg: int) -> void:
+	var left := mon_hp_now(c) - dmg
+	_pop(c, "-%d" % dmg, Color("ff9a3c"))
+	if left <= 0:
+		adv_pts += _mon_level(c) / 2 + (25 if (boss_floor and c == boss_cell) else 0)
+		_kill_free(c)
+	else:
+		mon_hp[c] = left
+
+
 func _adv_snapshot() -> void:
 	saved = {
 		"mons": mons.duplicate(), "elite": elite.duplicate(), "items": items.duplicate(), "spikes": spikes.duplicate(),
@@ -2695,7 +2833,12 @@ func _adv_reset() -> void:
 
 func _adv_begin() -> void:
 	level = start_lvl()
-	shield = start_shield()
+	hp_max = 24 + 3 * (start_lvl() - START_LEVEL)
+	hp = hp_max
+	armor = 1 if cls == "brute" else 0
+	sh = 8 if start_shield() else 0
+	shield = false
+	mon_hp.clear()
 	pos = start
 	keys = 0
 	boost = 0
@@ -2812,53 +2955,56 @@ func _adv_path(target: Vector2i) -> Array[Vector2i]:
 	return p
 
 
-func _adv_fight(nc: Vector2i) -> bool:
-	var th := cur_theme()
-	var names: Array = th["mons"]
+func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
+	var g := kill_gain(nc)
+	var back := 0
+	if thief_held.has(nc):
+		back = int(thief_held[nc])
+		coins += back
+	var was_elite := elite.has(nc)
+	_remove_mon(nc)
+	_adv_level_up(g)
+	boost = 0
+	adv_pts += lv + (2 if was_elite else 0) + (25 if is_boss else 0)
+	msg = "Defeated %s! Level %d" % [nm, level]
+	if back > 0:
+		msg += "  (+%d coins back)" % back
+	_pop(nc, "LEVEL +%d" % g, Color("6dff9a"))
+	if is_boss:
+		coins += 10
+		var it := _random_use()
+		if _give_use(it):
+			msg += "  +10 coins + " + _use_name(it)
+		else:
+			msg += "  +10 coins"
+	_sfx("elite" if (g >= 2 or is_boss) else "win")
+
+
+# returns 0 = you died, 1 = monster defeated, 2 = fight goes on
+func _adv_fight(nc: Vector2i) -> int:
 	var lv: int = _mon_level(nc)
-	var base: int = mons[nc]
 	var is_boss := boss_floor and nc == boss_cell
-	var nm: String = th["boss"] if is_boss else names[(base - 1) % names.size()]
-	if level + boost > lv:
-		var g := kill_gain(nc)
-		var back := 0
-		if thief_held.has(nc):
-			back = int(thief_held[nc])
-			coins += back
-		var was_elite := elite.has(nc)
-		_remove_mon(nc)
-		level += g
-		boost = 0
-		adv_pts += lv + (2 if was_elite else 0) + (25 if is_boss else 0)
-		msg = "Beat %s! Level %d" % [nm, level]
-		if back > 0:
-			msg += "  (+%d coins back)" % back
-		_pop(nc, "LEVEL +%d" % g, Color("6dff9a"))
-		if is_boss:
-			coins += 10
-			var it := _random_use()
-			if _give_use(it):
-				msg += "  +10 coins + " + _use_name(it)
-			else:
-				msg += "  +10 coins"
-		_sfx("elite" if (g >= 2 or is_boss) else "win")
-		return true
-	if shield:
-		shield = false
-		boost = 0
-		_remove_mon(nc)
-		msg = "Shield shattered! %s defeated" % nm
-		_pop(nc, "SHIELD!", Color("7db2ff"))
-		_sfx("shieldbreak")
-		return true
-	_die("%s (Lv %d) was too strong" % [nm, lv])
-	return false
+	var nm := _adv_mname(nc)
+	var dmg := p_atk()
+	var left := mon_hp_now(nc) - dmg
+	_pop(nc, "-%d" % dmg, Color.WHITE)
+	if left <= 0:
+		_adv_kill(nc, nm, lv, is_boss)
+		return 1
+	mon_hp[nc] = left
+	msg = "You hit %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(nc)]
+	_sfx("step")
+	if not _adv_hurt(mon_atk(nc), nm):
+		return 0
+	return 2
 
 
 func _adv_step(nc: Vector2i, final: bool) -> void:
 	var th := cur_theme()
 	var snd := "step"
 	var extra := 0.0
+	var moved := true
+	var fought := false
 	var before_m := _adv_vis_mons()
 	if mons.has(nc):
 		if not final:
@@ -2866,15 +3012,20 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			msg = "Something blocks the way"
 			_sfx("blocked")
 			return
-		if not _adv_fight(nc):
+		var res := _adv_fight(nc)
+		if res == 0:
 			return
+		fought = true
 		snd = ""
+		if res == 2:
+			moved = false
+			walk.clear()
 	elif vaults.has(nc):
 		if keys > 0:
 			keys -= 1
 			vaults.erase(nc)
 			coins += 10
-			level += 1
+			_adv_level_up(1)
 			adv_pts += 10
 			var got := _random_use()
 			var gm := ""
@@ -2894,7 +3045,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		if kind.begins_with("use_"):
 			var uid := kind.substr(4)
 			if _give_use(uid):
-				msg = "Got %s: %s" % [_use_name(uid), use_defs[uid]["desc"]]
+				msg = "Got %s: %s" % [_use_name(uid), _atext("tool_" + uid, String(use_defs[uid]["desc"]))]
 				_pop(nc, _use_name(uid), use_defs[uid]["col"])
 				adv_pts += 3
 				snd = "pot"
@@ -2909,27 +3060,48 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			_pop(nc, "KEY", Color("ffd84f"))
 			snd = "coin"
 		elif kind == "pod":
-			var amt := adv_pod_amt()
-			oxy = minf(oxy_max, oxy + amt)
-			msg = "Air pod! +%d air" % int(amt)
-			_pop(nc, "+%d AIR" % int(amt), Color("7fd8ff"))
-			snd = "lamp"
+			if oxy >= oxy_max:
+				items[nc] = kind
+				msg = "Air is full - the pod stays for later"
+			else:
+				var amt := adv_pod_amt()
+				oxy = minf(oxy_max, oxy + amt)
+				msg = "Air pod! +%d air" % int(amt)
+				_pop(nc, "+%d AIR" % int(amt), Color("7fd8ff"))
+				snd = "lamp"
+		elif kind == "hp":
+			if hp >= hp_max:
+				items[nc] = kind
+				msg = "Health is full - the medkit stays for later"
+			else:
+				var heal := int(hp_max * 0.4)
+				hp = mini(hp_max, hp + heal)
+				adv_pts += 1
+				msg = "Medkit! +%d HP" % heal
+				_pop(nc, "+%d HP" % heal, Color("ff8a9a"))
+				snd = "pot"
+		elif kind == "armor":
+			armor = mini(6, armor + 1)
+			adv_pts += 3
+			msg = "Armour plate! Every hit you take is reduced by %d" % armor
+			_pop(nc, "ARMOUR", Color("c9d3f0"))
+			snd = "shield"
 		elif kind == "pot":
-			level += pot_g()
+			_adv_level_up(pot_g())
 			adv_pts += 2
 			msg = "%s! Level %d" % [th["pot"], level]
 			_pop(nc, "+%d" % pot_g(), Color("ffd84f"))
 			snd = "pot"
 		elif kind == "big":
-			level += big_g()
+			_adv_level_up(big_g())
 			adv_pts += 4
 			msg = "Overcharged %s! Level %d" % [th["pot"], level]
 			_pop(nc, "+%d" % big_g(), Color("4fd1ff"))
 			snd = "big"
 		elif kind == "shield":
-			shield = true
+			sh = mini(sh_max, sh + 8)
 			adv_pts += 2
-			msg = "Shield! It saves you from one losing fight"
+			msg = "Shield +8! It soaks damage before your health does"
 			_pop(nc, "SHIELD", Color("7db2ff"))
 			snd = "shield"
 		else:
@@ -2956,9 +3128,16 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		msg = "Coin! %d total" % coins
 		_pop(nc, "+%d coin" % cv, Color("ffc93c"))
 		snd = "coin"
-	pos = nc
+	if moved:
+		pos = nc
 	adv_steps += 1
 	oxy -= 1.0 + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	if moved and stations.has(pos):
+		if oxy < oxy_max - 0.5:
+			msg = "O2 station: air fully restored"
+			_pop(pos, "AIR FULL", Color("7fd8ff"))
+			snd = "lamp"
+		oxy = oxy_max
 	if scan_steps > 0:
 		scan_steps -= 1
 	_adv_update_vis()
@@ -2966,7 +3145,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		oxy = 0.0
 		_die("You ran out of air")
 		return
-	if pos == stairs and not mons.has(stairs):
+	if moved and pos == stairs and not mons.has(stairs):
 		if adv_pts >= adv_req:
 			_adv_clear()
 			return
@@ -2977,11 +3156,15 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	_adv_hunters()
 	if state != PLAY:
 		return
-	for c in _adv_vis_mons():
-		if not before_m.has(c):
-			if walk.size() > 0:
-				walk.clear()
-			break
+	if not fought:
+		for c in _adv_vis_mons():
+			if not before_m.has(c):
+				if walk.size() > 0:
+					walk.clear()
+				msg = "%s spotted: Lv %d, %d HP. Fighting it would cost about %d HP" % [_adv_mname(c), _mon_level(c), mon_hp_now(c), _adv_cost(c)]
+				if String(kinds.get(c, "")) == "hunter":
+					msg += " (it hunts you!)"
+				break
 	if snd != "":
 		if snd == "step" and oxy < 20.0:
 			snd = "tick"
@@ -2991,6 +3174,9 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 	mons[b] = mons[a]
 	mons.erase(a)
+	if mon_hp.has(a):
+		mon_hp[b] = mon_hp[a]
+		mon_hp.erase(a)
 	if elite.has(a):
 		elite[b] = true
 		elite.erase(a)
@@ -3003,8 +3189,6 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 
 
 func _adv_hunters() -> void:
-	if adv_steps % 2 != 0:
-		return
 	var hs: Array[Vector2i] = []
 	for c in kinds:
 		if String(kinds[c]) == "hunter" and mons.has(c):
@@ -3017,19 +3201,22 @@ func _adv_hunters() -> void:
 		if not mons.has(c) or not dist.has(c):
 			continue
 		var bd: int = dist[c]
+		if bd == 1:
+			walk.clear()
+			msg = "%s attacks!" % _adv_mname(c)
+			if not _adv_hurt(mon_atk(c), _adv_mname(c)):
+				return
+			continue
+		if adv_steps % 2 != 0:
+			continue
 		var bn := c
 		for dv in dirs:
 			var n: Vector2i = c + dv
-			if dist.has(n) and int(dist[n]) < bd and (n == pos or not (mons.has(n) or vaults.has(n))):
+			if dist.has(n) and int(dist[n]) < bd and n != pos and not (mons.has(n) or vaults.has(n)):
 				bd = dist[n]
 				bn = n
-		if bn == c:
-			continue
-		if bn == pos:
-			walk.clear()
-			_adv_fight(c)
-			return
-		_adv_move_mon(c, bn)
+		if bn != c:
+			_adv_move_mon(c, bn)
 
 
 func _adv_clear() -> void:
@@ -3050,10 +3237,8 @@ func _adv_aim_valid(id: String, c: Vector2i) -> bool:
 	var dd := maxi(absi(c.x - pos.x), absi(c.y - pos.y))
 	if id == "blink":
 		return dd <= 8 and _aopen(c) and not mons.has(c) and not vaults.has(c) and c != pos
-	if id == "pick":
-		return dd <= 1 and not _aopen(c) and c.x > 0 and c.y > 0 and c.x < AW - 1 and c.y < AH - 1
 	if id == "zap":
-		return dd <= 3 and mons.has(c) and adv_vis.has(c) and c != boss_cell and _mon_level(c) <= level + 1
+		return dd <= 3 and mons.has(c) and adv_vis.has(c)
 	return false
 
 
@@ -3088,9 +3273,9 @@ func _adv_use_slot(i: int) -> void:
 				if spikes.has(c):
 					spikes.erase(c)
 					hit += 1
-				if mons.has(c) and c != boss_cell and _mon_level(c) <= level + 1:
+				if mons.has(c):
 					_pop(c, "BOOM", Color("ff7a45"))
-					_kill_free(c)
+					_adv_damage_mon(c, 10)
 					hit += 1
 		if hit == 0:
 			msg = "Nothing nearby to blast"
@@ -3101,10 +3286,10 @@ func _adv_use_slot(i: int) -> void:
 		_adv_update_vis()
 	elif id == "crystal":
 		oxy = minf(oxy_max, oxy + 20.0)
-		msg = "Time Crystal: +20 air"
+		msg = "Air Canister: +20 air"
 		_sfx("lamp")
 	elif id == "draught":
-		level += 2
+		_adv_level_up(2)
 		msg = "Elixir! Level %d" % level
 		_pop(pos, "+2", Color("6dff9a"))
 		_sfx("big")
@@ -3113,7 +3298,7 @@ func _adv_use_slot(i: int) -> void:
 			msg = "Cloak already active"
 			return
 		boost = 3
-		msg = "Shadow Cloak: your next fight counts +3 levels"
+		msg = "Shadow Cloak: +3 attack until your next kill"
 		_sfx("shield")
 	elif id == "magnet":
 		var n := 0
@@ -3152,25 +3337,14 @@ func _adv_aim_apply(c: Vector2i) -> void:
 	if id == "blink":
 		_sfx("warp")
 		_adv_step(c, true)
-	elif id == "pick":
-		adv_open[_ai(c)] = 1
-		_pop(c, "CRACK", Color("c9a55a"))
-		msg = "The wall crumbles"
-		_sfx("spike")
-		_adv_update_vis()
 	elif id == "zap":
 		_pop(c, "ZAP", Color("ffe14f"))
-		adv_pts += 1
-		_kill_free(c)
-		msg = "Zap!"
+		_adv_damage_mon(c, 12)
+		msg = "Zap! 12 damage"
 		_sfx("elite")
 
 
 func _adv_input(p: Vector2) -> void:
-	if btn_reset.has_point(p):
-		_reset_floor()
-		_sfx("ui")
-		return
 	for i in slots_n():
 		if _slot_rect(i).has_point(p):
 			_adv_use_slot(i)
@@ -3196,30 +3370,46 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	var lv: int = _mon_level(c)
 	var kind := String(kinds.get(c, ""))
 	var is_boss := boss_floor and c == boss_cell
-	var safe := level + boost > lv
-	var mc := Color("49d17a") if safe else (Color("ffb02e") if shield else Color("ef4b55"))
+	var oc := _adv_outcome(c)
+	var mc := Color("49d17a") if oc == 0 else (Color("ffb02e") if oc == 1 else Color("ef4b55"))
 	var sz := AC * (0.98 if is_boss else 0.8)
 	var bob := sin(t * 3.0 + c.x * 1.7 + c.y) * 2.0
 	if is_boss:
 		draw_circle(ctr, AC * 0.55, Color(acc.r, acc.g, acc.b, 0.15 + 0.08 * sin(t * 3.0)))
 	draw_circle(ctr + Vector2(0, AC * 0.3), AC * 0.28, Color(0, 0, 0, 0.3))
-	_spr(_monster_tex(ti, base_lv, is_boss), ctr + Vector2(0, bob), sz)
+	_spr(_monster_tex(ti, base_lv, is_boss), ctr + Vector2(0, bob - 4.0), sz)
 	if elite.has(c):
 		_star(ctr + Vector2(-AC * 0.3, -AC * 0.3 + bob), AC * 0.16, Color("ffd84f"))
 	var bp := ctr + Vector2(AC * 0.3, -AC * 0.3)
 	draw_circle(bp, AC * 0.17, Color("0a0c14"))
 	draw_circle(bp, AC * 0.145, mc)
 	_ctext(str(lv), bp, int(AC * 0.22), Color.WHITE)
-	var mk := ctr + Vector2(-AC * 0.3, AC * 0.3)
+	var hpn := mon_hp_now(c)
+	var hpm := mon_hp_max(c)
+	var bw := AC * 0.7
+	var bx := ctr.x - bw * 0.5
+	var by := ctr.y + AC * 0.36
+	draw_rect(Rect2(bx - 1, by - 1, bw + 2, 11), Color(0, 0, 0, 0.75))
+	draw_rect(Rect2(bx, by, bw * clampf(float(hpn) / float(hpm), 0.0, 1.0), 9), Color("e8505b"))
+	_ctext("%d" % hpn, Vector2(ctr.x, by + 4.5), 10, Color.WHITE)
+	var mk := ctr + Vector2(-AC * 0.3, AC * 0.2)
 	if kind == "hunter":
 		draw_circle(mk, AC * 0.13, Color("6a1218"))
 		_ctext("!", mk, int(AC * 0.26), Color("ff7a7a"))
-		_ctext("hunts", ctr + Vector2(0, AC * 0.46), 12, Color("ff7a7a"))
+		_ctext("hunts", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a"))
 	elif kind == "thief":
 		draw_circle(mk, AC * 0.13, Color("5a4500"))
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
 		if thief_held.has(c):
-			_ctext("holds %d" % int(thief_held[c]), ctr + Vector2(0, AC * 0.46), 12, Color("ff7a7a"))
+			_ctext("holds %d" % int(thief_held[c]), ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a"))
+
+
+func _draw_station(ctr: Vector2) -> void:
+	var pc := Color("7fd8ff")
+	draw_circle(ctr, AC * 0.42, Color(pc.r, pc.g, pc.b, 0.12 + 0.06 * sin(t * 3.0)))
+	draw_arc(ctr, AC * 0.38, 0, TAU, 28, pc, 3.0)
+	draw_arc(ctr, AC * 0.26, t * 2.0, t * 2.0 + PI * 1.4, 16, Color("e6f8ff"), 2.0)
+	_ctext("O2", ctr, int(AC * 0.28), Color.WHITE)
 
 
 func _draw_pod(ctr: Vector2, s: float) -> void:
@@ -3266,6 +3456,8 @@ func _adv_draw() -> void:
 				draw_rect(Rect2(ctr.x - hw, ctr.y - hh, hw * 2, hh * 2), dc, false, 4.0)
 				draw_rect(Rect2(ctr.x - hw + 6, ctr.y - hh + 6, hw * 2 - 12, hh * 2 - 12), Color(dc.r, dc.g, dc.b, 0.35), false, 1.5)
 				_ctext("EXIT" if ok else "%d" % adv_req, ctr, int(AC * 0.22), dc)
+			elif stations.has(c):
+				_draw_station(ctr)
 			elif vaults.has(c):
 				_draw_vault(ctr + Vector2(0, bob * 0.3))
 			elif items.has(c):
@@ -3277,6 +3469,15 @@ func _adv_draw() -> void:
 					_draw_key(ctr + Vector2(0, bob), AC * 0.8)
 				elif kind2 == "pod":
 					_draw_pod(ctr + Vector2(0, bob), AC * 0.7)
+				elif kind2 == "hp":
+					draw_rect(Rect2(ctr.x - AC * 0.2, ctr.y - AC * 0.2 + bob, AC * 0.4, AC * 0.4), Color("f4f4f4"))
+					draw_rect(Rect2(ctr.x - AC * 0.2, ctr.y - AC * 0.2 + bob, AC * 0.4, AC * 0.4), Color("1a1a1a"), false, 2.0)
+					draw_rect(Rect2(ctr.x - AC * 0.05, ctr.y - AC * 0.15 + bob, AC * 0.1, AC * 0.3), Color("e8505b"))
+					draw_rect(Rect2(ctr.x - AC * 0.15, ctr.y - AC * 0.05 + bob, AC * 0.3, AC * 0.1), Color("e8505b"))
+				elif kind2 == "armor":
+					draw_rect(Rect2(ctr.x - AC * 0.22, ctr.y - AC * 0.22 + bob, AC * 0.44, AC * 0.44), Color("8a93b5"))
+					draw_rect(Rect2(ctr.x - AC * 0.22, ctr.y - AC * 0.22 + bob, AC * 0.44, AC * 0.44), Color("11141f"), false, 2.0)
+					draw_rect(Rect2(ctr.x - AC * 0.12, ctr.y - AC * 0.12 + bob, AC * 0.24, AC * 0.24), Color("c9d3f0"))
 				else:
 					_spr(_item_tex(kind2), ctr + Vector2(0, bob), AC * 0.58)
 			elif spikes.has(c):
@@ -3298,7 +3499,7 @@ func _adv_draw() -> void:
 					draw_rect(ar, Color("ffe14f"), false, 3.0)
 	var prc := _actr(pos)
 	draw_circle(prc + Vector2(0, AC * 0.3), AC * 0.25, Color(0, 0, 0, 0.35))
-	if shield:
+	if sh > 0:
 		draw_arc(prc, AC * 0.46, 0, TAU, 28, Color(0.5, 0.7, 1.0, 0.5 + 0.2 * sin(t * 5.0)), 3.0)
 	if boost > 0:
 		draw_arc(prc, AC * 0.52, 0, TAU, 28, Color(0.7, 0.72, 0.9, 0.5), 2.0)
@@ -3330,37 +3531,47 @@ func _adv_draw() -> void:
 	var msc := 128.0 / float(AW)
 	if _aseen(stairs):
 		draw_rect(Rect2(mm.position.x + 3 + stairs.x * msc - 1, mm.position.y + 3 + stairs.y * msc - 1, 5, 5), Color("6dff9a") if adv_pts >= adv_req else Color("ff8a8a"))
+	for stc in stations:
+		if _aseen(stc):
+			draw_rect(Rect2(mm.position.x + 3 + stc.x * msc - 1, mm.position.y + 3 + stc.y * msc - 1, 4, 4), Color("7fd8ff"))
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
 	# HUD
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
-	_button(btn_reset, "RESET", acc)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("ADVENTURE   FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var sx := 40.0
-	if shield:
-		_spr(_item_tex("shield"), Vector2(sx + 14, 266), 28)
-		_txt("SHIELD", Vector2(sx + 32, 272), 18, Color("7db2ff"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
-		sx += 112.0
+	_txt("ATK %d" % p_atk(), Vector2(sx, 272), 18, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
+	sx += 84.0
+	_txt("ARMOUR %d" % armor, Vector2(sx, 272), 18, Color("c9d3f0") if armor > 0 else Color(1, 1, 1, 0.4), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
+	sx += 126.0
 	if boost > 0:
 		_txt("CLOAK +%d" % boost, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
-		sx += 120.0
+		sx += 110.0
 	if keys > 0:
 		_draw_key(Vector2(sx + 14, 266), 26)
-		_txt("KEY x%d" % keys, Vector2(sx + 36, 272), 18, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("x%d" % keys, Vector2(sx + 32, 272), 18, Color("ffd84f"), 60.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var low := oxy < oxy_max * 0.25
 	var acol := Color("ff5d5d") if low else Color("7fd8ff")
-	_txt("AIR %d" % int(ceil(oxy)), Vector2(360, 200), 44, acol, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
-	draw_rect(Rect2(380, 218, 300, 14), Color(1, 1, 1, 0.12))
-	draw_rect(Rect2(380, 218, 300.0 * clampf(oxy / oxy_max, 0.0, 1.0), 14), acol)
+	_txt("AIR %d" % int(ceil(oxy)), Vector2(360, 192), 38, acol, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	draw_rect(Rect2(380, 200, 300, 12), Color(1, 1, 1, 0.12))
+	draw_rect(Rect2(380, 200, 300.0 * clampf(oxy / oxy_max, 0.0, 1.0), 12), acol)
+	var hpf := clampf(float(hp) / float(hp_max), 0.0, 1.0)
+	draw_rect(Rect2(380, 222, 300, 24), Color(1, 1, 1, 0.12))
+	draw_rect(Rect2(380, 222, 300.0 * hpf, 24), Color("e8505b") if hpf > 0.3 else Color("ff2b3d"))
+	_txt("HP %d / %d" % [hp, hp_max], Vector2(380, 240), 18, Color.WHITE, 300.0)
+	draw_rect(Rect2(380, 252, 300, 16), Color(1, 1, 1, 0.12))
+	if sh > 0:
+		draw_rect(Rect2(380, 252, 300.0 * clampf(float(sh) / float(sh_max), 0.0, 1.0), 16), Color("5aa8ff"))
+		_txt("SHIELD %d" % sh, Vector2(380, 265), 14, Color.WHITE, 300.0)
 	var okp := adv_pts >= adv_req
 	var ptxt := "POINTS %d / %d" % [adv_pts, adv_req]
 	if okp:
 		ptxt += "   EXIT OPEN"
 	if boss_floor:
 		ptxt += "   BOSS GUARDS EXIT"
-	_txt(ptxt, Vector2(0, 306), 26, Color("6dff9a") if okp else Color(1, 1, 1, 0.75))
+	_txt(ptxt, Vector2(0, 308), 26, Color("6dff9a") if okp else Color(1, 1, 1, 0.75))
 	# tool slots
 	for i in slots_n():
 		var sr := _slot_rect(i)
@@ -3379,7 +3590,7 @@ func _adv_draw() -> void:
 			_ctext("empty", sr.get_center(), 14, Color(1, 1, 1, 0.3))
 	_txt("TOOLS: tap one to use it", Vector2(40 + slots_n() * 118 + 8, 1020), 17, Color(1, 1, 1, 0.45), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt(msg, Vector2(0, 1084), 26, Color.WHITE, 720.0)
-	_txt("Green badge = you win the fight. Red = you die. Equal loses!", Vector2(0, 1122), 22, Color(1, 1, 1, 0.55))
+	_txt("Tap a monster to attack. Badge: green easy, amber costly, red deadly.", Vector2(0, 1122), 21, Color(1, 1, 1, 0.55))
 	var tips := [
 		"Walking costs air. Air pods (O2) refill it. Don't wander blindly!",
 		"Hunters (red !) chase you at half speed. Beat them or outrun them.",
@@ -3396,7 +3607,7 @@ func _adv_draw() -> void:
 		for d in relic_defs:
 			var n := relic_n(String(d["id"]))
 			if n > 0:
-				parts.append(String(d["name"]) + (" x%d" % n if n > 1 else ""))
+				parts.append(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else ""))
 		_para("RELICS: " + ", ".join(parts), Vector2(20, 1220), 15, Color(1, 1, 1, 0.6), 680.0)
 
 
@@ -3445,6 +3656,51 @@ func _adv_selftest() -> void:
 		if not ok:
 			bad += 1
 		print("adv floor %d size %d rooms %d mons %d pts %d req %d boss %s ok %s %dms" % [f, AW, adv_rooms.size(), mons.size(), adv_pts_total, adv_req, boss_floor, ok, Time.get_ticks_msec() - t0])
+	# station coverage + a short combat/tool simulation
+	for f in [1, 8, 20, 35]:
+		floor_n = f
+		cls = "brute"
+		relics.clear()
+		adv_seed = f * 31 + 5
+		_adv_gen()
+		var worst := 0
+		var sm := {}
+		for sc in stations:
+			var dd := _adv_bfs(sc)
+			for k in dd:
+				if int(dd[k]) < int(sm.get(k, 99999)):
+					sm[k] = dd[k]
+		for r in adv_rooms:
+			worst = maxi(worst, int(sm.get(_rc(r), 0)))
+		print("floor %d stations %d worst room distance to a station %d" % [f, stations.size(), worst])
+		if worst > 30:
+			bad += 1
+	floor_n = 6
+	cls = "brute"
+	adv_seed = 99
+	_adv_gen()
+	_adv_snapshot()
+	_adv_begin()
+	var steps_ok := 0
+	for c in mons.keys():
+		if c == stairs:
+			continue
+		hp = 999
+		hp_max = 999
+		var guard := 0
+		while mons.has(c) and guard < 40 and state == PLAY:
+			_adv_fight(c)
+			guard += 1
+		steps_ok += 1
+		if steps_ok > 6:
+			break
+	inv.append("bomb")
+	inv.append("zap")
+	_adv_use_slot(0)
+	_adv_hurt(5, "Test")
+	_adv_hunters()
+	_adv_step(start, true)
+	print("combat sim ok hp %d sh %d armor %d level %d state %d" % [hp, sh, armor, level, state])
 	print("ADV TEST DONE bad=%d" % bad)
 
 

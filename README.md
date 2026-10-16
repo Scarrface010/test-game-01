@@ -45,3 +45,8 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 - Hunters chase at half speed, thieves steal coins, every 5th floor a boss guards the exit, key + vault rooms, scanners reveal the map.
 - Maps are generated so everything is reachable and monsters can always be beaten in ascending order; check with `godot --headless --path godot-project -- --advtest`.
 - Dev URL: `?mode=adv&class=scout&floor=N`.
+
+## v8: Adventure combat, O2 stations
+- Adventure combat is now health-based: every tap on a monster is one round (you hit for your level + bonuses, it hits back for its level minus your armour). Monsters have HP bars; shield is its own pool that soaks damage first; armour plates and medkits are new pickups. Levels still raise attack and max HP.
+- O2 stations (infinite air, step on to refill) are spaced 29+ steps apart so every room is within ~30 steps of one.
+- Adventure uses air-themed names (Deep Lungs, Wide Scanner, Air Canister...). Pickaxe removed from Adventure. Reset button removed from both modes (death screen still has Retry).
