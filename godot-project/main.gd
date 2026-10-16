@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV }
 const AC := 90.0
 const AMX := 360.0
 const AMY := 644.0
@@ -96,6 +96,14 @@ var adv_seed := 0
 var cam := Vector2.ZERO
 var scan_steps := 0
 var scan_r := 0
+var xp := 0
+var inv_tab := 0
+var inv_page := 0
+var equip: Dictionary = {}
+var btn_inv := Rect2(596, 20, 104, 46)
+var btn_icl := Rect2(250, 1150, 220, 64)
+var btn_ipv := Rect2(40, 1070, 190, 56)
+var btn_inx := Rect2(490, 1070, 190, 56)
 var hp := 24
 var hp_max := 24
 var armor := 0
@@ -112,21 +120,21 @@ var btn_modeback := Rect2(20, 76, 160, 44)
 var btn_mode_p := Rect2(50, 330, 620, 270)
 var btn_mode_a := Rect2(50, 650, 620, 270)
 var adv_text := {
-	"slowdark": "+15 air", "glass": "+3 starting levels, but 15 less air and air drains faster",
+	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions and power cells give double XP", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes cost 6 more air",
 	"boots": "Spikes no longer cost air", "skeleton": "The exit needs 4 fewer points",
-	"blade": "Every kill gives +1 extra level, but the exit needs 12 more points",
+	"blade": "Every kill gives 50% more XP, but the exit needs 12 more points",
 	"iron": "+8 starting air per level", "oil": "Air pods give +5 air; +1 sight per 2 levels",
 	"steel": "Spikes cost 3 less air", "gate": "The exit needs 4 fewer points per level",
 	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.",
-	"cls_brute": "+2 starting levels, +1 armour, but 10 less air. Starts with a Bomb.",
+	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
 	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
 	"phoenix": "Survive one death: the floor restarts",
 	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters for 10",
 	"tool_zap": "Zaps a monster within 3 tiles for 12 damage",
 	"tool_crystal": "+20 air", "tool_cloak": "+3 attack until your next kill",
-	"tool_draught": "+2 levels (attack and health)", "tool_magnet": "Pulls in coins within 7 tiles",
+	"tool_draught": "+30 XP", "tool_magnet": "Pulls in coins within 7 tiles",
 	"tool_blink": "Teleport to a nearby explored tile",
 }
 var reset_armed := -10.0
@@ -1734,6 +1742,7 @@ func _new_run(start_floor := 1) -> void:
 		if inv.size() < slots_n():
 			inv.append(_random_use())
 	if mode == "adv":
+		_adv_init_run()
 		_adv_new_floor()
 	else:
 		_new_floor()
@@ -1757,6 +1766,9 @@ func _gui_input(event: InputEvent) -> void:
 			mode = "adv"
 			state = CLASS
 			_sfx("big")
+		return
+	if state == INV:
+		_inv_input(p)
 		return
 	if state == CLASS:
 		if btn_modeback.has_point(p):
@@ -1794,6 +1806,8 @@ func _gui_input(event: InputEvent) -> void:
 			if _relic_rect(i).has_point(p):
 				var id: String = relic_choices[i]["id"]
 				relics[id] = relic_n(id) + 1
+				if mode == "adv":
+					_adv_relic_applied(id)
 				_sfx("big")
 				_finish_clear()
 				return
@@ -2285,7 +2299,9 @@ func _draw() -> void:
 
 func _draw_overlay(acc: Color) -> void:
 	draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
-	if state == MODE:
+	if state == INV:
+		_draw_inv(acc)
+	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose a mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
 		_txt("Puzzle best: %d floors     Adventure best: %d floors     Bank: %d" % [best, adv_best, bank], Vector2(0, 296), 20, Color(1, 1, 1, 0.55))
@@ -2692,12 +2708,12 @@ func _adv_gen() -> void:
 	for c in mon_cells:
 		var d: int = dist.get(c, 0)
 		var raw := 1 + d / 10 + rng.randi_range(0, 1)
-		lvls.append({"c": c, "lv": _scaled(raw)})
+		lvls.append({"c": c, "lv": _adv_scaled(raw)})
 	lvls.sort_custom(func(a, b): return int(a["lv"]) < int(b["lv"]))
-	var budget := start_lvl() + gain
+	var budget := level + 1
 	for k in lvls.size():
 		var e: Dictionary = lvls[k]
-		var lv2: int = maxi(1, mini(int(e["lv"]), budget + k - 1))
+		var lv2: int = maxi(1, mini(int(e["lv"]), budget + k / 2 + 1))
 		var mcell: Vector2i = e["c"]
 		mons[mcell] = lv2
 		if floor_n >= 2 and rng.randf() < 0.25:
@@ -2709,7 +2725,7 @@ func _adv_gen() -> void:
 			elite[mcell] = true
 		pts += lv2 + (2 if el else 0)
 	if boss_floor:
-		var bl := maxi(3, budget + mon_cells.size() / 2 - 1)
+		var bl := _adv_scaled(3 + floor_n / 2) + 1
 		mons[stairs] = bl
 		pts += 25 + bl
 	adv_pts_total = pts
@@ -2725,11 +2741,11 @@ func mon_atk(c: Vector2i) -> int:
 
 
 func mon_hp_max(c: Vector2i) -> int:
-	var h := 2 + 2 * _mon_level(c)
+	var h := 4 + 3 * _mon_level(c)
 	if elite.has(c):
 		h = int(h * 1.5)
 	if boss_floor and c == boss_cell:
-		h *= 2
+		h = int(h * 1.6)
 	return h
 
 
@@ -2790,6 +2806,7 @@ func _adv_damage_mon(c: Vector2i, dmg: int) -> void:
 	_pop(c, "-%d" % dmg, Color("ff9a3c"))
 	if left <= 0:
 		adv_pts += _mon_level(c) / 2 + (25 if (boss_floor and c == boss_cell) else 0)
+		_adv_gain_xp((3 + _mon_level(c)) / 2)
 		_kill_free(c)
 	else:
 		mon_hp[c] = left
@@ -2800,6 +2817,7 @@ func _adv_snapshot() -> void:
 		"mons": mons.duplicate(), "elite": elite.duplicate(), "items": items.duplicate(), "spikes": spikes.duplicate(),
 		"coin_at": coin_at.duplicate(), "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
 		"vaults": vaults.duplicate(), "inv": inv.duplicate(), "coins": coins,
+		"level": level, "xp": xp, "hp_max": hp_max, "armor": armor, "sh": sh,
 	}
 
 
@@ -2828,15 +2846,59 @@ func _adv_reset() -> void:
 	for it in saved["inv"]:
 		inv.append(String(it))
 	coins = saved["coins"]
+	level = int(saved["level"])
+	xp = int(saved["xp"])
+	hp_max = int(saved["hp_max"])
+	armor = int(saved["armor"])
+	sh = int(saved["sh"])
 	_adv_begin()
 
 
-func _adv_begin() -> void:
+func _adv_init_run() -> void:
 	level = start_lvl()
-	hp_max = 24 + 3 * (start_lvl() - START_LEVEL)
-	hp = hp_max
+	xp = 0
+	hp_max = 24 + 3 * (level - START_LEVEL)
 	armor = 1 if cls == "brute" else 0
-	sh = 8 if start_shield() else 0
+	sh = 0
+	equip.clear()
+
+
+func xp_need() -> int:
+	return 12 + 6 * level
+
+
+func _adv_gain_xp(n: int) -> void:
+	xp += n
+	var gained := 0
+	while xp >= xp_need():
+		xp -= xp_need()
+		_adv_level_up(1)
+		gained += 1
+	if gained > 0:
+		_pop(pos, "LEVEL UP! %d" % level, Color("ffd84f"))
+		_sfx("big")
+
+
+func _adv_relic_applied(id: String) -> void:
+	if id == "vanguard":
+		_adv_level_up(1)
+	elif id == "glass":
+		_adv_level_up(3)
+
+
+func _adv_scaled(raw: int) -> int:
+	var r := raw + int(round(0.75 * float(level - START_LEVEL)))
+	if raw >= 2:
+		r += (floor_n - 1) / 2
+	else:
+		r += (floor_n - 1) / 4
+	r += relic_n("greedy")
+	return maxi(1, r)
+
+
+func _adv_begin() -> void:
+	hp = hp_max
+	sh = maxi(sh, 8 if start_shield() else 0)
 	shield = false
 	mon_hp.clear()
 	pos = start
@@ -2956,20 +3018,25 @@ func _adv_path(target: Vector2i) -> Array[Vector2i]:
 
 
 func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
-	var g := kill_gain(nc)
 	var back := 0
 	if thief_held.has(nc):
 		back = int(thief_held[nc])
 		coins += back
 	var was_elite := elite.has(nc)
+	var mult := 1.0 + 0.5 * relic_n("blade")
+	if was_elite:
+		mult += 1.0 + 0.5 * relic_n("slayer")
+	if is_boss:
+		mult += 3.0
+	var xg := int(round((3 + lv) * mult))
 	_remove_mon(nc)
-	_adv_level_up(g)
 	boost = 0
 	adv_pts += lv + (2 if was_elite else 0) + (25 if is_boss else 0)
-	msg = "Defeated %s! Level %d" % [nm, level]
+	msg = "Defeated %s! +%d XP" % [nm, xg]
 	if back > 0:
 		msg += "  (+%d coins back)" % back
-	_pop(nc, "LEVEL +%d" % g, Color("6dff9a"))
+	_pop(nc, "+%d XP" % xg, Color("6dff9a"))
+	_adv_gain_xp(xg)
 	if is_boss:
 		coins += 10
 		var it := _random_use()
@@ -2977,7 +3044,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 			msg += "  +10 coins + " + _use_name(it)
 		else:
 			msg += "  +10 coins"
-	_sfx("elite" if (g >= 2 or is_boss) else "win")
+	_sfx("elite" if (was_elite or is_boss) else "win")
 
 
 # returns 0 = you died, 1 = monster defeated, 2 = fight goes on
@@ -3025,13 +3092,13 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			keys -= 1
 			vaults.erase(nc)
 			coins += 10
-			_adv_level_up(1)
+			_adv_gain_xp(12)
 			adv_pts += 10
 			var got := _random_use()
 			var gm := ""
 			if _give_use(got):
 				gm = " + " + _use_name(got)
-			msg = "Vault opened! +10 coins, +1 level%s" % gm
+			msg = "Vault opened! +10 coins, +12 XP%s" % gm
 			_pop(nc, "VAULT!", Color("ffd84f"))
 			snd = "big"
 		else:
@@ -3087,16 +3154,18 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			_pop(nc, "ARMOUR", Color("c9d3f0"))
 			snd = "shield"
 		elif kind == "pot":
-			_adv_level_up(pot_g())
+			var pxp := 4 * pot_g()
 			adv_pts += 2
-			msg = "%s! Level %d" % [th["pot"], level]
-			_pop(nc, "+%d" % pot_g(), Color("ffd84f"))
+			msg = "%s! +%d XP" % [th["pot"], pxp]
+			_pop(nc, "+%d XP" % pxp, Color("ffd84f"))
+			_adv_gain_xp(pxp)
 			snd = "pot"
 		elif kind == "big":
-			_adv_level_up(big_g())
+			var bxp := 5 * big_g()
 			adv_pts += 4
-			msg = "Overcharged %s! Level %d" % [th["pot"], level]
-			_pop(nc, "+%d" % big_g(), Color("4fd1ff"))
+			msg = "Overcharged %s! +%d XP" % [th["pot"], bxp]
+			_pop(nc, "+%d XP" % bxp, Color("4fd1ff"))
+			_adv_gain_xp(bxp)
 			snd = "big"
 		elif kind == "shield":
 			sh = mini(sh_max, sh + 8)
@@ -3289,9 +3358,9 @@ func _adv_use_slot(i: int) -> void:
 		msg = "Air Canister: +20 air"
 		_sfx("lamp")
 	elif id == "draught":
-		_adv_level_up(2)
-		msg = "Elixir! Level %d" % level
-		_pop(pos, "+2", Color("6dff9a"))
+		_adv_gain_xp(30)
+		msg = "Elixir! +30 XP"
+		_pop(pos, "+30 XP", Color("6dff9a"))
 		_sfx("big")
 	elif id == "cloak":
 		if boost > 0:
@@ -3345,6 +3414,14 @@ func _adv_aim_apply(c: Vector2i) -> void:
 
 
 func _adv_input(p: Vector2) -> void:
+	if btn_inv.has_point(p):
+		state = INV
+		walk.clear()
+		aim = -1
+		inv_tab = 0
+		inv_page = 0
+		_sfx("ui")
+		return
 	for i in slots_n():
 		if _slot_rect(i).has_point(p):
 			_adv_use_slot(i)
@@ -3537,6 +3614,11 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
 	# HUD
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
+	_button(btn_inv, "BAG", acc)
+	var xpf := clampf(float(xp) / float(xp_need()), 0.0, 1.0)
+	draw_rect(Rect2(40, 245, 240, 11), Color(1, 1, 1, 0.14))
+	draw_rect(Rect2(40, 245, 240.0 * xpf, 11), Color("ffd84f"))
+	_txt("XP %d/%d" % [xp, xp_need()], Vector2(288, 256), 14, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("ADVENTURE   FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -3611,6 +3693,128 @@ func _adv_draw() -> void:
 		_para("RELICS: " + ", ".join(parts), Vector2(20, 1220), 15, Color(1, 1, 1, 0.6), 680.0)
 
 
+func _inv_tab_rect(i: int) -> Rect2:
+	return Rect2(40 + i * 165, 186, 155, 50)
+
+
+func _inv_use_rect(i: int) -> Rect2:
+	return Rect2(540, 286 + i * 104 + 22, 120, 52)
+
+
+func _owned_relics() -> Array:
+	var out: Array = []
+	for d in relic_defs:
+		if relic_n(String(d["id"])) > 0:
+			out.append(d)
+	return out
+
+
+func _inv_input(p: Vector2) -> void:
+	if btn_icl.has_point(p) or btn_inv.has_point(p):
+		state = PLAY
+		_sfx("ui")
+		return
+	for i in 4:
+		if _inv_tab_rect(i).has_point(p):
+			inv_tab = i
+			inv_page = 0
+			_sfx("ui")
+			return
+	if inv_tab == 1:
+		for i in inv.size():
+			if _inv_use_rect(i).has_point(p):
+				state = PLAY
+				_adv_use_slot(i)
+				return
+	elif inv_tab == 2:
+		var pages := maxi(1, (_owned_relics().size() + 8) / 9)
+		if btn_ipv.has_point(p):
+			inv_page = (inv_page + pages - 1) % pages
+			_sfx("ui")
+		elif btn_inx.has_point(p):
+			inv_page = (inv_page + 1) % pages
+			_sfx("ui")
+
+
+func _draw_inv(acc: Color) -> void:
+	_txt("INVENTORY", Vector2(0, 150), 52, acc)
+	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR"]
+	for i in 4:
+		var tr := _inv_tab_rect(i)
+		var tc := Color("ffd84f") if i == inv_tab else Color(1, 1, 1, 0.5)
+		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == inv_tab else 0.06))
+		draw_rect(tr, tc, false, 2.0)
+		_ctext(tabs[i], tr.get_center(), 22, tc)
+	if inv_tab == 0:
+		var rows := [
+			["LEVEL", "%d" % level, "Each level adds attack and max health."],
+			["XP", "%d / %d" % [xp, xp_need()], "Kills, potions and vaults give XP. Monsters grow with you."],
+			["HEALTH", "%d / %d" % [hp, hp_max], "Reach 0 and you die. Medkits heal 40%."],
+			["ATTACK", "%d" % p_atk(), "Damage per hit: your level plus bonuses."],
+			["ARMOUR", "%d" % armor, "Reduces every hit you take (minimum 1)."],
+			["SHIELD", "%d / %d" % [sh, sh_max], "Soaks damage before your health does."],
+			["AIR", "%d / %d" % [int(ceil(oxy)), int(oxy_max)], "Walking costs air. O2 stations refill it."],
+			["POINTS", "%d / %d" % [adv_pts, adv_req], "Reach the total to unlock the exit. Coins: %d" % coins],
+		]
+		for i in rows.size():
+			var y := 290.0 + i * 94.0
+			draw_rect(Rect2(40, y, 640, 84), Color(1, 1, 1, 0.05))
+			_txt(String(rows[i][0]), Vector2(60, y + 34), 24, Color(1, 1, 1, 0.65), 260.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(rows[i][1]), Vector2(380, y + 34), 30, Color.WHITE, 280.0, HORIZONTAL_ALIGNMENT_RIGHT)
+			_txt(String(rows[i][2]), Vector2(60, y + 66), 19, Color(1, 1, 1, 0.55), 620.0, HORIZONTAL_ALIGNMENT_LEFT)
+	elif inv_tab == 1:
+		_txt("Tools also sit on the bar at the bottom of the screen.", Vector2(0, 268), 20, Color(1, 1, 1, 0.55))
+		if inv.is_empty():
+			_txt("No tools yet. Find them in rooms and vaults.", Vector2(0, 520), 26, Color(1, 1, 1, 0.5))
+		for i in inv.size():
+			var id: String = inv[i]
+			var y := 286.0 + i * 104.0
+			var col: Color = use_defs[id]["col"]
+			draw_rect(Rect2(40, y, 640, 94), Color(col.r, col.g, col.b, 0.1))
+			draw_rect(Rect2(40, y, 640, 94), col, false, 2.0)
+			_use_icon(id, Vector2(86, y + 47), 52)
+			_txt(_use_name(id), Vector2(130, y + 38), 28, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_atext("tool_" + id, String(use_defs[id]["desc"])), Vector2(130, y + 66), 19, Color(1, 1, 1, 0.7), 390.0)
+			_button(_inv_use_rect(i), "USE", col, 24)
+	elif inv_tab == 2:
+		var owned := _owned_relics()
+		var pages := maxi(1, (owned.size() + 8) / 9)
+		if owned.is_empty():
+			_txt("No relics yet. Pick one after clearing a floor.", Vector2(0, 520), 26, Color(1, 1, 1, 0.5))
+		for k in 9:
+			var idx := inv_page * 9 + k
+			if idx >= owned.size():
+				break
+			var d: Dictionary = owned[idx]
+			var y := 262.0 + k * 86.0
+			var cursed := d.has("curse")
+			var col := Color("ff6a5c") if cursed else acc
+			draw_rect(Rect2(40, y, 640, 78), Color(col.r, col.g, col.b, 0.1))
+			draw_rect(Rect2(40, y, 640, 78), col, false, 2.0)
+			var n := relic_n(String(d["id"]))
+			_txt(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else "") + ("   CURSED" if cursed else ""), Vector2(58, y + 32), 26, col, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(_atext(String(d["id"]), String(d["desc"])), Vector2(58, y + 62), 19, Color(1, 1, 1, 0.75), 610.0, HORIZONTAL_ALIGNMENT_LEFT)
+		if pages > 1:
+			_button(btn_ipv, "< PREV", acc, 22)
+			_button(btn_inx, "NEXT >", acc, 22)
+			_txt("Page %d / %d" % [inv_page + 1, pages], Vector2(0, 1106), 20, Color(1, 1, 1, 0.55))
+	else:
+		var slots := [
+			["WEAPON", "Fists: damage equals your level.", "Weapons will add damage and special effects."],
+			["ARMOUR", "Plating +%d: every hit you take is reduced by %d." % [armor, armor] if armor > 0 else "", "Armour pieces will add protection and perks."],
+			["TRINKET", "", "Trinkets will add passive bonuses."],
+		]
+		for i in slots.size():
+			var y := 290.0 + i * 150.0
+			draw_rect(Rect2(40, y, 640, 134), Color(1, 1, 1, 0.05))
+			draw_rect(Rect2(40, y, 640, 134), Color(1, 1, 1, 0.3), false, 2.0)
+			_txt(String(slots[i][0]), Vector2(60, y + 38), 26, Color("ffd84f"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+			var cur := String(slots[i][1])
+			_txt(cur if cur != "" else "Empty", Vector2(60, y + 76), 24, Color.WHITE if cur != "" else Color(1, 1, 1, 0.4), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(slots[i][2]), Vector2(60, y + 110), 19, Color(1, 1, 1, 0.55), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_button(btn_icl, "CLOSE", acc, 26)
+
+
 func _adv_selftest() -> void:
 	var bad := 0
 	cls = "scout"
@@ -3623,6 +3827,8 @@ func _adv_selftest() -> void:
 		period = 100000
 		maxd = 0
 		adv_seed = f * 7919 + 13
+		_adv_init_run()
+		level = 2 + f
 		_adv_gen()
 		var dist := _adv_bfs(start)
 		var ok := dist.has(stairs)
@@ -3640,16 +3846,8 @@ func _adv_selftest() -> void:
 			if c != stairs:
 				lvs.append(int(mons[c]))
 		lvs.sort()
-		var cap := start_lvl()
-		for c in items:
-			if items[c] == "pot":
-				cap += pot_g()
-			elif items[c] == "big":
-				cap += big_g()
-		if vaults.size() > 0:
-			cap += 1
 		for k in lvs.size():
-			if int(lvs[k]) > cap + k - 1:
+			if int(lvs[k]) > level + 2 + k / 2:
 				ok = false
 		if adv_req > adv_pts_total:
 			ok = false
@@ -3678,6 +3876,7 @@ func _adv_selftest() -> void:
 	floor_n = 6
 	cls = "brute"
 	adv_seed = 99
+	_adv_init_run()
 	_adv_gen()
 	_adv_snapshot()
 	_adv_begin()
@@ -3700,6 +3899,7 @@ func _adv_selftest() -> void:
 	_adv_hurt(5, "Test")
 	_adv_hunters()
 	_adv_step(start, true)
+	_adv_gain_xp(500)
 	print("combat sim ok hp %d sh %d armor %d level %d state %d" % [hp, sh, armor, level, state])
 	print("ADV TEST DONE bad=%d" % bad)
 

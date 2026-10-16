@@ -50,3 +50,7 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 - Adventure combat is now health-based: every tap on a monster is one round (you hit for your level + bonuses, it hits back for its level minus your armour). Monsters have HP bars; shield is its own pool that soaks damage first; armour plates and medkits are new pickups. Levels still raise attack and max HP.
 - O2 stations (infinite air, step on to refill) are spaced 29+ steps apart so every room is within ~30 steps of one.
 - Adventure uses air-themed names (Deep Lungs, Wide Scanner, Air Canister...). Pickaxe removed from Adventure. Reset button removed from both modes (death screen still has Retry).
+
+## v9: XP, persistent levels, inventory
+- Adventure: kills, potions, vaults and elixirs give XP; levels persist for the whole run (each level = +1 attack, +3 max HP). Monsters scale with your current level and the floor depth so fights stay costly.
+- New BAG button (top right in Adventure) opens an inventory screen with STATS, TOOLS (with USE buttons), RELICS and GEAR tabs. The tool bar stays at the bottom. GEAR has weapon/armour/trinket slots reserved for future items.
