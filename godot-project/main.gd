@@ -2,6 +2,8 @@ extends Control
 # Pocket Station - level-or-die pocket dungeon with a creeping dark.
 # Beat monsters weaker than you (green badge) to level up; stronger or equal ones (red) kill you.
 # Reach the gate's level before the dark eats the board from the edges.
+# Extras: gold-star elites (+2), shield (survive one losing fight), spikes (+2 dark steps),
+# lanterns, portals, walls, coins. Add "?floor=5" to the URL to start on a later (bigger) floor.
 
 const START_LEVEL := 2
 const GX := 40
@@ -13,22 +15,25 @@ var themes: Array = []
 var font: Font = ThemeDB.fallback_font
 var tex_cache: Dictionary = {}
 
-var N := 5
-var cell := 128.0
-var period := 8
+var N := 6
+var cell := 106.0
+var period := 9
 var maxd := 2
 
 var floor_n := 1
 var level := START_LEVEL
 var moves := 0
 var coins := 0
+var shield := false
 var pos := Vector2i.ZERO
 var start := Vector2i.ZERO
 var stairs := Vector2i.ZERO
 var req := 4
 var boss_cell := Vector2i(-1, -1)
 var mons: Dictionary = {}     # Vector2i -> int level
-var items: Dictionary = {}    # Vector2i -> "pot" | "big" | "lamp"
+var elite: Dictionary = {}    # Vector2i -> true (gold star: +2 levels when beaten)
+var items: Dictionary = {}    # Vector2i -> "pot" | "big" | "lamp" | "shield"
+var spikes: Dictionary = {}   # Vector2i -> true (stepping on them costs 2 extra steps)
 var coin_at: Dictionary = {}  # Vector2i -> true
 var walls: Dictionary = {}    # Vector2i -> true
 var portals: Dictionary = {}  # Vector2i -> Vector2i (both directions)
@@ -41,6 +46,7 @@ var over_sub := ""
 var best := 0
 var t := 0.0
 var pops: Array = []
+var stars: Array = []
 
 
 func _ready() -> void:
@@ -50,7 +56,15 @@ func _ready() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load("user://best.cfg") == OK:
 		best = int(cfg.get_value("s", "best", 0))
+	var rs := RandomNumberGenerator.new()
+	rs.seed = 4242
+	for i in 60:
+		stars.append([rs.randf() * 720.0, rs.randf() * 1280.0, rs.randf() * 6.28, 1.0 + rs.randf() * 2.0])
 	var args := OS.get_cmdline_user_args()
+	if OS.has_feature("web"):
+		var q = JavaScriptBridge.eval("new URLSearchParams(location.search).get('floor')")
+		if q != null and int(q) > 0:
+			floor_n = int(q)
 	if "--test" in args:
 		_self_test()
 		get_tree().quit()
@@ -69,7 +83,7 @@ func _make_themes() -> void:
 		},
 		{
 			"name": "OVERGROWN GREENHOUSE", "bg": Color("0c1a12"), "tile": Color("183625"), "tile2": Color("1f4530"),
-			"wall": Color("3f6b3a"), "accent": Color("7dff9b"), "dark": Color("020a05",),
+			"wall": Color("3f6b3a"), "accent": Color("7dff9b"), "dark": Color("020a05"),
 			"mcols": [Color("d9f26b"), Color("ff9ecb"), Color("b6e3ff"), Color("ffcf5c"), Color("e56bff"), Color("ff7a5c"), Color("7dffe0"), Color("fff08a"), Color("ff5c8a")],
 			"mons": ["Aphid", "Vine", "Beetle", "Spore pod", "Stalker", "Bloom", "Mantis", "Elder root", "Hive heart"],
 			"pot": "Nectar", "gate": "Hatch", "boss": "Hive Queen",
@@ -128,10 +142,28 @@ func _player_tex() -> ImageTexture:
 	if tex_cache.has(key):
 		return tex_cache[key]
 	var rows := [
-		"...oooo...", "..owwwwo..", ".owvvvvwo.", ".owvhvvwo.", ".owvvvvwo.",
-		"..owwwwo..", ".owwwwwwo.", "owwwggwwwo", "owwwwwwwwo", ".owwoowwo.", "..obo.obo..",
+		"....oooooo....",
+		"...owwwwwwo...",
+		"..owwwwwwwwo..",
+		".owwoooooowwo.",
+		".owovvvvvvowo.",
+		".owovhhvvvowo.",
+		".owovvvvVVowo.",
+		".owwoooooowwo.",
+		"..owwwwwwwwo..",
+		".owlwwrrwwlwo.",
+		"owwlwwyywwlwwo",
+		"owwlwwwwwwlwwo",
+		".owwwwwwwwwwo.",
+		"..owwwooowwwo.",
+		".obbbo..obbbo.",
+		".ooooo..ooooo.",
 	]
-	var pal := {"o": Color("10131f"), "w": Color("eef2ff"), "g": Color("aab3d1"), "v": cur_theme()["accent"], "h": Color("ffffff"), "b": Color("5a6280")}
+	var acc: Color = cur_theme()["accent"]
+	var pal := {
+		"o": Color("10131f"), "w": Color("eef2ff"), "l": Color("aab3d1"), "v": acc, "V": acc.darkened(0.45),
+		"h": Color("ffffff"), "r": Color("ff5d5d"), "y": Color("ffd84f"), "b": Color("5a6280"),
+	}
 	var tx := _tex_from_rows(rows, pal)
 	tex_cache[key] = tx
 	return tx
@@ -144,26 +176,107 @@ func _item_tex(kind: String) -> ImageTexture:
 	var pal: Dictionary = {"o": Color("10131f"), "h": Color("ffffff")}
 	if kind == "pot" or kind == "big":
 		rows = [
-			"...oooo...", "...occo...", "....oo....", "...oyyo...", "..oyyyyo..",
-			".oyyhyyyo.", ".oyyyyyyo.", ".oyyyyyyo.", "..oyyyyo..", "...oooo...",
+			"....oooo....", "....occo....", "....oggo....", "...oggggo...", "..oyyyyyyo..",
+			".oyhhyyyyyo.", ".oyhyyyyyYo.", ".oyyyyyyyYo.", ".oyyyyyyYYo.", "..oyyyYYYo..",
+			"...oooooo...", "............",
 		]
-		pal["c"] = Color("c9a55a")
+		pal["c"] = Color("a8743a")
+		pal["g"] = Color("cfe6ff")
 		pal["y"] = Color("ffd84f") if kind == "pot" else Color("4fd1ff")
+		pal["Y"] = Color("e0a92a") if kind == "pot" else Color("2a8fc4")
 	elif kind == "lamp":
 		rows = [
-			"....oo....", "...o..o...", "..oooooo..", "..oyyyyo..", "..oyhhyo..",
-			"..oyhhyo..", "..oyyyyo..", "..oooooo..", "...oggo...", "..oooooo..",
+			"....oooo....", "...o....o...", "..oooooooo..", "..oyyyyyyo..", "..oyhhyyyo..",
+			"..oyhwwyyo..", "..oywwwyyo..", "..oyyyyyyo..", "..oooooooo..", "...oggggo...",
+			"...oooooo...", "............",
 		]
-		pal["y"] = Color("ffe9a0")
+		pal["y"] = Color("ffcf4f")
+		pal["w"] = Color("fff6c8")
 		pal["g"] = Color("8a8f9c")
+	elif kind == "shield":
+		rows = [
+			"..oooooooo..", ".obbbbbbbbo.", ".obhbbbbbbo.", ".obhbbwwbbo.", ".obbbbwwbbo.",
+			".obbbbwwbbo.", "..obbbbbbo..", "..obbbbbBo..", "...obbbbBo..", "....obbBo...",
+			".....oBo....", "............",
+		]
+		pal["b"] = Color("4f8cff")
+		pal["B"] = Color("2a56b3")
+		pal["w"] = Color("ffffff")
+		pal["h"] = Color("a9c8ff")
 	else:
 		rows = [
-			"...oooo...", "..oyyyyo..", ".oyyhhyyo.", ".oyhyyyyo.", ".oyhyyyyo.",
-			".oyyyyyyo.", ".oyyyyyyo.", "..oyyyyo..", "...oooo...", "..........",
+			"....oooo....", "..ooyyyyoo..", ".oyyyhhyyyo.", ".oyyhyyyYyo.", "oyyhyYYYYyyo",
+			"oyyhyYYYYyyo", "oyyyyYYYYyyo", ".oyyyYYYYyo.", ".oyyyyyyyyo.", "..ooyyyyoo..",
+			"....oooo....", "............",
 		]
 		pal["y"] = Color("ffc93c")
+		pal["Y"] = Color("e09a1a")
 	var tx := _tex_from_rows(rows, pal)
 	tex_cache[kind] = tx
+	return tx
+
+
+func _floor_tex(ti: int, parity: int, variant: int) -> ImageTexture:
+	var key := "floor%d_%d_%d" % [ti, parity, variant]
+	if tex_cache.has(key):
+		return tex_cache[key]
+	var base: Color = themes[ti]["tile"] if parity == 0 else themes[ti]["tile2"]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = ti * 100 + parity * 10 + variant
+	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	img.fill(base)
+	if ti == 0:
+		for i in 16:
+			img.set_pixel(i, 0, base.darkened(0.3))
+			img.set_pixel(0, i, base.darkened(0.3))
+			img.set_pixel(i, 1, base.lightened(0.08))
+			img.set_pixel(1, i, base.lightened(0.08))
+		for p in [Vector2i(3, 3), Vector2i(12, 3), Vector2i(3, 12), Vector2i(12, 12)]:
+			img.set_pixel(p.x, p.y, base.lightened(0.3))
+			img.set_pixel(p.x + 1, p.y + 1, base.darkened(0.3))
+		if variant == 1:
+			for y in range(5, 11, 2):
+				for x in range(4, 12):
+					img.set_pixel(x, y, base.darkened(0.35))
+		elif variant == 2:
+			for x in 16:
+				if (x / 2) % 2 == 0:
+					img.set_pixel(x, 14, Color("b8901e"))
+					img.set_pixel(x, 13, Color("b8901e").darkened(0.3))
+	elif ti == 1:
+		for i in 12:
+			var gx := rng.randi_range(1, 14)
+			var gy := rng.randi_range(2, 14)
+			img.set_pixel(gx, gy, base.lightened(0.28))
+			img.set_pixel(gx, gy - 1, base.lightened(0.45))
+		for i in 8:
+			img.set_pixel(rng.randi_range(0, 15), rng.randi_range(0, 15), base.darkened(0.2))
+		if variant == 2:
+			var fx := rng.randi_range(3, 12)
+			var fy := rng.randi_range(3, 12)
+			img.set_pixel(fx, fy, Color("ffe066"))
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				img.set_pixel(fx + d.x, fy + d.y, Color("ff9ecb"))
+	else:
+		for y in [0, 8]:
+			for x in 16:
+				img.set_pixel(x, y, base.darkened(0.35))
+				img.set_pixel(x, y + 1, base.lightened(0.07))
+		for i in 14:
+			var gx2 := rng.randi_range(0, 15)
+			var gy2: int = rng.randi_range(0, 1) * 8 + rng.randi_range(2, 6)
+			img.set_pixel(gx2, gy2, base.darkened(0.15))
+			if gx2 < 14:
+				img.set_pixel(gx2 + 1, gy2, base.darkened(0.15))
+		var seam := 5 + variant * 3
+		for y in range(0, 8):
+			img.set_pixel(seam, y, base.darkened(0.35))
+		for y in range(8, 16):
+			img.set_pixel((seam + 7) % 16, y, base.darkened(0.35))
+		for p in [Vector2i(1, 3), Vector2i(14, 3), Vector2i(1, 11), Vector2i(14, 11)]:
+			img.set_pixel(p.x, p.y, base.lightened(0.35))
+	var tx := ImageTexture.create_from_image(img)
+	tex_cache[key] = tx
 	return tx
 
 
@@ -174,36 +287,68 @@ func _wall_tex(ti: int) -> ImageTexture:
 	var base: Color = themes[ti]["wall"]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 555 + ti
-	var img := Image.create(12, 12, false, Image.FORMAT_RGBA8)
-	for y in 12:
-		for x in 12:
-			var c := base
-			if x == 0 or y == 0 or x == 11 or y == 11:
-				c = base.darkened(0.55)
-			elif x == 1 or y == 1:
-				c = base.lightened(0.2)
-			elif x == 10 or y == 10:
-				c = base.darkened(0.25)
-			elif rng.randf() < 0.12:
-				c = base.lightened(0.12)
-			img.set_pixel(x, y, c)
-	for p in [Vector2i(2, 2), Vector2i(9, 2), Vector2i(2, 9), Vector2i(9, 9)]:
-		img.set_pixel(p.x, p.y, base.darkened(0.6))
-	var tx := ImageTexture.create_from_image(img)
-	tex_cache[key] = tx
-	return tx
-
-
-func _speck_tex(ti: int, variant: int) -> ImageTexture:
-	var key := "speck%d_%d" % [ti, variant]
-	if tex_cache.has(key):
-		return tex_cache[key]
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 99 + ti * 31 + variant
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	for i in 14:
-		var c := Color(1, 1, 1, 0.07) if rng.randf() < 0.6 else Color(0, 0, 0, 0.18)
-		img.set_pixel(rng.randi_range(0, 15), rng.randi_range(0, 15), c)
+	var S := 16
+	var img := Image.create(S, S, false, Image.FORMAT_RGBA8)
+	img.fill(base)
+	if ti == 0:
+		for i in S:
+			for e in [0, S - 1]:
+				img.set_pixel(i, e, base.darkened(0.6))
+				img.set_pixel(e, i, base.darkened(0.6))
+			img.set_pixel(i, 1, base.lightened(0.25))
+			img.set_pixel(1, i, base.lightened(0.15))
+			img.set_pixel(i, S - 2, base.darkened(0.3))
+			img.set_pixel(S - 2, i, base.darkened(0.3))
+		for y in [5, 7, 9]:
+			for x in range(3, 13):
+				img.set_pixel(x, y, base.darkened(0.45))
+				img.set_pixel(x, y + 1, base.lightened(0.15))
+		for p in [Vector2i(3, 3), Vector2i(12, 3), Vector2i(3, 12), Vector2i(12, 12)]:
+			img.set_pixel(p.x, p.y, base.lightened(0.5))
+		for x in range(2, 14):
+			if (x / 2) % 2 == 0:
+				img.set_pixel(x, 12, Color("d9b020"))
+				img.set_pixel(x, 13, Color("d9b020").darkened(0.35))
+	elif ti == 1:
+		var g1 := base.darkened(0.45)
+		var g2 := base
+		var g3 := base.lightened(0.3)
+		for y in S:
+			for x in S:
+				var v := sin(x * 1.1 + rng.randf()) + cos(y * 0.9 + rng.randf()) + rng.randf() * 0.8
+				var c := g2
+				if v < -0.4:
+					c = g1
+				elif v > 1.1:
+					c = g3
+				img.set_pixel(x, y, c)
+		for i in S:
+			if rng.randf() < 0.5:
+				img.set_pixel(i, 0, g1)
+			if rng.randf() < 0.5:
+				img.set_pixel(i, S - 1, g1)
+			if rng.randf() < 0.5:
+				img.set_pixel(0, i, g1)
+			if rng.randf() < 0.5:
+				img.set_pixel(S - 1, i, g1)
+		for i in 4:
+			img.set_pixel(rng.randi_range(2, 13), rng.randi_range(2, 13), Color("ff5c7a"))
+	else:
+		for i in S:
+			for e in [0, S - 1]:
+				img.set_pixel(i, e, base.darkened(0.6))
+				img.set_pixel(e, i, base.darkened(0.6))
+			img.set_pixel(i, 1, base.lightened(0.2))
+			img.set_pixel(1, i, base.lightened(0.2))
+		for i in range(2, S - 2):
+			img.set_pixel(i, i, base.darkened(0.35))
+			img.set_pixel(i, i + 1 if i + 1 < S - 1 else i, base.darkened(0.35))
+			img.set_pixel(S - 1 - i, i, base.darkened(0.35))
+			img.set_pixel(S - 1 - i, i + 1 if i + 1 < S - 1 else i, base.darkened(0.35))
+		for p in [Vector2i(2, 2), Vector2i(13, 2), Vector2i(2, 13), Vector2i(13, 13)]:
+			img.set_pixel(p.x, p.y, base.lightened(0.6))
+		for i in 12:
+			img.set_pixel(rng.randi_range(2, 13), rng.randi_range(2, 13), base.lightened(0.1))
 	var tx := ImageTexture.create_from_image(img)
 	tex_cache[key] = tx
 	return tx
@@ -215,7 +360,7 @@ func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
 		return tex_cache[key]
 	var cols: Array = themes[ti]["mcols"]
 	var body: Color = cols[(lvl - 1) % cols.size()]
-	var W := 11 if boss else 9
+	var W := 15 if boss else 13
 	var half := W / 2
 	var rng := RandomNumberGenerator.new()
 	rng.seed = ti * 7919 + lvl * 104729 + (13 if boss else 0)
@@ -225,49 +370,103 @@ func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
 		for x in W:
 			row.append(0)
 		g.append(row)
-	for y in range(1, W - 1):
+	# 0 empty, 1 body, 2 eye white, 3 pupil, 4 mouth, 5 tooth, 6 spot, 7 horn, 8 glow bulb
+	var rx := float(half) - 0.6 - rng.randf() * 1.3
+	var cy := (W - 1) * 0.5 + rng.randf() * 0.8
+	var ry := W * 0.5 - 1.9 - rng.randf() * 1.2
+	var ex := 2.0 + rng.randf() * 1.6
+	for y in W:
 		for x in range(0, half + 1):
-			var f := rng.randf() < 0.58
-			if x == half and y >= 2 and y <= W - 3:
-				f = true
-			if f:
+			var dx := absf(float(x - half)) / rx
+			var dy := absf(float(y) - cy) / ry
+			var v := pow(dx, ex) + pow(dy, ex)
+			if v <= 1.0 + (rng.randf() - 0.5) * 0.3:
 				g[y][x] = 1
-				g[y][W - 1 - x] = 1
-	var ey := 4 if boss else 3
-	var ex := half - 2
-	for x in range(half - 1, half + 2):
-		g[ey][x] = 1
-	g[ey][ex] = 2
-	g[ey][W - 1 - ex] = 2
+	# arms
+	if rng.randf() < 0.65:
+		var ay := int(cy) + rng.randi_range(-1, 1)
+		for x in range(0, maxi(1, half - int(rx)) + 1):
+			g[ay][x] = 1
+			if rng.randf() < 0.5:
+				g[ay + 1][x] = 1
+	# horns
+	var horns := rng.randi_range(0, 2)
 	if boss:
-		g[0][1] = 1
-		g[0][W - 2] = 1
-		g[1][1] = 1
-		g[1][2] = 1
-		g[1][W - 2] = 1
-		g[1][W - 3] = 1
-		g[2][1] = 1
-		g[2][W - 2] = 1
+		horns = 2
+	for h in horns:
+		var hx := half - 2 - h * 2 - rng.randi_range(0, 1)
+		if hx < 1:
+			hx = 1
+		g[0][hx] = 7
+		g[1][hx] = 7
+		g[2][hx] = 7
+		if hx > 0:
+			g[0][hx - 1] = 7
+	if rng.randf() < 0.3 or boss:
+		g[0][half] = 8
+		g[1][half] = 7
+	# legs
+	if rng.randf() < 0.75:
+		var lx := half - 1 - rng.randi_range(0, 1)
+		for k in rng.randi_range(1, 2):
+			var x := lx - k * 2
+			if x >= 0:
+				g[W - 1][x] = 1
+				g[W - 2][x] = 1
+	# eyes
+	var ey := int(cy - ry * 0.35)
+	var etype := rng.randi() % 3
+	if etype == 0:
+		var ex0 := half - 3
+		for yy in range(ey, ey + 2):
+			for xx in range(ex0, ex0 + 2):
+				g[yy][xx] = 2
+		g[ey + 1][ex0 + 1] = 3
+		g[ey][ex0 + 1] = 3
+	elif etype == 1:
+		for yy in range(ey - 1, ey + 2):
+			for xx in range(half - 1, half + 1):
+				g[yy][xx] = 2
+		g[ey][half] = 3
+		g[ey + 1][half] = 3
+	else:
+		g[ey - 1][half] = 2
+		g[ey][half] = 3
+		g[ey + 1][half - 3] = 2
+		g[ey + 1][half - 2] = 3
+	# mouth
+	var my := ey + 3
+	if my < W - 2:
+		for xx in range(half - 2, half + 1):
+			if int(g[my][xx]) != 0:
+				g[my][xx] = 4
+		if rng.randf() < 0.65 and int(g[my][half - 1]) == 4:
+			g[my][half - 1] = 5
+			if int(g[my][half - 2]) == 4 and rng.randf() < 0.5:
+				g[my][half - 2] = 5
+	# spots
+	for i in 5:
+		var sx := rng.randi_range(1, half)
+		var sy := rng.randi_range(2, W - 3)
+		if int(g[sy][sx]) == 1 and absi(sy - ey) > 1:
+			g[sy][sx] = 6
+	# mirror
+	for y in W:
+		for x in range(0, half):
+			if int(g[y][x]) != 0:
+				g[y][W - 1 - x] = g[y][x]
 	var S := W + 2
 	var img := Image.create(S, S, false, Image.FORMAT_RGBA8)
-	var outline := Color("0a0c14")
+	var outline := body.darkened(0.82)
+	var horn_c := body.lightened(0.55)
 	for y in S:
 		for x in S:
 			var gx := x - 1
 			var gy := y - 1
 			var v := 0
 			if gx >= 0 and gy >= 0 and gx < W and gy < W:
-				v = g[gy][gx]
-			if v == 1:
-				var c := body
-				if gy <= 2:
-					c = body.lightened(0.25)
-				elif gy >= W - 3:
-					c = body.darkened(0.3)
-				img.set_pixel(x, y, c)
-			elif v == 2:
-				img.set_pixel(x, y, Color.WHITE)
-			else:
+				v = int(g[gy][gx])
+			if v == 0:
 				var near := false
 				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 					var nx: int = gx + d.x
@@ -276,9 +475,34 @@ func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
 						near = true
 				if near:
 					img.set_pixel(x, y, outline)
-	# pupils
-	img.set_pixel(1 + ex, 1 + ey, Color("151515"))
-	img.set_pixel(1 + W - 1 - ex, 1 + ey, Color("151515"))
+				continue
+			var c := body
+			if v == 1 or v == 6 or v == 7:
+				var top_empty := gy == 0 or int(g[gy - 1][gx]) == 0
+				var left_empty := gx == 0 or int(g[gy][gx - 1]) == 0
+				var bot_empty := gy == W - 1 or int(g[gy + 1][gx]) == 0
+				var right_empty := gx == W - 1 or int(g[gy][gx + 1]) == 0
+				if v == 7:
+					c = horn_c
+				elif v == 6:
+					c = body.darkened(0.28)
+				if top_empty or left_empty:
+					c = c.lightened(0.3)
+				elif bot_empty or right_empty:
+					c = c.darkened(0.35)
+				elif gy > W * 0.65:
+					c = c.darkened(0.15)
+			elif v == 2:
+				c = Color.WHITE
+			elif v == 3:
+				c = Color("14141c")
+			elif v == 4:
+				c = Color("2a0f18")
+			elif v == 5:
+				c = Color("f2ead3")
+			elif v == 8:
+				c = Color("fff27a")
+			img.set_pixel(x, y, c)
 	var tx := ImageTexture.create_from_image(img)
 	tex_cache[key] = tx
 	return tx
@@ -287,7 +511,7 @@ func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
 # ---------- floor generation ----------
 
 func _setup_size() -> void:
-	N = 5 if floor_n <= 2 else (6 if floor_n <= 4 else 7)
+	N = 6 if floor_n <= 2 else (7 if floor_n <= 4 else 8)
 	cell = GW / N
 	period = 8 + (N - 5)
 	maxd = (N + 1) / 2 - 1
@@ -304,10 +528,12 @@ func _new_floor() -> void:
 		if tries >= 60:
 			walls.clear()
 			portals.clear()
+			spikes.clear()
 			req = START_LEVEL
 			break
 	level = START_LEVEL
 	moves = 0
+	shield = false
 	pos = start
 	walk.clear()
 	pops.clear()
@@ -320,6 +546,7 @@ func _take(free: Array[Vector2i]) -> Vector2i:
 
 
 func _random_layout(tries: int) -> void:
+	var k := N - 6
 	var cells: Array[Vector2i] = []
 	for x in N:
 		for y in N:
@@ -340,13 +567,15 @@ func _random_layout(tries: int) -> void:
 		if c != start and c != stairs:
 			free.append(c)
 	mons.clear()
+	elite.clear()
 	items.clear()
+	spikes.clear()
 	coin_at.clear()
 	walls.clear()
 	portals.clear()
 	boss_cell = Vector2i(-1, -1)
-	var nm: int = [4, 6, 8][N - 5] + mini((floor_n - 1) / 4, 1)
-	var base := [1, 1, 2, 2, 3, 3, 4, 5, 6, 6]
+	var nm: int = [6, 8, 10][k] + mini((floor_n - 1) / 4, 1)
+	var base := [1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 6]
 	var bump := (floor_n - 1) / 3
 	var levels: Array[int] = []
 	for i in nm:
@@ -371,27 +600,40 @@ func _random_layout(tries: int) -> void:
 			spot = free[0]
 		free.erase(spot)
 		mons[spot] = lv
-	var np := 2 + (N - 5)
-	var nbig := 0 if N == 5 else 1
-	var nlamp: int = [0, 1, 2][N - 5]
+	var ne: int = [1, 2, 2][k]
+	var cand: Array[Vector2i] = []
+	for c in mons:
+		if c != boss_cell and int(mons[c]) >= 2:
+			cand.append(c)
+	cand.shuffle()
+	for i in mini(ne, cand.size()):
+		elite[cand[i]] = true
+	var np := 2 + k
+	var nbig: int = [1, 1, 2][k]
+	var nlamp: int = [1, 2, 2][k]
+	var nshield: int = [1, 1, 2][k]
 	for i in np:
 		items[_take(free)] = "pot"
 	for i in nbig:
 		items[_take(free)] = "big"
 	for i in nlamp:
 		items[_take(free)] = "lamp"
-	if N >= 6:
+	for i in nshield:
+		items[_take(free)] = "shield"
+	var npairs: int = [1, 1, 2][k]
+	for i in npairs:
 		var a := _take(free)
 		var b := _take(free)
 		portals[a] = b
 		portals[b] = a
-	var nw: int = [0, 3, 5][N - 5]
-	for i in nw:
+	for i in [3, 5, 7][k]:
 		walls[_take(free)] = true
-	for i in N + 1:
+	for i in [2, 3, 4][k]:
+		spikes[_take(free)] = true
+	for i in N + 2:
 		coin_at[_take(free)] = true
-	var total := nm + np + 2 * nbig
-	var ratio := maxf(0.35, 0.6 - 0.05 * (tries / 8))
+	var total := nm + elite.size() + np + 2 * nbig
+	var ratio := maxf(0.3, 0.55 - 0.04 * (tries / 2))
 	req = START_LEVEL + int(total * ratio)
 
 
@@ -400,33 +642,35 @@ func _solvable() -> bool:
 	var gain: Array[int] = []
 	for c in mons:
 		list.append(c)
-		gain.append(1)
+		gain.append(2 if elite.has(c) else 1)
 	for c in items:
 		list.append(c)
-		var k: String = items[c]
-		gain.append(1 if k == "pot" else (2 if k == "big" else 0))
+		var kd: String = items[c]
+		gain.append(1 if kd == "pot" else (2 if kd == "big" else 0))
 	var idx: Dictionary = {}
 	for i in list.size():
 		idx[list[i]] = i
 	var cap := maxd * period
 	var seen: Dictionary = {}
-	var stack: Array = [[start, 0, 0, START_LEVEL]]
+	# state: pos, mask, moves, level, shield
+	var stack: Array = [[start, 0, 0, START_LEVEL, 0]]
 	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 	var pops_n := 0
 	while stack.size() > 0:
 		pops_n += 1
-		if pops_n > 40000:
+		if pops_n > 15000:
 			return false
 		var s: Array = stack.pop_back()
 		var p: Vector2i = s[0]
 		var mask: int = s[1]
 		var m: int = s[2]
 		var lvl: int = s[3]
+		var sh: int = s[4]
 		for d in dirs:
 			var nc: Vector2i = p + d
 			if not in_b(nc) or walls.has(nc):
 				continue
-			var m2 := mini(m + 1, cap)
+			var m2 := mini(m + 1 + (2 if spikes.has(nc) else 0), cap)
 			var dp := mini(m2 / period, maxd)
 			if ring(nc) < dp:
 				continue
@@ -437,6 +681,7 @@ func _solvable() -> bool:
 					continue
 			var mask2 := mask
 			var lvl2 := lvl
+			var sh2 := sh
 			var m3 := m2
 			if nc == stairs:
 				if lvl >= req:
@@ -445,19 +690,25 @@ func _solvable() -> bool:
 			if idx.has(nc) and not (mask & (1 << int(idx[nc]))):
 				var bi: int = idx[nc]
 				if mons.has(nc):
-					if lvl <= int(mons[nc]):
+					if lvl > int(mons[nc]):
+						lvl2 = lvl + gain[bi]
+					elif sh == 1:
+						sh2 = 0
+					else:
 						continue
-					lvl2 = lvl + 1
 				else:
+					var kind: String = items[nc]
 					lvl2 = lvl + gain[bi]
-					if items[nc] == "lamp":
+					if kind == "lamp":
 						m3 = maxi(m2 - 4, dp * period)
+					elif kind == "shield":
+						sh2 = 1
 				mask2 = mask | (1 << bi)
-			var key := ((dest.x * N + dest.y) * 32768 + mask2) * 64 + m3
+			var key := (((((dest.x * N + dest.y) * 2097152 + mask2) * 64 + m3) * 32 + lvl2) * 2) + sh2
 			if seen.has(key):
 				continue
 			seen[key] = true
-			stack.append([dest, mask2, m3, lvl2])
+			stack.append([dest, mask2, m3, lvl2, sh2])
 	return false
 
 
@@ -472,14 +723,23 @@ func _step(nc: Vector2i) -> void:
 	var names: Array = th["mons"]
 	var landing := nc
 	var lamp := false
+	var extra := 0
 	if mons.has(nc):
 		var lv: int = mons[nc]
 		var nm: String = th["boss"] if nc == boss_cell else names[(lv - 1) % names.size()]
 		if level > lv:
+			var gain := 2 if elite.has(nc) else 1
 			mons.erase(nc)
-			level += 1
+			elite.erase(nc)
+			level += gain
 			msg = "Beat %s! Level %d" % [nm, level]
-			_pop(nc, "LEVEL UP", Color("6dff9a"))
+			_pop(nc, "LEVEL +%d" % gain, Color("6dff9a"))
+		elif shield:
+			shield = false
+			mons.erase(nc)
+			elite.erase(nc)
+			msg = "Shield shattered! %s defeated" % nm
+			_pop(nc, "SHIELD!", Color("7db2ff"))
 		else:
 			pos = nc
 			_die("%s (Lv %d) was too strong" % [nm, lv])
@@ -500,10 +760,18 @@ func _step(nc: Vector2i) -> void:
 			level += 2
 			msg = "Overcharged %s! Level %d" % [th["pot"], level]
 			_pop(nc, "+2", Color("4fd1ff"))
+		elif kind == "shield":
+			shield = true
+			msg = "Shield! It saves you from one losing fight"
+			_pop(nc, "SHIELD", Color("7db2ff"))
 		else:
 			lamp = true
 			msg = "Lantern lit! The dark is held back"
 			_pop(nc, "LIGHT", Color("ffe9a0"))
+	elif spikes.has(nc):
+		extra = 2
+		msg = "Spikes! The dark gains 2 steps"
+		_pop(nc, "OUCH", Color("ff7a7a"))
 	elif coin_at.has(nc):
 		coin_at.erase(nc)
 		coins += 1
@@ -518,7 +786,7 @@ func _step(nc: Vector2i) -> void:
 		msg = "Warp!"
 	pos = landing
 	var before := depth_for(moves)
-	moves = mini(moves + 1, maxd * period)
+	moves = mini(moves + 1 + extra, maxd * period)
 	if depth_for(moves) > before:
 		msg = "The dark swallows the edge!"
 	if is_dark(pos):
@@ -555,12 +823,16 @@ func _clear() -> void:
 		over_sub += "\nThe station gets bigger..."
 
 
+func _blocking(c: Vector2i) -> bool:
+	return mons.has(c) or spikes.has(c)
+
+
 func _plan(target: Vector2i) -> void:
 	if portals.has(target):
 		target = portals[target]
 		if target == pos:
 			return
-	# BFS through free cells; portals are edges; monsters are only entered as the final step.
+	# BFS through free cells; portals are edges; monsters and spikes are only entered as the final step.
 	var dist: Dictionary = {pos: 0}
 	var prev: Dictionary = {}
 	var via: Dictionary = {}
@@ -570,7 +842,7 @@ func _plan(target: Vector2i) -> void:
 		var c: Vector2i = q.pop_front()
 		for d in dirs:
 			var n: Vector2i = c + d
-			if not in_b(n) or is_dark(n) or walls.has(n) or mons.has(n):
+			if not in_b(n) or is_dark(n) or walls.has(n) or _blocking(n):
 				continue
 			if n == stairs and level < req:
 				continue
@@ -588,7 +860,7 @@ func _plan(target: Vector2i) -> void:
 			q.append(dest)
 	var goal := target
 	var attack := false
-	if mons.has(target) or (target == stairs and level < req):
+	if _blocking(target) or (target == stairs and level < req):
 		var bestd := 999
 		var bestc := Vector2i(-1, -1)
 		for d in dirs:
@@ -678,6 +950,31 @@ func _spr(tex: Texture2D, ctr: Vector2, size: float) -> void:
 	draw_texture_rect(tex, Rect2(ctr.x - size * 0.5, ctr.y - size * 0.5, size, size), false)
 
 
+func _star(c: Vector2, r: float, col: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 10:
+		var a := -PI / 2.0 + i * PI / 5.0
+		var rr := r if i % 2 == 0 else r * 0.45
+		pts.append(c + Vector2(cos(a), sin(a)) * rr)
+	draw_colored_polygon(pts, col)
+	pts.append(pts[0])
+	draw_polyline(pts, Color("5a3d00"), 1.5)
+
+
+func _draw_spikes(ctr: Vector2) -> void:
+	var w := cell * 0.62
+	draw_rect(Rect2(ctr.x - w * 0.5, ctr.y - w * 0.32, w, w * 0.64), Color("20242f"))
+	for i in 3:
+		for j in 2:
+			var bx := ctr.x - w * 0.34 + i * w * 0.34
+			var by := ctr.y - w * 0.12 + j * w * 0.3
+			var tri := PackedVector2Array([Vector2(bx - w * 0.14, by + w * 0.12), Vector2(bx + w * 0.14, by + w * 0.12), Vector2(bx, by - w * 0.16)])
+			draw_colored_polygon(tri, Color("c3cad8"))
+			var side := PackedVector2Array([Vector2(bx, by - w * 0.16), Vector2(bx + w * 0.14, by + w * 0.12), Vector2(bx, by + w * 0.12)])
+			draw_colored_polygon(side, Color("7c8497"))
+			draw_circle(Vector2(bx, by - w * 0.14), 1.8, Color("ff5d5d"))
+
+
 func _draw() -> void:
 	if themes.is_empty():
 		return
@@ -685,11 +982,21 @@ func _draw() -> void:
 	var th := cur_theme()
 	var acc: Color = th["accent"]
 	draw_rect(Rect2(0, 0, 720, 1280), th["bg"])
+	for s in stars:
+		var a := 0.12 + 0.28 * (0.5 + 0.5 * sin(t * 1.5 + float(s[2])))
+		var sz: float = s[3]
+		var drift := 0.0
+		if ti == 1:
+			drift = sin(t * 0.7 + float(s[2])) * 6.0
+		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	# HUD
 	_txt(th["name"], Vector2(0, 70), 34, acc)
 	_txt("FLOOR %d    BEST %d" % [floor_n, best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d" % coins, Vector2(40, 256), 26, Color("ffc93c"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+	if shield:
+		_spr(_item_tex("shield"), Vector2(232, 244), 40)
+		_txt("SHIELD", Vector2(256, 252), 22, Color("7db2ff"), 120.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var depth := depth_for(moves)
 	var dark_txt := "DARK FINAL"
 	var frac := 1.0
@@ -704,7 +1011,7 @@ func _draw() -> void:
 	_txt(dark_txt, Vector2(360, 200), 44, dcol, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	draw_rect(Rect2(380, 218, 300, 14), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(380, 218, 300 * frac, 14), dcol)
-	_txt("%s: Lv %d" % [th["gate"], req], Vector2(0, 295), 28, Color.WHITE if level >= req else Color(1, 1, 1, 0.55))
+	_txt("%s: Lv %d" % [th["gate"], req], Vector2(0, 298), 28, Color.WHITE if level >= req else Color(1, 1, 1, 0.55))
 	# grid
 	var names: Array = th["mons"]
 	var wall_tex := _wall_tex(ti)
@@ -712,60 +1019,72 @@ func _draw() -> void:
 		for y in N:
 			var c := Vector2i(x, y)
 			var r := _cell_rect(c)
-			var col: Color = th["tile"] if (x + y) % 2 == 0 else th["tile2"]
 			if is_dark(c):
 				draw_rect(r, th["dark"])
 				continue
-			draw_rect(r.grow(-1.5), col)
-			draw_texture_rect(_speck_tex(ti, (x * 3 + y) % 2), r.grow(-1.5), false)
-			if ring(c) == depth and warn:
-				var a := 0.15 + 0.15 * sin(t * 8.0)
-				draw_rect(r.grow(-1.5), Color(1, 0.2, 0.2, a))
+			draw_texture_rect(_floor_tex(ti, (x + y) % 2, (x * 7 + y * 3) % 3), r.grow(-1.0), false)
+			if ring(c) == depth:
+				draw_rect(r.grow(-1.0), Color(0, 0, 0, 0.28))
+				if warn:
+					draw_rect(r.grow(-1.0), Color(1, 0.2, 0.2, 0.12 + 0.12 * sin(t * 8.0)))
 			var ctr := r.get_center()
 			var bob := sin(t * 3.0 + x * 1.7 + y) * 2.0
 			if walls.has(c):
-				draw_texture_rect(wall_tex, r.grow(-3), false)
+				draw_texture_rect(wall_tex, r.grow(-1.0), false)
 			elif c == stairs:
 				var ok := level >= req
 				var dc := Color("6dff9a") if ok else Color(1, 1, 1, 0.4)
-				var hw := cell * 0.27
-				var hh := cell * 0.36
-				draw_rect(Rect2(ctr.x - hw, ctr.y - hh, hw * 2, hh * 2), Color(dc.r, dc.g, dc.b, 0.18))
+				var hw := cell * 0.28
+				var hh := cell * 0.38
+				draw_rect(Rect2(ctr.x - hw, ctr.y - hh, hw * 2, hh * 2), Color(dc.r, dc.g, dc.b, 0.16))
 				draw_rect(Rect2(ctr.x - hw, ctr.y - hh, hw * 2, hh * 2), dc, false, 4.0)
+				draw_rect(Rect2(ctr.x - hw + 6, ctr.y - hh + 6, hw * 2 - 12, hh * 2 - 12), Color(dc.r, dc.g, dc.b, 0.35), false, 1.5)
 				_ctext("Lv %d" % req, ctr, int(cell * 0.24), dc)
 			elif mons.has(c):
 				var lv: int = mons[c]
 				var is_boss := c == boss_cell
 				var safe := level > lv
-				var mc := Color("49d17a") if safe else Color("ef4b55")
+				var mc := Color("49d17a") if safe else (Color("ffb02e") if shield else Color("ef4b55"))
 				var sz := cell * (0.92 if is_boss else 0.8)
+				if is_boss:
+					draw_circle(ctr, cell * 0.5, Color(acc.r, acc.g, acc.b, 0.12 + 0.08 * sin(t * 3.0)))
 				draw_circle(ctr + Vector2(0, cell * 0.3), cell * 0.28, Color(0, 0, 0, 0.3))
 				_spr(_monster_tex(ti, lv, is_boss), ctr + Vector2(0, bob), sz)
+				if elite.has(c):
+					_star(Vector2(r.position.x + cell * 0.2, r.position.y + cell * 0.2 + bob), cell * 0.16, Color("ffd84f"))
 				var bp := Vector2(r.end.x - cell * 0.2, r.position.y + cell * 0.2)
 				draw_circle(bp, cell * 0.17, Color("0a0c14"))
 				draw_circle(bp, cell * 0.145, mc)
 				_ctext(str(lv), bp, int(cell * 0.22), Color.WHITE)
-				if N <= 6:
+				if N <= 7:
 					_txt(names[(lv - 1) % names.size()], Vector2(r.position.x, r.end.y - 5), 13, Color(1, 1, 1, 0.65), cell)
 			elif items.has(c):
 				var kind: String = items[c]
-				_spr(_item_tex(kind), ctr + Vector2(0, bob), cell * 0.55)
+				draw_circle(ctr + Vector2(0, cell * 0.25), cell * 0.2, Color(0, 0, 0, 0.25))
+				_spr(_item_tex(kind), ctr + Vector2(0, bob), cell * 0.58)
 				if kind == "pot":
 					_txt("+1", Vector2(r.position.x, r.end.y - 6), 15, Color("ffd84f"), cell)
 				elif kind == "big":
 					_txt("+2", Vector2(r.position.x, r.end.y - 6), 15, Color("4fd1ff"), cell)
+				elif kind == "shield":
+					_txt("shield", Vector2(r.position.x, r.end.y - 6), 13, Color("7db2ff"), cell)
 				else:
 					_txt("light", Vector2(r.position.x, r.end.y - 6), 13, Color("ffe9a0"), cell)
+			elif spikes.has(c):
+				_draw_spikes(ctr)
 			elif coin_at.has(c):
-				_spr(_item_tex("coin"), ctr + Vector2(0, bob), cell * 0.4)
+				_spr(_item_tex("coin"), ctr + Vector2(0, bob), cell * 0.42)
 			elif portals.has(c):
 				var pc := Color("c07cff")
+				draw_circle(ctr, cell * 0.34, Color(pc.r, pc.g, pc.b, 0.18))
 				draw_arc(ctr, cell * 0.32, t * 3.0, t * 3.0 + PI * 1.3, 18, pc, 4.0)
 				draw_arc(ctr, cell * 0.2, -t * 4.0, -t * 4.0 + PI * 1.3, 14, Color("e6c8ff"), 3.0)
 				draw_circle(ctr, cell * 0.07, pc)
 	# player
 	var prc := _cell_rect(pos).get_center()
 	draw_circle(prc + Vector2(0, cell * 0.3), cell * 0.25, Color(0, 0, 0, 0.35))
+	if shield:
+		draw_arc(prc, cell * 0.46, 0, TAU, 28, Color(0.5, 0.7, 1.0, 0.5 + 0.2 * sin(t * 5.0)), 3.0)
 	_spr(_player_tex(), prc + Vector2(0, sin(t * 4.0) * 2.0), cell * 0.78)
 	# floating pops
 	for pp in pops:
@@ -776,9 +1095,10 @@ func _draw() -> void:
 		_ctext(pp["s"], pp_pos + Vector2(0, -cell * 0.3 - age * 50.0), 26, pcol)
 	# footer
 	_txt(msg, Vector2(0, 1040), 30, Color.WHITE)
-	_txt("Green badge = you win the fight. Red = you die.", Vector2(0, 1110), 24, Color(1, 1, 1, 0.55))
-	_txt("Beat weaker monsters to level up. Equal level loses!", Vector2(0, 1146), 24, Color(1, 1, 1, 0.55))
-	_txt("Tap a tile to walk there. The dark eats the outer ring.", Vector2(0, 1182), 24, Color(1, 1, 1, 0.55))
+	_txt("Green badge = you win the fight. Red = you die. Equal loses!", Vector2(0, 1100), 23, Color(1, 1, 1, 0.55))
+	_txt("Gold star = beat it for +2 levels. Shield saves you once.", Vector2(0, 1134), 23, Color(1, 1, 1, 0.55))
+	_txt("Spikes cost 2 extra steps. Portals warp. Lanterns slow the dark.", Vector2(0, 1168), 23, Color(1, 1, 1, 0.55))
+	_txt("Tap a tile to walk there. The dark eats the outer ring.", Vector2(0, 1202), 23, Color(1, 1, 1, 0.55))
 	if state != PLAY:
 		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.72))
 		var tc := Color("ff5d5d") if state == DEAD else acc
@@ -807,10 +1127,14 @@ func _self_test() -> void:
 		print("floor %d N %d %s tries %d solvable %s req %d mons %d %dms" % [f, N, cur_theme()["name"], tries, ok, req, mons.size(), Time.get_ticks_msec() - t0])
 		if not ok:
 			bad += 1
-		# sprite generation must not crash
-		for lv in range(1, 10):
-			_monster_tex(tidx(), lv, lv == 9)
+		for ti in 3:
+			for lv in range(1, 10):
+				_monster_tex(ti, lv, lv == 9)
+			for p in 2:
+				for v in 3:
+					_floor_tex(ti, p, v)
+			_wall_tex(ti)
 		_player_tex()
-		_item_tex("pot")
-		_wall_tex(tidx())
+		for kind in ["pot", "big", "lamp", "shield", "coin"]:
+			_item_tex(kind)
 	print("TEST DONE unsolvable=%d" % bad)
