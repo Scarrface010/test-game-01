@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER }
 const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
 const BAG_MAX := 12
 const AC := 90.0
@@ -159,6 +159,17 @@ var btn_mode_p := Rect2(50, 330, 620, 270)
 var btn_mode_a := Rect2(50, 650, 620, 270)
 var btn_tut := Rect2(50, 950, 620, 84)
 var tut_mode := 0
+var btn_lb := Rect2(50, 1052, 620, 84)
+var btn_lbname := Rect2(40, 1100, 300, 64)
+var btn_lbback := Rect2(380, 1100, 300, 64)
+const LB_URL := ""
+var lb_url := LB_URL
+var lb_name := ""
+var lb_uid := ""
+var lb_sent := {"puzzle": 0, "adv": 0}
+var lb_rows: Array = []
+var lb_status := ""
+var lb_mode := 0
 var tut_page := 0
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions and power cells give double XP", "slayer": "Elites give 50% more XP",
@@ -221,6 +232,16 @@ func _ready() -> void:
 		adv_best = int(cfg.get_value("s", "best_adv", 0))
 		for k in ups:
 			ups[k] = int(cfg.get_value("ups", k, 0))
+		lb_name = String(cfg.get_value("lb", "name", ""))
+		lb_uid = String(cfg.get_value("lb", "uid", ""))
+		lb_sent["puzzle"] = int(cfg.get_value("lb", "sent_puzzle", 0))
+		lb_sent["adv"] = int(cfg.get_value("lb", "sent_adv", 0))
+	if lb_uid == "":
+		var ur := RandomNumberGenerator.new()
+		ur.randomize()
+		for i in 14:
+			lb_uid += "abcdefghijklmnopqrstuvwxyz0123456789"[ur.randi() % 36]
+		_save_meta()
 	_make_defs()
 	_make_gear()
 	var rs := RandomNumberGenerator.new()
@@ -253,6 +274,14 @@ func _ready() -> void:
 		var cq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('class')")
 		var mq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('mode')")
 		fx_demo = demo != null and String(demo) == "fx"
+		var lbq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('lb')")
+		if lbq != null and String(lbq) != "":
+			lb_url = String(lbq)
+		if demo != null and String(demo) == "lb":
+			best = 3
+			adv_best = 5
+			lb_name = "Dev"
+			_lb_resubmit()
 		if mq != null and String(mq) == "adv":
 			mode = "adv"
 		if cq != null:
@@ -522,6 +551,10 @@ func _save_meta() -> void:
 	cfg.set_value("s", "best", best)
 	cfg.set_value("s", "bank", bank)
 	cfg.set_value("s", "best_adv", adv_best)
+	cfg.set_value("lb", "name", lb_name)
+	cfg.set_value("lb", "uid", lb_uid)
+	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
+	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
 	for k in ups:
 		cfg.set_value("ups", k, int(ups[k]))
 	cfg.save("user://best.cfg")
@@ -1161,12 +1194,14 @@ func _die(why: String) -> void:
 	bank += delta
 	run_banked += delta
 	_save_meta()
+	_lb_note(reached, true)
 	_sfx("death")
 	over_title = "YOU DIED"
 	over_sub = "%s\nFloors cleared: %d   Best: %d\nBanked +%d coins (total %d)" % [why, reached, adv_best if mode == "adv" else best, delta, bank]
 
 
 func _clear() -> void:
+	_lb_note(floor_n, false)
 	walk.clear()
 	aim = -1
 	_sfx("clear")
@@ -1527,7 +1562,14 @@ func _gui_input(event: InputEvent) -> void:
 	if state == TUTORIAL:
 		_tut_input(p)
 		return
+	if state == LEADER:
+		_lb_input(p)
+		return
 	if state == MODE:
+		if btn_lb.has_point(p):
+			_lb_open()
+			_sfx("ui")
+			return
 		if btn_tut.has_point(p):
 			state = TUTORIAL
 			tut_page = 0
@@ -2237,6 +2279,183 @@ func _anim_update(dt: float) -> void:
 		i -= 1
 
 
+# ---------- leaderboard ----------
+
+func _lb_key(i: int) -> String:
+	return "puzzle" if i == 0 else "adv"
+
+
+func _lb_clean(s: String) -> String:
+	var out := ""
+	for ch in s.strip_edges():
+		var ok := (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or (ch >= "0" and ch <= "9") or ch == " " or ch == "_" or ch == "-" or ch == "."
+		if ok:
+			out += ch
+	return out.strip_edges().substr(0, 12)
+
+
+func _lb_ask_name() -> bool:
+	if not OS.has_feature("web"):
+		if lb_name == "":
+			lb_name = "Player"
+			_save_meta()
+		return true
+	var r = JavaScriptBridge.eval("prompt('Your name for the leaderboard (max 12 letters or numbers):', %s)" % JSON.stringify(lb_name))
+	if r == null:
+		return false
+	var n := _lb_clean(String(r))
+	if n == "":
+		return false
+	lb_name = n
+	_save_meta()
+	return true
+
+
+func _lb_note(reached: int, allow_prompt: bool) -> void:
+	if lb_url == "" or reached <= 0:
+		return
+	var key := "adv" if mode == "adv" else "puzzle"
+	if reached <= int(lb_sent.get(key, 0)):
+		return
+	if lb_name == "":
+		if not allow_prompt or not _lb_ask_name():
+			return
+	_lb_put(key, reached)
+
+
+func _lb_resubmit() -> void:
+	if lb_url == "" or lb_name == "":
+		return
+	if best > 0:
+		_lb_put("puzzle", best)
+	if adv_best > 0:
+		_lb_put("adv", adv_best)
+
+
+func _lb_put(key: String, floors: int) -> void:
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(_lb_put_done.bind(req, key, floors))
+	var body := JSON.stringify({"n": lb_name, "f": floors, "c": cls, "t": int(Time.get_unix_time_from_system())})
+	var err := req.request(lb_url + "/lb/%s/%s.json" % [key, lb_uid], PackedStringArray(["Content-Type: application/json"]), HTTPClient.METHOD_PUT, body)
+	if err != OK:
+		req.queue_free()
+
+
+func _lb_put_done(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray, req: HTTPRequest, key: String, floors: int) -> void:
+	req.queue_free()
+	if result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300:
+		lb_sent[key] = maxi(int(lb_sent.get(key, 0)), floors)
+		_save_meta()
+		if state == LEADER:
+			_lb_fetch()
+
+
+func _lb_fetch() -> void:
+	lb_rows = []
+	if lb_url == "":
+		lb_status = "notset"
+		return
+	lb_status = "loading"
+	var key := _lb_key(lb_mode)
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(_lb_fetch_done.bind(req, key))
+	if req.request(lb_url + "/lb/%s.json" % key) != OK:
+		req.queue_free()
+		lb_status = "error"
+
+
+func _lb_fetch_done(result: int, code: int, _h: PackedStringArray, body: PackedByteArray, req: HTTPRequest, key: String) -> void:
+	req.queue_free()
+	if key != _lb_key(lb_mode):
+		return
+	if result != HTTPRequest.RESULT_SUCCESS or code < 200 or code >= 300:
+		lb_status = "error"
+		return
+	var data = JSON.parse_string(body.get_string_from_utf8())
+	var rows: Array = []
+	if data is Dictionary:
+		for uid in data:
+			var e = data[uid]
+			if e is Dictionary and e.has("n") and e.has("f"):
+				rows.append({"uid": String(uid), "n": _lb_clean(String(e["n"])), "f": int(e["f"]), "c": String(e.get("c", "")), "t": int(e.get("t", 0))})
+	rows.sort_custom(func(a, b): return a["f"] > b["f"] or (a["f"] == b["f"] and a["t"] < b["t"]))
+	lb_rows = rows.slice(0, 12)
+	lb_status = "ok"
+
+
+func _lb_open() -> void:
+	state = LEADER
+	_lb_fetch()
+
+
+func _lb_input(p: Vector2) -> void:
+	if btn_lbback.has_point(p):
+		state = MODE
+		_sfx("ui")
+		return
+	for i in 2:
+		if _tut_tabs(i).has_point(p):
+			lb_mode = i
+			_lb_fetch()
+			_sfx("ui")
+			return
+	if btn_lbname.has_point(p):
+		_sfx("ui")
+		if _lb_ask_name():
+			_lb_resubmit()
+			_lb_fetch()
+
+
+func _draw_lb(acc: Color) -> void:
+	_txt("LEADERBOARD", Vector2(0, 150), 52, acc)
+	var names := ["PUZZLE", "ADVENTURE"]
+	for i in 2:
+		var tr := _tut_tabs(i)
+		var tc := Color("ffd84f") if i == lb_mode else Color(1, 1, 1, 0.5)
+		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == lb_mode else 0.06))
+		draw_rect(tr, tc, false, 2.0)
+		_ctext(names[i], tr.get_center(), 24, tc)
+	var mine := best if lb_mode == 0 else adv_best
+	var nm := lb_name if lb_name != "" else "(no name yet)"
+	_txt("You: %s    Best: %d floors" % [nm, mine], Vector2(0, 280), 24, Color(1, 1, 1, 0.8))
+	if lb_status == "notset":
+		_para("The online board is not switched on yet. Your best is saved on this device. Once the game owner connects the free online database, everyone's names and floors will appear here.", Vector2(60, 380), 26, Color(1, 1, 1, 0.8), 600.0)
+	elif lb_status == "loading":
+		_txt("Loading...", Vector2(0, 420), 30, Color(1, 1, 1, 0.6))
+	elif lb_status == "error":
+		_txt("Could not reach the leaderboard", Vector2(0, 420), 28, Color("ff8a8a"))
+		_txt("Check your connection and reopen this screen", Vector2(0, 460), 22, Color(1, 1, 1, 0.6))
+	elif lb_rows.is_empty():
+		_txt("No scores yet. Be the first!", Vector2(0, 420), 30, Color(1, 1, 1, 0.7))
+	else:
+		for i in lb_rows.size():
+			var row: Dictionary = lb_rows[i]
+			var y := 336.0 + i * 58.0
+			var me: bool = String(row["uid"]) == lb_uid
+			var rc := Rect2(40, y - 34, 640, 50)
+			if me:
+				draw_rect(rc, Color(1, 0.85, 0.3, 0.16))
+				draw_rect(rc, Color("ffd84f"), false, 2.0)
+			var tc2 := Color("ffd84f") if me else Color.WHITE
+			var medal := [Color("ffd84f"), Color("c9d3f0"), Color("d08a4a")]
+			if i < 3:
+				draw_circle(Vector2(72, y - 9), 16, medal[i])
+				_ctext(str(i + 1), Vector2(72, y - 9), 20, Color("14141c"))
+			else:
+				_ctext(str(i + 1), Vector2(72, y - 9), 22, Color(1, 1, 1, 0.6))
+			var cc := Color.WHITE
+			for d in class_defs:
+				if String(d["id"]) == String(row["c"]):
+					cc = d["col"]
+			draw_circle(Vector2(128, y - 9), 9, cc)
+			_txt(String(row["n"]), Vector2(150, y), 28, tc2, 360.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt("%d floors" % int(row["f"]), Vector2(50, y), 28, tc2, 620.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_button(btn_lbname, "CHANGE NAME", Color("ffd84f"), 22)
+	_button(btn_lbback, "BACK", acc, 26)
+
+
 # ---------- tutorial ----------
 
 func _tut_pages(which: int) -> Array:
@@ -2488,7 +2707,7 @@ func _draw() -> void:
 	var ti := tidx()
 	var th := cur_theme()
 	var acc: Color = th["accent"]
-	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL:
+	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL and state != LEADER:
 		_adv_draw()
 		_fx_draw_top()
 		if state != PLAY:
@@ -2505,7 +2724,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE or state == TUTORIAL:
+	if state == MODE or state == TUTORIAL or state == LEADER:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -2749,6 +2968,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_trade(acc)
 	elif state == TUTORIAL:
 		_draw_tut(acc)
+	elif state == LEADER:
+		_draw_lb(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose a mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -2765,6 +2986,9 @@ func _draw_overlay(acc: Color) -> void:
 		draw_rect(btn_tut, Color(1, 0.85, 0.3, 0.12))
 		draw_rect(btn_tut, Color("ffd84f"), false, 3.0)
 		_txt("HOW TO PLAY", Vector2(btn_tut.position.x, btn_tut.position.y + 54), 34, Color("ffd84f"), btn_tut.size.x)
+		draw_rect(btn_lb, Color(0.4, 0.8, 1.0, 0.12))
+		draw_rect(btn_lb, Color("7fd8ff"), false, 3.0)
+		_txt("LEADERBOARD", Vector2(btn_lb.position.x, btn_lb.position.y + 54), 34, Color("7fd8ff"), btn_lb.size.x)
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)
 	elif state == DEAD:
 		_txt(over_title, Vector2(0, 540), 64, Color("ff5d5d"))
@@ -4079,6 +4303,7 @@ func _adv_hunters() -> void:
 
 
 func _adv_clear() -> void:
+	_lb_note(floor_n, false)
 	walk.clear()
 	aim = -1
 	_sfx("clear")
