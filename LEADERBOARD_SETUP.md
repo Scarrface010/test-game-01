@@ -27,3 +27,9 @@ The game is already wired up. It only needs a free Firebase Realtime Database to
 Scores are stored per device (random id), one entry per player per mode, best floor only.
 Anyone could technically send fake scores; this is fine for a for-fun game.
 Dev testing: `?lb=<url>` overrides the URL, `?demo=lb` sends a test score.
+
+## Using Cloudflare instead of Firebase
+Browsers cannot talk to D1 directly, so a small Worker sits in front of it. `cloudflare/leaderboard-worker.js` does that and speaks the same URL shape as the game already uses, so only `LB_URL` changes.
+1. In the Cloudflare dashboard create (or reuse) a D1 database and run: `CREATE TABLE IF NOT EXISTS lb (mode TEXT, uid TEXT, n TEXT, f INTEGER, c TEXT, t INTEGER, PRIMARY KEY (mode, uid));`
+2. Create a Worker, paste the file in, and add a D1 binding named `DB` pointing at that database. Deploy.
+3. Set `LB_URL` to the Worker URL (no trailing slash).
