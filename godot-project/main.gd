@@ -159,6 +159,9 @@ var music_building: Dictionary = {}
 var music_theme := -1
 var btn_sound := Rect2(20, 20, 104, 46)
 var btn_reset := Rect2(596, 20, 104, 46)
+var btn_menu := Rect2(596, 20, 104, 46)
+var btn_invmenu := Rect2(20, 76, 190, 46)
+var menu_armed := -10.0
 var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 880, 400, 76)
 var btn_shop := Rect2(160, 970, 400, 76)
@@ -1439,6 +1442,9 @@ func _gui_input(event: InputEvent) -> void:
 		_apply_sound()
 		_sfx("ui")
 		return
+	if state == PLAY and mode == "puzzle" and btn_menu.has_point(p):
+		_menu_leave()
+		return
 	if state == MODE:
 		if btn_mode_p.has_point(p):
 			mode = "puzzle"
@@ -1710,6 +1716,9 @@ func _draw() -> void:
 		return
 	# HUD
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
+	if state == PLAY:
+		var marm := t - menu_armed < 3.0
+		_button(btn_menu, "SURE?" if marm else "MENU", Color("ff8a8a") if marm else acc)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("FLOOR %d    BEST %d%s" % [floor_n, best, _mod_label()], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -3665,7 +3674,22 @@ func _owned_relics() -> Array:
 	return out
 
 
+func _menu_leave() -> void:
+	if t - menu_armed < 3.0:
+		menu_armed = -10.0
+		walk.clear()
+		aim = -1
+		state = MODE
+		_sfx("ui")
+	else:
+		menu_armed = t
+		_sfx("blocked")
+
+
 func _inv_input(p: Vector2) -> void:
+	if btn_invmenu.has_point(p):
+		_menu_leave()
+		return
 	if btn_icl.has_point(p) or btn_inv.has_point(p):
 		state = PLAY
 		_sfx("ui")
@@ -3727,6 +3751,8 @@ func _inv_input(p: Vector2) -> void:
 
 
 func _draw_inv(acc: Color) -> void:
+	var armed := t - menu_armed < 3.0
+	_button(btn_invmenu, "TAP AGAIN: LEAVE" if armed else "BACK TO MENU", Color("ff8a8a") if armed else acc, 17)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
 	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR", "PACK"]
 	for i in 5:
