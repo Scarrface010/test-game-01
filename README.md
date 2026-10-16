@@ -22,3 +22,4 @@ The web export needs the `web_nothreads_release` template for 4.4.1.
 - **Monster abilities:** sleepers (+3 level once the dark first advances), feeders (+1 level per ring of dark), thieves (steal coins when you stand beside them; beat them to get coins back). The solver models all of these, so floors stay winnable.
 - **Shop:** coins are banked on death and buy permanent upgrades (Veteran, Iron Will, Packed Shield, Lucky Finds). Saved in `user://best.cfg`.
 - Dev URLs: `?floor=5`, `?demo=relic`, `?demo=shop`.
+- **Scaling:** monster levels grow with depth (`_scaled()`), keep pace with 70% of your permanent power (Veteran + Vanguard), more monsters appear on deeper floors, the dark speeds up every 3 floors, sleepers get stronger, and gates ask for a larger share of the board.

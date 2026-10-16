@@ -138,7 +138,7 @@ func _make_themes() -> void:
 
 func _make_defs() -> void:
 	relic_defs = [
-		{"id": "vanguard", "name": "Vanguard", "desc": "+1 starting level every floor", "max": 3},
+		{"id": "vanguard", "name": "Vanguard", "desc": "+1 starting level every floor", "max": 2},
 		{"id": "slowdark", "name": "Slow Dark", "desc": "The dark waits 2 steps longer per ring", "max": 2},
 		{"id": "aegis", "name": "Aegis", "desc": "Start every floor with a shield", "max": 1},
 		{"id": "boots", "name": "Heavy Boots", "desc": "Spikes no longer cost extra steps", "max": 1},
@@ -184,13 +184,28 @@ func start_shield() -> bool:
 	return relic_n("aegis") > 0 or int(ups["packed"]) > 0
 
 
+func _scaled(lv: int) -> int:
+	# Monsters keep pace with the player's permanent power (70%) and grow steadily with depth.
+	var power := start_lvl() - START_LEVEL
+	var r := lv + int(round(power * 0.7))
+	if lv >= 2:
+		r += (floor_n - 1) / 2
+	else:
+		r += (floor_n - 1) / 4
+	return r
+
+
+func sleeper_bonus() -> int:
+	return 3 + floor_n / 6
+
+
 func _mon_level(c: Vector2i, m: int = -1) -> int:
 	var mm := moves if m < 0 else m
 	var base: int = mons[c]
 	var dp := mini(mm / period, maxd)
 	var k := String(kinds.get(c, ""))
 	if k == "sleeper" and dp >= 1:
-		return base + 3
+		return base + sleeper_bonus()
 	if k == "feeder":
 		return base + dp
 	return base
@@ -621,7 +636,7 @@ func _monster_tex(ti: int, lvl: int, boss: bool) -> ImageTexture:
 func _setup_size() -> void:
 	N = 6 if floor_n <= 2 else (7 if floor_n <= 4 else 8)
 	cell = GW / N
-	period = 8 + (N - 5) + int(ups["iron"]) + 2 * relic_n("slowdark")
+	period = maxi(5, 8 + (N - 5) + int(ups["iron"]) + 2 * relic_n("slowdark") - (floor_n - 1) / 3)
 	maxd = (N + 1) / 2 - 1
 
 
@@ -708,15 +723,11 @@ func _random_layout(tries: int) -> void:
 	walls.clear()
 	portals.clear()
 	boss_cell = Vector2i(-1, -1)
-	var nm: int = [6, 8, 10][k] + mini((floor_n - 1) / 4, 1)
-	var base := [1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 6]
-	var bump := (floor_n - 1) / 3
+	var nm: int = [6, 8, 10][k] + mini((floor_n - 1) / 3, 2)
+	var base := [1, 1, 2, 2, 3, 3, 4, 4, 5, 6, 6, 7, 7]
 	var levels: Array[int] = []
 	for i in nm:
-		var lv: int = base[i]
-		if lv >= 3:
-			lv += bump
-		levels.append(lv)
+		levels.append(_scaled(base[i]))
 	levels.sort()
 	levels.reverse()
 	var first := true
@@ -758,7 +769,7 @@ func _random_layout(tries: int) -> void:
 		kinds_plan.append("thief")
 	for i in mini(kinds_plan.size(), kc.size()):
 		kinds[kc[i]] = kinds_plan[i]
-	var np := 2 + k
+	var np := 2 + k - (1 if floor_n >= 8 else 0)
 	var nbig: int = [1, 1, 2][k]
 	var nlamp: int = [1, 2, 2][k]
 	var nshield: int = [1, 1, 2][k]
@@ -783,7 +794,7 @@ func _random_layout(tries: int) -> void:
 	for i in N + 2:
 		coin_at[_take(free)] = true
 	var total := nm + elite.size() + np * pot_g() + nbig * big_g()
-	var ratio := maxf(0.3, 0.55 - 0.04 * (tries / 2))
+	var ratio := maxf(0.3, minf(0.7, 0.55 + 0.012 * (floor_n - 1)) - 0.04 * (tries / 2))
 	req = maxi(start_lvl(), start_lvl() + int(total * ratio) - relic_n("skeleton"))
 
 
@@ -854,7 +865,7 @@ func _solvable() -> bool:
 					elif kind == "shield":
 						sh2 = 1
 				mask2 = mask | (1 << bi)
-			var key := (((((dest.x * N + dest.y) * 2097152 + mask2) * 64 + m3) * 64 + lvl2) * 2) + sh2
+			var key := (((((dest.x * N + dest.y) * 8388608 + mask2) * 64 + m3) * 64 + lvl2) * 2) + sh2
 			if seen.has(key):
 				continue
 			seen[key] = true
@@ -1347,7 +1358,7 @@ func _draw() -> void:
 				if kind == "sleeper":
 					if asleep:
 						_ctext("zZ", mk, int(cell * 0.26), Color("9ec0ff"))
-						_ctext("wakes at %d" % (base_lv + 3), Vector2(r.end.x - cell * 0.3, r.end.y - 8), 12, Color("ffb02e"))
+						_ctext("wakes at %d" % (base_lv + sleeper_bonus()), Vector2(r.end.x - cell * 0.3, r.end.y - 8), 12, Color("ffb02e"))
 					else:
 						_ctext("!", mk, int(cell * 0.3), Color("ff5d5d"))
 				elif kind == "feeder":
@@ -1726,7 +1737,7 @@ func _self_test() -> void:
 			nz2 += 1
 	print("audio ok sfx=%d music_nonzero=%d win_nonzero=%d" % [sfx_cache.size(), nz, nz2])
 	var bad := 0
-	for f in range(1, 16):
+	for f in range(1, 31):
 		floor_n = f
 		relics.clear()
 		ups = {"vet": 0, "iron": 0, "packed": 0, "lucky": 0}
