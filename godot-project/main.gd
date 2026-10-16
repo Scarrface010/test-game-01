@@ -47,6 +47,21 @@ var best := 0
 var t := 0.0
 var pops: Array = []
 var stars: Array = []
+var saved: Dictionary = {}
+var snd_on := true
+var sfx_cache: Dictionary = {}
+var sfx_players: Array[AudioStreamPlayer] = []
+var music_player: AudioStreamPlayer
+var music_cache: Dictionary = {}
+var music_building: Dictionary = {}
+var music_theme := -1
+var btn_sound := Rect2(20, 20, 104, 46)
+var btn_reset := Rect2(596, 20, 104, 46)
+var btn_retry := Rect2(160, 810, 400, 84)
+var btn_newrun := Rect2(160, 920, 400, 84)
+
+const SR_SFX := 22050
+const SR_MUS := 11025
 
 
 func _ready() -> void:
@@ -66,9 +81,10 @@ func _ready() -> void:
 		if q != null and int(q) > 0:
 			floor_n = int(q)
 	if "--test" in args:
-		_self_test()
+		await _self_test()
 		get_tree().quit()
 		return
+	_setup_audio()
 	_new_floor()
 
 
@@ -531,6 +547,16 @@ func _new_floor() -> void:
 			spikes.clear()
 			req = START_LEVEL
 			break
+	saved = {
+		"mons": mons.duplicate(), "elite": elite.duplicate(), "items": items.duplicate(), "spikes": spikes.duplicate(),
+		"coin_at": coin_at.duplicate(), "walls": walls.duplicate(), "portals": portals.duplicate(),
+		"coins": coins,
+	}
+	_begin_floor()
+	_play_music(tidx())
+
+
+func _begin_floor() -> void:
 	level = START_LEVEL
 	moves = 0
 	shield = false
@@ -539,6 +565,18 @@ func _new_floor() -> void:
 	pops.clear()
 	state = PLAY
 	msg = "Reach Lv %d to open the %s" % [req, cur_theme()["gate"]]
+
+
+func _reset_floor() -> void:
+	mons = saved["mons"].duplicate()
+	elite = saved["elite"].duplicate()
+	items = saved["items"].duplicate()
+	spikes = saved["spikes"].duplicate()
+	coin_at = saved["coin_at"].duplicate()
+	walls = saved["walls"].duplicate()
+	portals = saved["portals"].duplicate()
+	coins = saved["coins"]
+	_begin_floor()
 
 
 func _take(free: Array[Vector2i]) -> Vector2i:
@@ -559,8 +597,8 @@ func _random_layout(tries: int) -> void:
 			break
 	stairs = Vector2i(N / 2, N / 2)
 	for c in cells:
-		if ring(c) >= 1 and absi(c.x - start.x) + absi(c.y - start.y) >= N - 2:
-			stairs = c
+		if ring(c) == maxd:
+			stairs = c   # innermost ring: the dark never reaches it
 			break
 	var free: Array[Vector2i] = []
 	for c in cells:
@@ -724,6 +762,7 @@ func _step(nc: Vector2i) -> void:
 	var landing := nc
 	var lamp := false
 	var extra := 0
+	var snd := "step"
 	if mons.has(nc):
 		var lv: int = mons[nc]
 		var nm: String = th["boss"] if nc == boss_cell else names[(lv - 1) % names.size()]
@@ -734,12 +773,14 @@ func _step(nc: Vector2i) -> void:
 			level += gain
 			msg = "Beat %s! Level %d" % [nm, level]
 			_pop(nc, "LEVEL +%d" % gain, Color("6dff9a"))
+			snd = "elite" if gain == 2 else "win"
 		elif shield:
 			shield = false
 			mons.erase(nc)
 			elite.erase(nc)
 			msg = "Shield shattered! %s defeated" % nm
 			_pop(nc, "SHIELD!", Color("7db2ff"))
+			snd = "shieldbreak"
 		else:
 			pos = nc
 			_die("%s (Lv %d) was too strong" % [nm, lv])
@@ -747,6 +788,7 @@ func _step(nc: Vector2i) -> void:
 	elif nc == stairs:
 		if level < req:
 			msg = "%s needs Lv %d" % [th["gate"], req]
+			_sfx("blocked")
 			walk.clear()
 			return
 	elif items.has(nc):
@@ -756,39 +798,48 @@ func _step(nc: Vector2i) -> void:
 			level += 1
 			msg = "%s! Level %d" % [th["pot"], level]
 			_pop(nc, "+1", Color("ffd84f"))
+			snd = "pot"
 		elif kind == "big":
 			level += 2
 			msg = "Overcharged %s! Level %d" % [th["pot"], level]
 			_pop(nc, "+2", Color("4fd1ff"))
+			snd = "big"
 		elif kind == "shield":
 			shield = true
 			msg = "Shield! It saves you from one losing fight"
 			_pop(nc, "SHIELD", Color("7db2ff"))
+			snd = "shield"
 		else:
 			lamp = true
 			msg = "Lantern lit! The dark is held back"
 			_pop(nc, "LIGHT", Color("ffe9a0"))
+			snd = "lamp"
 	elif spikes.has(nc):
 		extra = 2
 		msg = "Spikes! The dark gains 2 steps"
 		_pop(nc, "OUCH", Color("ff7a7a"))
+		snd = "spike"
 	elif coin_at.has(nc):
 		coin_at.erase(nc)
 		coins += 1
 		msg = "Coin! %d total" % coins
 		_pop(nc, "+1 coin", Color("ffc93c"))
+		snd = "coin"
 	elif portals.has(nc):
 		landing = portals[nc]
 		if is_dark(landing):
 			msg = "The far portal is swallowed by the dark"
+			_sfx("blocked")
 			walk.clear()
 			return
 		msg = "Warp!"
+		snd = "warp"
 	pos = landing
 	var before := depth_for(moves)
 	moves = mini(moves + 1 + extra, maxd * period)
 	if depth_for(moves) > before:
 		msg = "The dark swallows the edge!"
+		snd = "swallow"
 	if is_dark(pos):
 		_die("Swallowed by the dark")
 		return
@@ -796,6 +847,10 @@ func _step(nc: Vector2i) -> void:
 		moves = maxi(moves - 4, depth_for(moves) * period)
 	if pos == stairs:
 		_clear()
+		return
+	if snd == "step" and moves < maxd * period and (depth_for(moves) + 1) * period - moves <= 3:
+		snd = "tick"
+	_sfx(snd)
 
 
 func _die(why: String) -> void:
@@ -807,6 +862,7 @@ func _die(why: String) -> void:
 		var cfg := ConfigFile.new()
 		cfg.set_value("s", "best", best)
 		cfg.save("user://best.cfg")
+	_sfx("death")
 	over_title = "YOU DIED"
 	over_sub = "%s\nFloors cleared: %d   Best: %d\nCoins: %d" % [why, reached, best, coins]
 
@@ -814,6 +870,7 @@ func _die(why: String) -> void:
 func _clear() -> void:
 	state = CLEAR
 	walk.clear()
+	_sfx("clear")
 	over_title = "FLOOR %d CLEAR" % floor_n
 	var nxt := floor_n + 1
 	over_sub = "Next: floor %d" % nxt
@@ -869,12 +926,12 @@ func _plan(target: Vector2i) -> void:
 				bestd = int(dist[n2])
 				bestc = n2
 		if bestc.x < 0:
-			msg = "Can't reach that"
+			msg = "Can't reach that"; _sfx("blocked")
 			return
 		goal = bestc
 		attack = true
 	elif not dist.has(goal):
-		msg = "Can't reach that"
+		msg = "Can't reach that"; _sfx("blocked")
 		return
 	var path: Array[Vector2i] = []
 	var c2 := goal
@@ -894,14 +951,28 @@ func _gui_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		return
 	var p: Vector2 = event.position
+	if btn_sound.has_point(p):
+		snd_on = not snd_on
+		_apply_sound()
+		_sfx("ui")
+		return
 	if state == CLEAR:
 		floor_n += 1
 		_new_floor()
 		return
 	if state == DEAD:
-		floor_n = 1
-		coins = 0
-		_new_floor()
+		if btn_retry.has_point(p):
+			_reset_floor()
+			_sfx("ui")
+		elif btn_newrun.has_point(p):
+			floor_n = 1
+			coins = 0
+			_new_floor()
+			_sfx("ui")
+		return
+	if btn_reset.has_point(p):
+		_reset_floor()
+		_sfx("ui")
 		return
 	if p.x < GX or p.y < GY:
 		return
@@ -950,6 +1021,12 @@ func _spr(tex: Texture2D, ctr: Vector2, size: float) -> void:
 	draw_texture_rect(tex, Rect2(ctr.x - size * 0.5, ctr.y - size * 0.5, size, size), false)
 
 
+func _button(r: Rect2, label: String, col: Color, size := 20) -> void:
+	draw_rect(r, Color(col.r, col.g, col.b, 0.14))
+	draw_rect(r, col, false, 2.0)
+	_ctext(label, r.get_center(), size, col)
+
+
 func _star(c: Vector2, r: float, col: Color) -> void:
 	var pts := PackedVector2Array()
 	for i in 10:
@@ -990,7 +1067,9 @@ func _draw() -> void:
 			drift = sin(t * 0.7 + float(s[2])) * 6.0
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	# HUD
-	_txt(th["name"], Vector2(0, 70), 34, acc)
+	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
+	_button(btn_reset, "RESET", acc)
+	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("FLOOR %d    BEST %d" % [floor_n, best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d" % coins, Vector2(40, 256), 26, Color("ffc93c"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -1107,12 +1186,270 @@ func _draw() -> void:
 		for line in over_sub.split("\n"):
 			_txt(line, Vector2(0, ly), 30, Color.WHITE)
 			ly += 44
-		_txt("Tap to continue", Vector2(0, ly + 50), 28, Color(1, 1, 1, 0.6))
+		if state == DEAD:
+			_button(btn_retry, "RETRY THIS FLOOR", acc, 30)
+			_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 30)
+		else:
+			_txt("Tap to continue", Vector2(0, ly + 50), 28, Color(1, 1, 1, 0.6))
+		_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
+
+
+# ---------- audio (all synthesized in code) ----------
+
+func _setup_audio() -> void:
+	music_player = AudioStreamPlayer.new()
+	music_player.volume_db = -11.0
+	add_child(music_player)
+	for i in 6:
+		var p := AudioStreamPlayer.new()
+		p.volume_db = -3.0
+		add_child(p)
+		sfx_players.append(p)
+	_make_sfx()
+
+
+func _apply_sound() -> void:
+	if music_player:
+		music_player.volume_db = -11.0 if snd_on else -80.0
+
+
+func _sfx(n: String) -> void:
+	if not snd_on or not sfx_cache.has(n):
+		return
+	var chosen: AudioStreamPlayer = sfx_players[0]
+	for p in sfx_players:
+		if not p.playing:
+			chosen = p
+			break
+	chosen.stream = sfx_cache[n]
+	chosen.pitch_scale = randf_range(0.97, 1.04) if n == "step" else 1.0
+	chosen.play()
+
+
+func _midi(m: float) -> float:
+	return 440.0 * pow(2.0, (m - 69.0) / 12.0)
+
+
+func _osc(kind: int, ph: float) -> float:
+	var f := ph - floorf(ph)
+	if kind == 0:
+		return sin(f * TAU)
+	if kind == 1:
+		return 4.0 * absf(f - 0.5) - 1.0
+	if kind == 2:
+		return 0.6 if f < 0.5 else -0.6
+	return (2.0 * f - 1.0) * 0.6
+
+
+func _add_note(buf: PackedFloat32Array, rate: int, t0: float, dur: float, freq: float, vol: float, kind: int, decay: float, pad := false, wrap := false) -> void:
+	var i0 := int(t0 * rate)
+	var n := int(dur * rate)
+	var size := buf.size()
+	for i in n:
+		var idx := i0 + i
+		if idx >= size:
+			if wrap:
+				idx = idx % size
+			else:
+				break
+		var tt := float(i) / rate
+		var env := 0.0
+		if pad:
+			env = sin(PI * float(i) / n)
+		else:
+			env = exp(-decay * tt) * minf(1.0, tt / 0.004) * minf(1.0, float(n - i) / (0.02 * rate))
+		buf[idx] += _osc(kind, freq * tt) * vol * env
+
+
+func _add_sweep(buf: PackedFloat32Array, rate: int, t0: float, dur: float, f0: float, f1: float, vol: float, kind: int, decay: float) -> void:
+	var i0 := int(t0 * rate)
+	var n := int(dur * rate)
+	var ph := 0.0
+	for i in n:
+		var idx := i0 + i
+		if idx >= buf.size():
+			break
+		var tt := float(i) / rate
+		ph += lerpf(f0, f1, float(i) / n) / rate
+		var env := exp(-decay * tt) * minf(1.0, tt / 0.004) * minf(1.0, float(n - i) / (0.01 * rate))
+		buf[idx] += _osc(kind, ph) * vol * env
+
+
+func _add_noise(buf: PackedFloat32Array, rate: int, t0: float, dur: float, vol: float, decay: float, lp: float, wrap := false) -> void:
+	var i0 := int(t0 * rate)
+	var n := int(dur * rate)
+	var y := 0.0
+	for i in n:
+		var idx := i0 + i
+		if idx >= buf.size():
+			if wrap:
+				idx = idx % buf.size()
+			else:
+				break
+		y += (randf() * 2.0 - 1.0 - y) * lp
+		buf[idx] += y * vol * exp(-decay * float(i) / rate)
+
+
+func _stream(buf: PackedFloat32Array, rate: int, loop := false) -> AudioStreamWAV:
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = rate
+	w.stereo = false
+	var bytes := PackedByteArray()
+	bytes.resize(buf.size() * 2)
+	for i in buf.size():
+		bytes.encode_s16(i * 2, int(clampf(buf[i], -1.0, 1.0) * 30000.0))
+	w.data = bytes
+	if loop:
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = buf.size()
+	return w
+
+
+func _buf(dur: float, rate: int) -> PackedFloat32Array:
+	var b := PackedFloat32Array()
+	b.resize(int(dur * rate))
+	return b
+
+
+func _sfx_notes(freqs: Array, nd: float, vol: float, kind: int, decay: float) -> AudioStreamWAV:
+	var b := _buf(nd * freqs.size() + 0.25, SR_SFX)
+	for i in freqs.size():
+		_add_note(b, SR_SFX, i * nd, nd * 1.8, float(freqs[i]), vol, kind, decay)
+	return _stream(b, SR_SFX)
+
+
+func _sfx_sweep(dur: float, f0: float, f1: float, vol: float, kind: int, decay: float) -> AudioStreamWAV:
+	var b := _buf(dur + 0.02, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, dur, f0, f1, vol, kind, decay)
+	return _stream(b, SR_SFX)
+
+
+func _make_sfx() -> void:
+	var d := sfx_cache
+	d["step"] = _sfx_sweep(0.07, 330.0, 220.0, 0.3, 0, 25.0)
+	d["tick"] = _sfx_notes([988.0], 0.07, 0.22, 2, 28.0)
+	d["win"] = _sfx_notes([392.0, 523.0, 659.0], 0.07, 0.35, 1, 9.0)
+	d["elite"] = _sfx_notes([392.0, 523.0, 659.0, 784.0, 1047.0], 0.06, 0.35, 1, 8.0)
+	d["pot"] = _sfx_notes([659.0, 880.0, 1175.0], 0.06, 0.3, 0, 10.0)
+	d["big"] = _sfx_notes([523.0, 659.0, 784.0, 1047.0, 1319.0], 0.055, 0.3, 0, 8.0)
+	d["coin"] = _sfx_notes([988.0, 1319.0], 0.06, 0.2, 2, 14.0)
+	d["shield"] = _sfx_sweep(0.3, 500.0, 1500.0, 0.22, 3, 5.0)
+	d["lamp"] = _sfx_sweep(0.4, 260.0, 880.0, 0.3, 0, 3.0)
+	d["blocked"] = _sfx_notes([150.0], 0.12, 0.3, 2, 12.0)
+	d["ui"] = _sfx_notes([700.0, 900.0], 0.04, 0.25, 0, 20.0)
+	var b := _buf(0.4, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.18, 300.0, 1300.0, 0.25, 1, 4.0)
+	_add_sweep(b, SR_SFX, 0.18, 0.18, 1300.0, 300.0, 0.25, 1, 4.0)
+	d["warp"] = _stream(b, SR_SFX)
+	b = _buf(0.3, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.22, 0.5, 12.0, 0.5)
+	_add_sweep(b, SR_SFX, 0.0, 0.2, 220.0, 80.0, 0.25, 3, 6.0)
+	d["spike"] = _stream(b, SR_SFX)
+	b = _buf(0.4, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.25, 0.4, 10.0, 0.9)
+	_add_sweep(b, SR_SFX, 0.0, 0.3, 1000.0, 200.0, 0.2, 2, 6.0)
+	d["shieldbreak"] = _stream(b, SR_SFX)
+	b = _buf(0.75, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.7, 0.6, 3.0, 0.12)
+	_add_sweep(b, SR_SFX, 0.0, 0.7, 140.0, 45.0, 0.5, 0, 2.0)
+	d["swallow"] = _stream(b, SR_SFX)
+	b = _buf(1.0, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.9, 440.0, 90.0, 0.35, 3, 2.2)
+	_add_noise(b, SR_SFX, 0.0, 0.5, 0.2, 5.0, 0.3)
+	d["death"] = _stream(b, SR_SFX)
+	b = _buf(1.4, SR_SFX)
+	var fan := [523.0, 659.0, 784.0, 1047.0, 1319.0, 1568.0]
+	for i in fan.size():
+		_add_note(b, SR_SFX, i * 0.09, 0.4, float(fan[i]), 0.3, 1, 5.0)
+	_add_note(b, SR_SFX, 0.55, 0.8, 1047.0, 0.18, 0, 3.0)
+	_add_note(b, SR_SFX, 0.55, 0.8, 1319.0, 0.18, 0, 3.0)
+	d["clear"] = _stream(b, SR_SFX)
+
+
+func _play_music(ti: int) -> void:
+	if music_player == null:
+		return
+	if music_theme == ti and music_player.playing:
+		return
+	if music_cache.has(ti):
+		music_theme = ti
+		music_player.stream = music_cache[ti]
+		music_player.play()
+		return
+	if music_building.has(ti):
+		return
+	music_building[ti] = true
+	var s: AudioStreamWAV = await _build_music(ti)
+	music_cache[ti] = s
+	music_building.erase(ti)
+	if tidx() == ti or music_theme == -1:
+		music_theme = ti
+		music_player.stream = s
+		music_player.play()
+
+
+func _build_music(ti: int) -> AudioStreamWAV:
+	var cfgs := [
+		{"bpm": 84.0, "kind": 1, "vol": 0.24, "pat": [0, 1, 2, 3, 2, 1, 2, 1],
+			"ch": [[45, [57, 60, 64, 69]], [41, [53, 57, 60, 65]], [48, [55, 60, 64, 67]], [43, [50, 55, 59, 67]]]},
+		{"bpm": 96.0, "kind": 0, "vol": 0.32, "pat": [0, 2, 1, 3, 2, 3, 1, 2],
+			"ch": [[36, [60, 64, 67, 72]], [45, [57, 60, 64, 69]], [41, [60, 65, 69, 72]], [43, [59, 62, 67, 71]]]},
+		{"bpm": 100.0, "kind": 2, "vol": 0.12, "pat": [0, 1, 2, 1, 3, 2, 1, 2],
+			"ch": [[38, [62, 65, 69, 74]], [34, [58, 62, 65, 70]], [36, [60, 64, 67, 72]], [33, [57, 61, 64, 69]]]},
+	]
+	var cfg: Dictionary = cfgs[ti % cfgs.size()]
+	var bpm: float = cfg["bpm"]
+	var kind: int = cfg["kind"]
+	var avol: float = cfg["vol"]
+	var pat: Array = cfg["pat"]
+	var chords: Array = cfg["ch"]
+	var beat := 60.0 / bpm
+	var eighth := beat / 2.0
+	var buf := _buf(16.0 * beat, SR_MUS)
+	for bar in 4:
+		var chord: Array = chords[bar]
+		var bass: int = chord[0]
+		var arp: Array = chord[1]
+		var tb := bar * 4.0 * beat
+		_add_note(buf, SR_MUS, tb, 4.0 * beat, _midi(float(int(arp[0]) - 12)), 0.1, 0, 0.0, true, true)
+		_add_note(buf, SR_MUS, tb, 4.0 * beat, _midi(float(int(arp[2]) - 12)), 0.06, 0, 0.0, true, true)
+		await get_tree().process_frame
+		_add_note(buf, SR_MUS, tb, beat * 1.8, _midi(float(bass)), 0.32, 1, 2.5, false, true)
+		_add_note(buf, SR_MUS, tb + 2.0 * beat, beat * 1.8, _midi(float(bass)), 0.28, 1, 2.5, false, true)
+		for e in 8:
+			var nidx: int = pat[e]
+			_add_note(buf, SR_MUS, tb + e * eighth, eighth * 2.4, _midi(float(int(arp[nidx]))), avol, kind, 7.0, false, true)
+			if e % 2 == 1:
+				_add_noise(buf, SR_MUS, tb + e * eighth, 0.03, 0.04, 80.0, 0.9, true)
+			if e % 4 == 3:
+				await get_tree().process_frame
+	var peak := 0.001
+	for i in buf.size():
+		peak = maxf(peak, absf(buf[i]))
+	if peak > 0.6:
+		var k := 0.6 / peak
+		for i in buf.size():
+			buf[i] *= k
+	return _stream(buf, SR_MUS, true)
 
 
 # ---------- headless check ----------
 
 func _self_test() -> void:
+	_make_sfx()
+	var mus: AudioStreamWAV = await _build_music(0)
+	var nz := 0
+	for i in range(0, mus.data.size(), 2):
+		if mus.data.decode_s16(i) != 0:
+			nz += 1
+	var st: AudioStreamWAV = sfx_cache["win"]
+	var nz2 := 0
+	for i in range(0, st.data.size(), 2):
+		if st.data.decode_s16(i) != 0:
+			nz2 += 1
+	print("audio ok sfx=%d music_nonzero=%d win_nonzero=%d" % [sfx_cache.size(), nz, nz2])
 	var bad := 0
 	for f in range(1, 16):
 		floor_n = f
@@ -1126,6 +1463,9 @@ func _self_test() -> void:
 			ok = _solvable()
 		print("floor %d N %d %s tries %d solvable %s req %d mons %d %dms" % [f, N, cur_theme()["name"], tries, ok, req, mons.size(), Time.get_ticks_msec() - t0])
 		if not ok:
+			bad += 1
+		if ring(stairs) != maxd:
+			print("GATE NOT CENTER")
 			bad += 1
 		for ti in 3:
 			for lv in range(1, 10):
