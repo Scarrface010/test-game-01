@@ -1,19 +1,18 @@
-# Tap and Tumble
+# Pocket Station
 
-A draw-to-build physics puzzler built with Godot 4.4.1, hosted via GitHub Pages.
-Draw beams, bouncers and heavy weights, press GO, and get the ball into the green cup.
+A tense pocket dungeon crawler built with Godot 4.4.1, hosted via GitHub Pages.
+Each monster shows a level. Beat monsters weaker than you (green) to level up; stronger or equal ones (red) kill you.
+Reach the exit gate's level before the dark eats the board from the edges.
 
 - `index.*` at the repo root is the exported web build (no-threads variant, GL Compatibility, 720x1280 portrait).
-- `godot-project/` is the Godot project source. Levels live in `_make_levels()` in `main.gd`.
+- `godot-project/` is the Godot project source. Themes (space station, greenhouse, smuggler hold) are data in `_make_themes()` in `main.gd`; a new theme starts every 3 floors.
 
 ## Rebuild
 
 ```
 godot --headless --path godot-project --import
-godot --headless --fixed-fps 60 --path godot-project -- --test      # checks every level: do-nothing loses, stored solution wins even when nudged
-godot --headless --path godot-project --export-release "Web"        # writes ../index.html and friends
+godot --headless --path godot-project -- --test      # checks the generator always makes winnable floors
+godot --headless --path godot-project --export-release "Web"
 ```
 
 The web export needs the `web_nothreads_release` template for 4.4.1.
-
-Extra dev tools: `-- --search <level> <ink> <tries> <strokes> [seed]` random-searches solutions, `-- --try <level> <ink> x1 y1 x2 y2 ...` traces one attempt.
