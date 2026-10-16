@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL }
 const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
 const BAG_MAX := 12
 const AC := 90.0
@@ -157,6 +157,9 @@ var adv_mini: ImageTexture
 var btn_modeback := Rect2(20, 76, 160, 44)
 var btn_mode_p := Rect2(50, 330, 620, 270)
 var btn_mode_a := Rect2(50, 650, 620, 270)
+var btn_tut := Rect2(50, 950, 620, 84)
+var tut_mode := 0
+var tut_page := 0
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions and power cells give double XP", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes cost 6 more air",
@@ -1521,7 +1524,15 @@ func _gui_input(event: InputEvent) -> void:
 	if state == PLAY and mode == "puzzle" and btn_menu.has_point(p):
 		_menu_leave()
 		return
+	if state == TUTORIAL:
+		_tut_input(p)
+		return
 	if state == MODE:
+		if btn_tut.has_point(p):
+			state = TUTORIAL
+			tut_page = 0
+			_sfx("ui")
+			return
 		if btn_mode_p.has_point(p):
 			mode = "puzzle"
 			state = CLASS
@@ -2226,6 +2237,180 @@ func _anim_update(dt: float) -> void:
 		i -= 1
 
 
+# ---------- tutorial ----------
+
+func _tut_pages(which: int) -> Array:
+	if which == 0:
+		return [
+			{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Gate (locked)"], ["icon:door_open", "Gate (open)"]],
+			"x": "Each floor is a small board. Walk to the gate to reach the next floor. The gate shows the level you need (Lv N): you must be at least that level to pass.\\n\\nTap any tile and you walk there automatically. You stop early if something new needs your attention."},
+			{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"]],
+			"x": "Pick a class at the start of a run. Each has a different starting kit and a twist on the rules:\\n\\nScout: the dark waits longer, starts with Blink and Time Crystal.\\nBrute: +2 starting levels, a faster dark, starts with a Bomb.\\nMystic: a shield every floor, +1 item slot, starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3."},
+			{"t": "MONSTERS AND LEVELS", "ti": 1, "s": [["mon:1:2:none:g", "Easy"], ["mon:1:5:none:r", "Deadly"], ["mon:1:4:none:r", "Equal = lose"]],
+			"x": "Every monster has a level shown in a badge. Walk into one to fight it instantly.\\n\\nIf your level is HIGHER you win and gain levels. If it is equal or higher you die. A green badge means you win, red means you die, amber means only your shield would save you.\\n\\nSo grab potions first, then pick your fights."},
+			{"t": "THE DARK", "ti": 1, "s": [["dark", "Dark tile"], ["player", "You"], ["icon:spikes", "Spikes"]],
+			"x": "The dark eats the board from the outside in. The meter at the top right counts the steps until it advances one ring. Standing in the dark kills you, and anything in it is lost.\\n\\nSo every step counts. Spikes cost extra steps: the dark gains ground when you walk over them."},
+			{"t": "ITEMS", "ti": 1, "s": [["item:pot", "Potion +1"], ["item:big", "Overcharged +2"], ["item:shield", "Shield"], ["item:lamp", "Lantern"]], "s2": [["item:coin", "Coin"], ["icon:key", "Key"], ["icon:vault", "Vault"], ["portal", "Portal"]],
+			"x": "Potions raise your level. A shield saves you from one losing fight. A lantern holds the dark back. Coins are banked when you die and buy permanent upgrades in the SHOP.\\n\\nA key opens a vault: coins, a level and a free tool. Portals teleport you to their twin."},
+			{"t": "SPECIAL MONSTERS", "ti": 2, "s": [["mon:2:3:elite:g", "Elite star"], ["mon:2:4:sleeper:r", "Sleeper zZ"], ["mon:2:3:feeder:g", "Feeder +"], ["mon:2:2:thief:g", "Thief $"]],
+			"x": "Elite (gold star): beating one gives +2 levels.\\nSleeper (zZ): weak now, but it wakes and gains levels when the dark first moves. Kill it early.\\nFeeder (violet +): grows +1 level every time the dark advances.\\nThief ($): steals coins when you stand beside it. Beat it to get them back."},
+			{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:crystal", "Time Crystal"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"]], "s2": [["use:draught", "Elixir"], ["use:magnet", "Magnet"], ["use:pick", "Pickaxe"], ["use:zap", "Zap Rod"]],
+			"x": "Tools sit in the bar under the board. Tap one to use it (tools that need a target ask you to tap a tile).\\n\\nBomb: blasts adjacent walls, spikes and weak monsters. Time Crystal: pushes the dark back. Blink: teleport. Cloak: +3 levels for your next fight. Elixir: +2 levels. Magnet: pulls in every coin. Pickaxe: breaks a wall. Zap: hits a monster nearby."},
+			{"t": "BOSSES AND RELICS", "ti": 2, "s": [["boss:2", "Boss"], ["badge:g:12", "Boss level"]],
+			"x": "Every 5th floor a boss sits on the gate. Its rule is shown under the dark meter: some gain levels as the dark advances, so be quick.\\n\\nAfter each floor you choose a RELIC that lasts the whole run. Some are cursed: strong but risky. You can skip a choice for a few coins. Between floors you also choose which door to take."},
+		]
+	return [
+		{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Exit (sealed)"], ["icon:door_open", "Exit (open)"]],
+		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\\n\\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
+		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]],
+		"x": "Every step costs 1 air. At 0 air you die. Spikes cost extra.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins."},
+		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
+		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage."},
+		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
+		"x": "HP is your health: reach 0 and you die. A medkit heals 40%.\\n\\nArmour reduces every hit you take by its value (always at least 1). Each plate you find adds +1 permanently.\\n\\nShield is a separate bar that soaks damage before your HP does."},
+		{"t": "LEVELS AND XP", "ti": 1, "s": [["item:pot", "Potion"], ["item:big", "Overcharged"], ["use:draught", "Elixir"], ["icon:vault", "Vault"]],
+		"x": "Kills, potions, elixirs and vaults give XP. Each level adds attack and max health, and your level stays with you for the whole run.\\n\\nMonsters grow stronger with depth, so keep levelling and upgrade your gear to keep up."},
+		{"t": "ENEMIES", "ti": 2, "s": [["mon:2:4:hunter:a", "Hunter !"], ["mon:2:3:thief:g", "Thief $"], ["mon:2:5:elite:a", "Elite star"], ["boss:2", "Boss"]],
+		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\\nElites (gold star) give extra XP and may drop gear.\\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
+		{"t": "GEAR", "ti": 2, "s": [["icon:crate_weapon", "Weapon"], ["icon:crate_helmet", "Helmet"], ["icon:crate_armour", "Armour"], ["icon:crate_boots", "Boots"]], "s2": [["icon:crate_trinket", "Trinket"], ["icon:merchant", "Outfitter"]],
+		"x": "Crates hold gear for five slots. Pick one up to add it to your PACK, then equip it from the BAG for bonuses like attack, armour, crit, sight or extra air.\\n\\nWalk onto the SHOP stall to buy gear with coins or sell what you do not need. The pack holds 12 items."},
+		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"]], "s2": [["use:magnet", "Magnet"], ["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["icon:key", "Key"]],
+		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak adds attack for your next fight, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP.\\n\\nA key opens a vault with coins, XP and a tool."},
+		{"t": "THE BAG", "ti": 0, "s": [["item:lamp", "Scanner"], ["item:coin", "Coin"]],
+		"x": "Tap BAG (top right) to see everything: STATS, TOOLS, RELICS, GEAR and PACK, each with a description. You can also leave the match from there with BACK TO MENU.\\n\\nScanners reveal the map around you. After each floor you pick a relic that lasts the run, and your coins are banked to spend in the SHOP."},
+	]
+
+
+func _tut_tabs(i: int) -> Rect2:
+	return Rect2(40 + i * 330, 186, 310, 50)
+
+
+func _tut_icon(spec: String, ctr: Vector2, s: float, ti: int) -> void:
+	var p := spec.split(":")
+	var k := p[0]
+	var rr := Rect2(ctr - Vector2(s, s) * 0.5, Vector2(s, s))
+	draw_texture_rect(_floor_tex(ti, int(ctr.x / 100.0) % 2, int(ctr.x * 0.37 + ctr.y * 0.11) % 16), rr, false)
+	draw_rect(rr, Color(0, 0, 0, 0.18))
+	draw_rect(rr, Color(1, 1, 1, 0.25), false, 2.0)
+	var th: Dictionary = themes[ti]
+	if k == "player":
+		_spr(_player_tex(), ctr, s * 0.8)
+	elif k == "pcls":
+		var col := Color.WHITE
+		for d in class_defs:
+			if String(d["id"]) == String(p[1]):
+				col = d["col"]
+		_spr(spr_gen.player(col, String(p[1]), 0), ctr, s * 0.85)
+	elif k == "mon" or k == "boss":
+		var boss := k == "boss"
+		var lv := 9 if boss else int(p[2])
+		var tt := int(p[1])
+		_spr(_monster_tex(tt, lv, boss), ctr + Vector2(0, -2), s * (0.98 if boss else 0.82))
+		if not boss:
+			var mk := String(p[3])
+			var bc := Color("49d17a") if String(p[4]) == "g" else (Color("ffb02e") if String(p[4]) == "a" else Color("ef4b55"))
+			var bp := rr.position + Vector2(s - 16, 16)
+			draw_circle(bp, 15, Color("0a0c14"))
+			draw_circle(bp, 12.5, bc)
+			_ctext(str(lv), bp, 17, Color.WHITE)
+			var mp := rr.position + Vector2(18, s - 18)
+			if mk == "elite":
+				_star(rr.position + Vector2(18, 18), 13, Color("ffd84f"))
+			elif mk == "sleeper":
+				_ctext("zZ", mp, 20, Color("9ec0ff"))
+			elif mk == "feeder":
+				draw_circle(mp, 12, Color("5a1f8a"))
+				_ctext("+", mp, 20, Color("e6b3ff"))
+			elif mk == "thief":
+				draw_circle(mp, 12, Color("5a4500"))
+				_ctext("$", mp, 20, Color("ffd84f"))
+			elif mk == "hunter":
+				draw_circle(mp, 12, Color("6a1218"))
+				_ctext("!", mp, 20, Color("ff7a7a"))
+		else:
+			bpos_badge(rr.position + Vector2(s - 16, 16), "12")
+	elif k == "item":
+		_spr(_item_tex(String(p[1])), ctr, s * 0.7)
+	elif k == "icon":
+		_spr(spr_gen.icon(String(p[1])), ctr, s * 0.85)
+	elif k == "use":
+		_use_icon(String(p[1]), ctr, s * 0.72)
+	elif k == "dark":
+		draw_rect(rr.grow(-2), th["dark"])
+		_ctext("DARK", ctr, 22, Color(1, 1, 1, 0.5))
+	elif k == "badge":
+		var bc2 := Color("49d17a") if String(p[1]) == "g" else Color("ef4b55")
+		draw_circle(ctr, 30, Color("0a0c14"))
+		draw_circle(ctr, 25, bc2)
+		_ctext(String(p[2]), ctr, 30, Color.WHITE)
+	elif k == "portal":
+		var pc := Color("c07cff")
+		draw_circle(ctr, s * 0.34, Color(pc.r, pc.g, pc.b, 0.18))
+		draw_arc(ctr, s * 0.32, t * 3.0, t * 3.0 + PI * 1.3, 18, pc, 4.0)
+		draw_arc(ctr, s * 0.2, -t * 4.0, -t * 4.0 + PI * 1.3, 14, Color("e6c8ff"), 3.0)
+		draw_circle(ctr, s * 0.07, pc)
+
+
+func bpos_badge(c: Vector2, txt: String) -> void:
+	draw_circle(c, 15, Color("0a0c14"))
+	draw_circle(c, 12.5, Color("ef4b55"))
+	_ctext(txt, c, 17, Color.WHITE)
+
+
+func _draw_tut(acc: Color) -> void:
+	_txt("HOW TO PLAY", Vector2(0, 150), 52, acc)
+	var names := ["PUZZLE", "ADVENTURE"]
+	for i in 2:
+		var tr := _tut_tabs(i)
+		var tc := Color("ffd84f") if i == tut_mode else Color(1, 1, 1, 0.5)
+		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == tut_mode else 0.06))
+		draw_rect(tr, tc, false, 2.0)
+		_ctext(names[i], tr.get_center(), 24, tc)
+	var pages := _tut_pages(tut_mode)
+	tut_page = clampi(tut_page, 0, pages.size() - 1)
+	var pg: Dictionary = pages[tut_page]
+	_txt(String(pg["t"]), Vector2(0, 300), 40, acc)
+	var rows: Array = [pg["s"]]
+	if pg.has("s2"):
+		rows.append(pg["s2"])
+	var ti: int = pg["ti"]
+	for r in rows.size():
+		var row: Array = rows[r]
+		var cy := 420.0 + r * 205.0
+		var n := row.size()
+		var sz := 132.0 if n <= 4 else 110.0
+		for i in n:
+			var cx := 40.0 + (i + 0.5) * 640.0 / n
+			_tut_icon(String(row[i][0]), Vector2(cx, cy), sz, ti)
+			_ctext(String(row[i][1]), Vector2(cx, cy + sz * 0.5 + 22), 19, Color(1, 1, 1, 0.85))
+	var ty := 420.0 + rows.size() * 205.0 - 20.0
+	_para(String(pg["x"]).replace("\\n", "\n"), Vector2(50, ty), 24 if rows.size() == 1 else 22, Color(1, 1, 1, 0.9), 620.0)
+	_button(btn_ipv, "PREV", acc, 24)
+	_button(btn_inx, "NEXT", acc, 24)
+	_ctext("%d / %d" % [tut_page + 1, pages.size()], Vector2(360, 1098), 24, Color(1, 1, 1, 0.7))
+	_button(btn_icl, "BACK", acc, 28)
+
+
+func _tut_input(p: Vector2) -> void:
+	if btn_icl.has_point(p):
+		state = MODE
+		_sfx("ui")
+		return
+	for i in 2:
+		if _tut_tabs(i).has_point(p):
+			tut_mode = i
+			tut_page = 0
+			_sfx("ui")
+			return
+	var n := _tut_pages(tut_mode).size()
+	if btn_ipv.has_point(p):
+		tut_page = (tut_page + n - 1) % n
+		_sfx("ui")
+	elif btn_inx.has_point(p):
+		tut_page = (tut_page + 1) % n
+		_sfx("ui")
+
+
 # ---------- drawing ----------
 
 func _txt(s: String, p: Vector2, size: int, col: Color, w := 720.0, align := HORIZONTAL_ALIGNMENT_CENTER) -> void:
@@ -2303,7 +2488,7 @@ func _draw() -> void:
 	var ti := tidx()
 	var th := cur_theme()
 	var acc: Color = th["accent"]
-	if mode == "adv" and state != MODE and state != CLASS and state != SHOP:
+	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL:
 		_adv_draw()
 		_fx_draw_top()
 		if state != PLAY:
@@ -2320,7 +2505,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE:
+	if state == MODE or state == TUTORIAL:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -2562,6 +2747,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_inv(acc)
 	elif state == TRADE:
 		_draw_trade(acc)
+	elif state == TUTORIAL:
+		_draw_tut(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose a mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -2575,6 +2762,9 @@ func _draw_overlay(acc: Color) -> void:
 		draw_rect(btn_mode_a, Color(ma.r, ma.g, ma.b, 0.12))
 		draw_rect(btn_mode_a, ma, false, 3.0)
 		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 70), 52, ma, 560.0, HORIZONTAL_ALIGNMENT_LEFT)
+		draw_rect(btn_tut, Color(1, 0.85, 0.3, 0.12))
+		draw_rect(btn_tut, Color("ffd84f"), false, 3.0)
+		_txt("HOW TO PLAY", Vector2(btn_tut.position.x, btn_tut.position.y + 54), 34, Color("ffd84f"), btn_tut.size.x)
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)
 	elif state == DEAD:
 		_txt(over_title, Vector2(0, 540), 64, Color("ff5d5d"))
