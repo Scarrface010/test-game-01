@@ -604,102 +604,307 @@ func _tool_icon(cv: Cv, id: String) -> void:
 
 # ---------------------------------------------------------------- tiles
 
+const NV := 16
+
+
 func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
+	variant = variant % NV
 	var key := "floor%d_%d_%d" % [ti, parity, variant]
 	if cache.has(key):
 		return cache[key]
 	var base: Color = themes[ti]["tile"] if parity == 0 else themes[ti]["tile2"]
 	var rng := RandomNumberGenerator.new()
-	rng.seed = ti * 100 + parity * 10 + variant + 7
+	rng.seed = ti * 1000 + parity * 100 + variant * 7 + 11
 	var cv := Cv.new(32, 32)
 	cv.rect(0, 0, 32, 32, base)
-	# subtle noise
-	for i in 90:
+	for i in 110:
 		var x := rng.randi_range(0, 31)
 		var y := rng.randi_range(0, 31)
 		cv.px(x, y, base.lightened(0.05) if rng.randf() < 0.5 else base.darkened(0.07))
 	if ti == 0:
-		for i in 32:
-			cv.px(i, 0, base.darkened(0.4))
-			cv.px(0, i, base.darkened(0.4))
-			cv.px(i, 1, base.lightened(0.12))
-			cv.px(1, i, base.lightened(0.12))
-			cv.px(i, 31, base.darkened(0.18))
-			cv.px(31, i, base.darkened(0.18))
-		for p in [Vector2i(4, 4), Vector2i(26, 4), Vector2i(4, 26), Vector2i(26, 26)]:
-			cv.disc(p.x + 1, p.y + 1, 2.0, base.darkened(0.3))
-			cv.disc(p.x + 0.5, p.y + 0.5, 1.5, base.lightened(0.18))
-			cv.px(p.x, p.y, base.lightened(0.5))
-		if variant == 1:
-			cv.rect(8, 9, 16, 14, base.darkened(0.45))
-			for x in range(9, 23, 2):
-				cv.rect(x, 10, 1, 12, base.darkened(0.15))
-			cv.rect(8, 9, 16, 1, base.darkened(0.7))
-			cv.rect(8, 23, 16, 1, base.lightened(0.15))
-		elif variant == 2:
-			for x in range(0, 32, 6):
-				cv.poly([Vector2(x, 26), Vector2(x + 3, 26), Vector2(x + 6, 30), Vector2(x + 3, 30)], Color("d9a81e"))
-			cv.rect(0, 25, 32, 1, base.darkened(0.5))
-			cv.rect(0, 30, 32, 1, base.darkened(0.5))
-		else:
-			cv.line(10, 14, 16, 18, base.darkened(0.3))
-			cv.line(16, 18, 15, 24, base.darkened(0.3))
-			cv.px(11, 14, base.lightened(0.15))
+		_floor0(cv, base, rng, variant)
 	elif ti == 1:
-		for i in 34:
-			var gx := rng.randi_range(1, 30)
-			var gy := rng.randi_range(3, 30)
-			cv.px(gx, gy, base.lightened(0.28))
-			cv.px(gx, gy - 1, base.lightened(0.5))
-			cv.px(gx - 1, gy - 2, base.lightened(0.4))
-			cv.px(gx + 1, gy - 2, base.lightened(0.3))
-		for i in 22:
-			cv.px(rng.randi_range(0, 31), rng.randi_range(0, 31), base.darkened(0.28))
-		if variant == 1:
-			for i in 3:
-				var sx := rng.randi_range(6, 24)
-				var sy := rng.randi_range(6, 24)
-				cv.disc(sx, sy, 2.5, base.darkened(0.3))
-				cv.disc(sx - 0.5, sy - 0.5, 1.5, base.darkened(0.15))
-		elif variant == 2:
-			for k in 2:
-				var fx := rng.randi_range(6, 25)
-				var fy := rng.randi_range(6, 25)
-				cv.line(fx, fy + 1, fx, fy + 5, Color("2f7a3a"))
-				var pet := Color("ff9ecb") if k == 0 else Color("fff3a8")
-				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-					cv.px(fx + d.x, fy + d.y, pet)
-				cv.px(fx, fy, Color("ffe066"))
-		else:
-			for i in 3:
-				var lx := rng.randi_range(4, 26)
-				var ly := rng.randi_range(4, 26)
-				cv.line(lx, ly, lx + 2, ly - 3, Color("3b9a4a"))
-				cv.line(lx + 2, ly, lx + 2, ly - 4, Color("5fc06a"))
+		_floor1(cv, base, rng, variant)
 	else:
-		for y in [0, 16]:
-			cv.rect(0, y, 32, 1, base.darkened(0.45))
-			cv.rect(0, y + 1, 32, 1, base.lightened(0.1))
-		var seam := 8 + variant * 6
-		cv.rect(seam, 1, 1, 15, base.darkened(0.45))
-		cv.rect(seam + 1, 1, 1, 15, base.lightened(0.08))
-		cv.rect((seam + 14) % 32, 17, 1, 15, base.darkened(0.45))
-		cv.rect((seam + 15) % 32, 17, 1, 15, base.lightened(0.08))
-		for p in [Vector2i(3, 4), Vector2i(28, 4), Vector2i(3, 21), Vector2i(28, 21)]:
-			cv.px(p.x, p.y, base.lightened(0.45))
-			cv.px(p.x + 1, p.y + 1, base.darkened(0.4))
-		for i in 8:
-			var sx2 := rng.randi_range(2, 28)
-			var sy2 := rng.randi_range(0, 1) * 16 + rng.randi_range(3, 13)
-			cv.line(sx2, sy2, sx2 + 3, sy2, base.darkened(0.2))
-		if variant == 2:
-			cv.rect(18, 6, 8, 6, Color("6a4a26"))
-			cv.rect(18, 6, 8, 1, Color("9a7440"))
-			cv.rect(18, 9, 8, 1, Color("3a2814"))
+		_floor2(cv, base, rng, variant)
 	cv.img.fix_alpha_edges()
 	var t := cv.tex()
 	cache[key] = t
 	return t
+
+
+func _floor0(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
+	var dk := base.darkened(0.4)
+	for i in 32:
+		cv.px(i, 0, dk)
+		cv.px(0, i, dk)
+		cv.px(i, 1, base.lightened(0.12))
+		cv.px(1, i, base.lightened(0.12))
+		cv.px(i, 31, base.darkened(0.18))
+		cv.px(31, i, base.darkened(0.18))
+	if v % 3 != 2 or v >= 6:
+		for p in [Vector2i(4, 4), Vector2i(26, 4), Vector2i(4, 26), Vector2i(26, 26)]:
+			if rng.randf() < 0.85:
+				cv.disc(p.x + 1, p.y + 1, 2.0, base.darkened(0.3))
+				cv.disc(p.x + 0.5, p.y + 0.5, 1.5, base.lightened(0.18))
+				cv.px(p.x, p.y, base.lightened(0.5))
+	if v < 6:
+		if v % 3 == 1:
+			cv.rect(2, 15, 28, 1, base.darkened(0.3))
+			cv.rect(2, 16, 28, 1, base.lightened(0.1))
+		elif v % 3 == 2:
+			cv.rect(15, 2, 1, 28, base.darkened(0.3))
+			cv.rect(16, 2, 1, 28, base.lightened(0.1))
+		for i in rng.randi_range(2, 5):
+			var sx := rng.randi_range(5, 24)
+			var sy := rng.randi_range(5, 26)
+			cv.line(sx, sy, sx + rng.randi_range(2, 6), sy + rng.randi_range(-2, 2), base.darkened(0.25) if rng.randf() < 0.6 else base.lightened(0.15))
+	elif v == 6:
+		cv.rect(8, 9, 16, 14, base.darkened(0.45))
+		for x in range(9, 23, 2):
+			cv.rect(x, 10, 1, 12, base.darkened(0.12))
+		cv.rect(8, 9, 16, 1, base.darkened(0.7))
+		cv.rect(8, 23, 16, 1, base.lightened(0.15))
+	elif v == 7:
+		for x in range(0, 40, 6):
+			cv.poly([Vector2(x - 4, 26), Vector2(x - 1, 26), Vector2(x + 2, 30), Vector2(x - 1, 30)], Color("d9a81e"))
+		cv.rect(0, 25, 32, 1, base.darkened(0.5))
+		cv.rect(0, 30, 32, 1, base.darkened(0.5))
+	elif v == 8:
+		var cy := rng.randi_range(9, 19)
+		cv.rect(1, cy, 30, 5, Color("2a2f40"))
+		cv.rect(1, cy, 30, 1, Color("5a6280"))
+		cv.rect(1, cy + 4, 30, 1, Color("14182a"))
+		for x in [8, 20]:
+			cv.rect(x, cy - 1, 3, 7, Color("7b86a8"))
+			cv.px(x + 1, cy + 2, Color("14182a"))
+		cv.line(1, cy + 2, 30, cy + 2, Color("c9a23a") if rng.randf() < 0.5 else Color("4fd1ff"))
+	elif v == 9:
+		var ox := rng.randf_range(11.0, 21.0)
+		var oy := rng.randf_range(11.0, 21.0)
+		cv.ell(ox, oy, 8.0, 5.0, base.darkened(0.55))
+		cv.ell(ox - 1.0, oy - 1.0, 5.5, 3.0, base.darkened(0.7))
+		cv.px(int(ox) - 3, int(oy) - 2, Color("6a8bd8"))
+		cv.px(int(ox) - 2, int(oy) - 2, Color("a05ac8"))
+	elif v == 10:
+		cv.rrect(7, 7, 18, 18, 2.0, base.darkened(0.35))
+		cv.rrect(8, 8, 16, 16, 2.0, base.lightened(0.04))
+		cv.rect(13, 14, 6, 3, Color("39415f"))
+		cv.rect(13, 14, 6, 1, Color("7b86a8"))
+		for p in [Vector2i(9, 9), Vector2i(22, 9), Vector2i(9, 22), Vector2i(22, 22)]:
+			cv.px(p.x, p.y, base.lightened(0.5))
+	elif v == 11:
+		var bx := rng.randf_range(10.0, 22.0)
+		var by := rng.randf_range(10.0, 22.0)
+		for r in range(9, 0, -2):
+			cv.ell(bx, by, r, r * 0.8, base.darkened(0.08 * (10 - r) * 0.5 + 0.08))
+		cv.line(bx - 6, by + 1, bx + 5, by - 2, base.darkened(0.7))
+	elif v == 12:
+		cv.rect(4, 9, 24, 14, base.darkened(0.45))
+		for k in 3:
+			var ax := 7 + k * 7
+			cv.poly([Vector2(ax, 12), Vector2(ax + 4, 16), Vector2(ax, 20), Vector2(ax + 2, 20), Vector2(ax + 6, 16), Vector2(ax + 2, 12)], Color("e8b82a"))
+	elif v == 13:
+		for i in 22:
+			var rx := rng.randi_range(3, 28)
+			var ry := rng.randi_range(3, 28)
+			cv.px(rx, ry, Color("8a4a2a") if rng.randf() < 0.7 else Color("b8683a"))
+			if rng.randf() < 0.5:
+				cv.px(rx + 1, ry, Color("6a3a20"))
+	elif v == 14:
+		for x in range(3, 29, 5):
+			cv.rect(x, 15, 3, 2, base.lightened(0.28))
+		cv.rect(3, 12, 26, 1, base.darkened(0.3))
+		cv.rect(3, 19, 26, 1, base.darkened(0.3))
+	else:
+		var sx2 := rng.randi_range(4, 10)
+		var pts: Array = []
+		var cx := float(sx2)
+		var cy2 := 2.0
+		while cy2 < 30.0:
+			pts.append(Vector2(cx, cy2))
+			cx += rng.randf_range(-3.0, 4.0)
+			cy2 += rng.randf_range(3.0, 5.0)
+		for i in range(pts.size() - 1):
+			cv.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, base.darkened(0.7))
+			cv.line(pts[i].x + 1, pts[i].y, pts[i + 1].x + 1, pts[i + 1].y, base.lightened(0.18))
+
+
+func _floor1(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
+	for i in 34 + (v % 4) * 6:
+		var gx := rng.randi_range(1, 30)
+		var gy := rng.randi_range(3, 30)
+		cv.px(gx, gy, base.lightened(0.28))
+		cv.px(gx, gy - 1, base.lightened(0.5))
+		cv.px(gx - 1, gy - 2, base.lightened(0.4))
+		cv.px(gx + 1, gy - 2, base.lightened(0.3))
+	for i in 22:
+		cv.px(rng.randi_range(0, 31), rng.randi_range(0, 31), base.darkened(0.28))
+	if v < 6:
+		for i in v % 3 + 1:
+			var lx := rng.randi_range(4, 26)
+			var ly := rng.randi_range(4, 26)
+			cv.line(lx, ly, lx + 2, ly - 3, Color("3b9a4a"))
+			cv.line(lx + 2, ly, lx + 2, ly - 4, Color("5fc06a"))
+		return
+	var px_ := rng.randi_range(6, 24)
+	var py_ := rng.randi_range(7, 24)
+	if v == 6:
+		for k in 3:
+			var fx := px_ + rng.randi_range(-5, 5)
+			var fy := py_ + rng.randi_range(-4, 4)
+			cv.line(fx, fy + 1, fx, fy + 5, Color("2f7a3a"))
+			var pet: Color = [Color("ff9ecb"), Color("fff3a8"), Color("b8a0ff"), Color("ffffff")][rng.randi() % 4]
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				cv.px(fx + d.x, fy + d.y, pet)
+			cv.px(fx, fy, Color("ffe066"))
+	elif v == 7:
+		for k in 3:
+			var mx := px_ + rng.randi_range(-5, 5)
+			var my := py_ + rng.randi_range(-3, 3)
+			cv.rect(mx, my, 2, 4, Color("e8dcc0"))
+			cv.ell(mx + 1, my, 3.5, 2.5, Color("c0485a") if k != 1 else Color("a06ac0"))
+			cv.px(mx, my - 1, Color("fff0e0"))
+			cv.px(mx + 2, my, Color("fff0e0"))
+	elif v == 8:
+		for k in 2:
+			var rx := px_ + rng.randi_range(-6, 6)
+			var ry := py_ + rng.randi_range(-4, 4)
+			cv.ell(rx, ry, 4.5, 3.5, Color("7a8078"))
+			cv.ell(rx - 1, ry - 1, 3.0, 2.0, Color("a3a99f"))
+			cv.px(rx - 2, ry - 2, Color("d8ddd2"))
+			cv.ell(rx + 1, ry + 2, 3.5, 1.0, base.darkened(0.4))
+	elif v == 9:
+		cv.ell(px_, py_, 9.0, 6.0, Color("6a4f2a"))
+		cv.ell(px_, py_, 6.5, 4.0, Color("7d5f34"))
+		for i in 14:
+			cv.px(px_ + rng.randi_range(-7, 7), py_ + rng.randi_range(-4, 4), Color("4a3519"))
+	elif v == 10:
+		cv.ell(px_, py_, 8.0, 5.0, Color("2f5f6a"))
+		cv.ell(px_, py_, 6.5, 3.6, Color("3f7f8a"))
+		cv.line(px_ - 4, py_ - 1, px_ - 1, py_ - 2, Color("a8dfe8"))
+		cv.px(px_ + 2, py_ + 1, Color("a8dfe8"))
+		for i in 3:
+			cv.px(px_ + rng.randi_range(-8, 8), py_ + rng.randi_range(-5, 5), Color("2f8a4a"))
+	elif v == 11:
+		var rx2 := rng.randf_range(2.0, 8.0)
+		for k in 3:
+			cv.line(rx2, 0, rx2 + rng.randf_range(4.0, 14.0), 12 + k * 8, Color("5a3d20"), 2.0)
+			cv.line(rx2, 0, rx2 + rng.randf_range(4.0, 14.0), 12 + k * 8, Color("7d5a34"))
+	elif v == 12:
+		for i in 14:
+			var lx2 := rng.randi_range(3, 28)
+			var ly2 := rng.randi_range(3, 28)
+			var lc: Color = [Color("c9772a"), Color("b8452a"), Color("d9a63a")][rng.randi() % 3]
+			cv.rect(lx2, ly2, 2, 2, lc)
+			cv.px(lx2 + 2, ly2 + 1, lc.darkened(0.3))
+	elif v == 13:
+		for k in 4:
+			var cx3 := px_ + rng.randi_range(-7, 7)
+			var cy3 := py_ + rng.randi_range(-5, 5)
+			for d in [Vector2i(0, 0), Vector2i(-2, 1), Vector2i(2, 1)]:
+				cv.disc(cx3 + d.x, cy3 + d.y, 1.8, Color("2f9a4a"))
+			cv.px(cx3, cy3, Color("8fe89a"))
+	elif v == 14:
+		for k in 5:
+			var rx3 := 4 + k * 5 + rng.randi_range(-1, 1)
+			var rh := rng.randi_range(8, 14)
+			cv.line(rx3, 29, rx3 + rng.randi_range(-2, 2), 29 - rh, Color("5fa84a"))
+			cv.px(rx3, 29 - rh, Color("a06a3a"))
+			cv.px(rx3, 28 - rh, Color("6a4a2a"))
+	else:
+		var fx2 := px_
+		var fy2 := py_ + 4
+		for k in 5:
+			var a := -PI / 2.0 + (k - 2) * 0.55
+			var p2 := Vector2(fx2 + cos(a) * 9.0, fy2 + sin(a) * 9.0)
+			cv.line(fx2, fy2, p2.x, p2.y, Color("2f8a3a"))
+			for j in 4:
+				var q := Vector2(fx2, fy2).lerp(p2, (j + 1) / 5.0)
+				cv.px(int(q.x) + 1, int(q.y), Color("5fc06a"))
+				cv.px(int(q.x) - 1, int(q.y), Color("5fc06a"))
+
+
+func _floor2(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
+	for y in [0, 16]:
+		cv.rect(0, y, 32, 1, base.darkened(0.45))
+		cv.rect(0, y + 1, 32, 1, base.lightened(0.1))
+	var seam := 6 + (v % 5) * 4
+	cv.rect(seam, 1, 1, 15, base.darkened(0.45))
+	cv.rect(seam + 1, 1, 1, 15, base.lightened(0.08))
+	cv.rect((seam + 14) % 30 + 1, 17, 1, 15, base.darkened(0.45))
+	cv.rect((seam + 15) % 30 + 2, 17, 1, 15, base.lightened(0.08))
+	for p in [Vector2i(3, 4), Vector2i(28, 4), Vector2i(3, 21), Vector2i(28, 21)]:
+		if rng.randf() < 0.8:
+			cv.px(p.x, p.y, base.lightened(0.45))
+			cv.px(p.x + 1, p.y + 1, base.darkened(0.4))
+	for i in 8:
+		var sx := rng.randi_range(2, 28)
+		var sy := rng.randi_range(0, 1) * 16 + rng.randi_range(3, 13)
+		cv.line(sx, sy, sx + 3, sy, base.darkened(0.2))
+	if v < 6:
+		for i in rng.randi_range(1, 4):
+			var sx2 := rng.randi_range(4, 26)
+			var sy2 := rng.randi_range(4, 27)
+			cv.line(sx2, sy2, sx2 + rng.randi_range(2, 5), sy2 + rng.randi_range(-3, 3), base.darkened(0.25) if rng.randf() < 0.5 else base.lightened(0.14))
+		return
+	var px_ := rng.randi_range(8, 22)
+	var py_ := rng.randi_range(8, 22)
+	if v == 6:
+		cv.rect(px_ - 5, py_ - 4, 10, 8, Color("6a4a26"))
+		cv.rect(px_ - 5, py_ - 4, 10, 1, Color("9a7440"))
+		cv.rect(px_ - 5, py_ + 3, 10, 1, Color("3a2814"))
+		cv.line(px_ - 4, py_ - 3, px_ + 4, py_ + 3, Color("3a2814"))
+		cv.line(px_ + 4, py_ - 3, px_ - 4, py_ + 3, Color("3a2814"))
+	elif v == 7:
+		cv.ell(px_, py_, 8.0, 5.0, base.darkened(0.55))
+		cv.ell(px_ - 1, py_ - 1, 5.0, 3.0, base.darkened(0.7))
+		cv.px(px_ - 3, py_ - 2, Color("8a6ad8"))
+	elif v == 8:
+		for i in 26:
+			var rx := px_ + rng.randi_range(-9, 9)
+			var ry := py_ + rng.randi_range(-7, 7)
+			cv.px(rx, ry, Color("8a4a2a") if rng.randf() < 0.7 else Color("b8683a"))
+	elif v == 9:
+		var chy := py_
+		for k in 7:
+			var lx := 3 + k * 4
+			cv.ell(lx, chy + (k % 2), 2.2, 1.6 if k % 2 == 0 else 2.2, Color("8a93b5"))
+			cv.ell(lx, chy + (k % 2), 1.0, 0.7, base.darkened(0.5))
+		cv.line(3, chy + 3, 28, chy + 3, base.darkened(0.35))
+	elif v == 10:
+		cv.rect(px_ - 7, py_ - 5, 14, 10, base.darkened(0.45))
+		cv.rect(px_ - 6, py_ - 4, 12, 8, Color("c9a23a"))
+		cv.glyph(["111", "001", "010", "010", "010"], px_ - 2, py_ - 2, Color("14141c"))
+	elif v == 11:
+		for i in 6:
+			var ax := rng.randi_range(3, 24)
+			var ay := rng.randi_range(3, 28)
+			cv.line(ax, ay, ax + rng.randi_range(4, 8), ay + rng.randi_range(-3, 3), base.lightened(0.3))
+			cv.line(ax, ay + 1, ax + rng.randi_range(4, 8), ay + rng.randi_range(-2, 4), base.darkened(0.4))
+	elif v == 12:
+		cv.poly([Vector2(px_ - 7, py_ - 4), Vector2(px_ + 6, py_ - 5), Vector2(px_ + 8, py_ + 3), Vector2(px_ - 5, py_ + 5)], Color("4a5a78"))
+		cv.line(px_ - 7, py_ - 4, px_ + 6, py_ - 5, Color("7a8aa8"))
+		cv.line(px_ - 3, py_ - 3, px_ - 4, py_ + 4, Color("3a4a68"))
+		cv.px(px_ + 4, py_ + 2, Color("ffd84f"))
+	elif v == 13:
+		for i in 6:
+			var gx := px_ + rng.randi_range(-8, 8)
+			var gy := py_ + rng.randi_range(-6, 6)
+			cv.disc(gx, gy, 1.6, Color("e0a01a"))
+			cv.px(gx - 1, gy - 1, Color("fff3b0"))
+	elif v == 14:
+		cv.ell(px_, py_ - 2, 3.5, 3.0, Color("e8e2cf"))
+		cv.rect(px_ - 2, py_ + 1, 5, 2, Color("e8e2cf"))
+		cv.px(px_ - 1, py_ - 2, Color("14141c"))
+		cv.px(px_ + 1, py_ - 2, Color("14141c"))
+		cv.line(px_ - 7, py_ + 5, px_ + 7, py_ + 7, Color("e8e2cf"))
+	else:
+		cv.disc(16, 16, 8.0, base.darkened(0.5))
+		cv.disc(16, 16, 6.5, base.darkened(0.25))
+		for k in range(-4, 5, 2):
+			cv.rect(12, 16 + k, 9, 1, base.darkened(0.6))
+		cv.rect(11, 11, 10, 1, base.lightened(0.2))
 
 
 func wall_tile(ti: int) -> ImageTexture:
@@ -802,139 +1007,218 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 	if cache.has(key):
 		return cache[key]
 	var cols: Array = themes[ti]["mcols"]
-	var body: Color = cols[(lvl - 1) % cols.size()]
+	var skin: Color = cols[(lvl - 1) % cols.size()]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = ti * 7919 + lvl * 104729 + (13 if boss else 0)
 	var cv := Cv.new(32, 32)
-	var lt := body.lightened(0.45)
-	var dk := body.darkened(0.4)
-	var hornc := Color("ece3c8")
-	var cx := 16.0
-	var rx := (11.0 if boss else 9.0) + rng.randf() * 2.5
-	var ry := (11.0 if boss else 9.0) + rng.randf() * 2.5
-	var cy := 17.0 + rng.randf() * 1.5
-	var shape := rng.randi() % 3
-	# --- left-half appendages (mirrored later)
-	var legs := rng.randi_range(0, 2)
-	if legs == 1:
-		for k in 2:
-			var lx := 9 + k * 4
-			cv.rrect(lx, int(cy + ry - 3), 4, 6, 1.5, dk)
-			cv.rect(lx - 1, int(cy + ry + 2), 6, 2, dk.darkened(0.2))
-	elif legs == 2:
-		for k in 3:
-			var lx2 := 6.0 + k * 3.5
-			cv.line(lx2, cy + ry - 3, lx2 - 1 + (k % 2) * 2, minf(cy + ry + 4.0, 30.0), dk, 2.0)
-	if rng.randf() < 0.75:
-		var ay := cy + rng.randf_range(-2, 2)
-		cv.line(cx - rx + 1, ay, cx - rx - 3.5, ay + 4, body.darkened(0.15), 3.0)
-		cv.disc(cx - rx - 4, ay + 5, 2.0, lt)
-		cv.px(int(cx - rx - 5), int(ay + 7), hornc)
-		cv.px(int(cx - rx - 3), int(ay + 7), hornc)
-	var horns := 2 if boss else rng.randi_range(0, 2)
-	for h in horns:
-		var hx := cx - 3.5 - h * 4.0
-		cv.poly([Vector2(hx - 2, cy - ry + 2), Vector2(hx + 2, cy - ry + 2), Vector2(hx - 3 - h, cy - ry - 6 - (3 if boss else 0))], hornc)
-	if shape == 2 or boss:
-		for k in 3:
-			var sxk := cx - 2.0 - k * 3.5
-			cv.poly([Vector2(sxk - 1.5, cy - ry + 2), Vector2(sxk + 1.5, cy - ry + 2), Vector2(sxk, cy - ry - 3)], lt)
-	# --- body
-	if shape == 0:
-		cv.ell(cx, cy, rx, ry, body)
-	elif shape == 1:
-		cv.rrect(int(cx - rx), int(cy - ry), int(rx * 2), int(ry * 2), 5.0, body)
-	else:
-		cv.ell(cx, cy - 1, rx, ry - 1, body)
-		cv.ell(cx, cy + 3, rx - 1.5, ry - 3, body)
-	cv.mirror()
-	cv.shade(0.34)
-	# belly + spots + pattern
-	var belly := body.lightened(0.28)
-	cv.ell(16, cy + ry * 0.45, rx * 0.55, ry * 0.4, belly)
-	for k in 6:
-		var sx := rng.randi_range(8, 15)
-		var sy := rng.randi_range(int(cy - ry) + 4, int(cy + ry) - 5)
-		var sr := rng.randf_range(0.9, 1.8)
-		for s2 in [sx, 31 - sx]:
-			cv.disc(s2, sy, sr, dk)
-			cv.px(int(s2), sy - 1, body.lightened(0.1))
-	# --- face
-	var ey := cy - ry * 0.28
-	var etype := rng.randi() % 3
-	var glow := Color("ff5252") if boss else Color.WHITE
-	if etype == 0:
-		for sgn in [-1, 1]:
-			var ex: float = 16.0 + sgn * 4.0
-			cv.ell(ex, ey, 3.3, 3.8, Color("14141c"))
-			cv.ell(ex, ey, 2.6, 3.1, glow)
-			cv.disc(ex + sgn * -0.2, ey + 0.8, 1.5, Color("14141c") if not boss else Color("2a0a0a"))
-			cv.px(int(ex - 1), int(ey - 1), Color.WHITE)
-			if blink:
-				cv.ell(ex, ey, 3.6, 4.1, body.darkened(0.08))
-				cv.line(ex - 3, ey + 1, ex + 3, ey + 1, Color("14141c"))
-	elif etype == 1:
-		cv.ell(16, ey, 5.2, 5.0, Color("14141c"))
-		cv.ell(16, ey, 4.4, 4.2, glow)
-		cv.disc(16, ey + 0.5, 2.4, body.darkened(0.2) if not boss else Color("c91d1d"))
-		cv.disc(16, ey + 0.5, 1.3, Color("14141c"))
-		cv.px(14, int(ey - 1), Color.WHITE)
-		cv.px(15, int(ey - 2), Color.WHITE)
-		if blink:
-			cv.ell(16, ey, 5.5, 5.3, body.darkened(0.08))
-			cv.line(11, ey + 1, 21, ey + 1, Color("14141c"))
-			cv.line(12, ey + 2, 20, ey + 2, body.darkened(0.3))
-	else:
-		for sgn in [-1, 1]:
-			var ex2: float = 16.0 + sgn * 5.0
-			cv.disc(ex2, ey - 1, 2.2, Color("14141c"))
-			cv.disc(ex2, ey - 1, 1.6, glow)
-			cv.px(int(ex2), int(ey - 1), Color("14141c"))
-		cv.disc(16, ey + 3, 1.6, Color("14141c"))
-		cv.px(16, int(ey + 3), glow)
-		if blink:
-			for sgn2 in [-1, 1]:
-				cv.disc(16.0 + sgn2 * 5.0, ey - 1, 2.5, body.darkened(0.08))
-				cv.line(16.0 + sgn2 * 5.0 - 2, ey, 16.0 + sgn2 * 5.0 + 2, ey, Color("14141c"))
-			cv.disc(16, ey + 3, 2.0, body.darkened(0.08))
-	# brow
-	var browy := int(ey - 4.5)
-	cv.line(10, browy + 1, 14, browy + (2 if etype != 1 else 1), dk.darkened(0.3))
-	cv.line(21, browy + (2 if etype != 1 else 1), 25, browy + 1, dk.darkened(0.3))
-	# mouth
-	var my := int(cy + ry * 0.3)
-	var mw := rng.randi_range(4, 6)
-	cv.rect(16 - mw, my, mw * 2, 3, Color("2a0f18"))
-	cv.rect(16 - mw, my + 3, mw * 2, 1, Color("7a1f2f"))
-	if rng.randf() < 0.75:
-		for k in range(0, mw * 2, 3):
-			cv.rect(16 - mw + k, my, 2, 2, Color("f6efd6"))
-		if rng.randf() < 0.5:
-			cv.rect(16 - mw + 1, my + 2, 2, 1, Color("f6efd6"))
-			cv.rect(16 + mw - 3, my + 2, 2, 1, Color("f6efd6"))
-	else:
-		cv.rect(15, my + 1, 2, 2, Color("ff7a8a"))
-	# antenna / bulb
-	if rng.randf() < 0.35 or boss:
-		cv.line(16, cy - ry + 1, 16, cy - ry - 4, dk)
-		cv.disc(16, cy - ry - 5, 2.4, Color("fff27a"))
-		cv.px(15, int(cy - ry - 6), Color.WHITE)
-	# boss crown
+	var skin_dk := skin.darkened(0.35)
+	var skin_lt := skin.lightened(0.35)
+	var outfits := [
+		[Color("3f5f8f"), Color("7a8296"), Color("8a3f3f"), Color("4a4f68")],
+		[Color("3f7a3f"), Color("6a4f2a"), Color("2f6a5a"), Color("7a6a2a")],
+		[Color("6a3a2a"), Color("3a3a4a"), Color("7a2f3f"), Color("4a4a2a")],
+	]
+	var cloth: Color = (outfits[ti] as Array)[rng.randi() % 4]
+	if absf(cloth.h - skin.h) < 0.05 and absf(cloth.v - skin.v) < 0.25:
+		cloth = cloth.darkened(0.35)
+	var cloth_dk := cloth.darkened(0.35)
+	var cloth_lt := cloth.lightened(0.3)
+	var metal := Color("8a93b5")
+	var bulk := 1.0 if not boss else 1.25
+	var hs := rng.randi() % 4
+	var hcy := 8.5
+	var hrx := 6.2
+	var hry := 6.0
+	if hs == 1:
+		hrx = 5.2
+		hry = 7.2
+	elif hs == 2:
+		hrx = 7.0
+		hry = 5.2
+		hcy = 9.0
+	elif hs == 3:
+		hrx = 5.8
+		hry = 6.4
 	if boss:
-		var cy0 := int(cy - ry) - 1
-		cv.poly([Vector2(8, cy0 + 4), Vector2(8, cy0 - 3), Vector2(12, cy0 + 1), Vector2(16, cy0 - 5), Vector2(20, cy0 + 1), Vector2(24, cy0 - 3), Vector2(24, cy0 + 4)], Color("ffc93c"))
-		cv.rect(8, cy0 + 3, 16, 2, Color("c98a12"))
-		cv.px(16, cy0 - 1, Color("ff5252"))
-		cv.px(11, cy0 + 2, Color("4fd1ff"))
-		cv.px(21, cy0 + 2, Color("4fd1ff"))
-	# theme flavour
-	if ti == 1:
+		hrx += 0.6
+		hry += 0.4
+	var shoulder := 6.0 * bulk
+	var tw := 6.0 * bulk
+	# --- legs and feet
+	var stance := rng.randi() % 2
+	cv.rrect(11 - (1 if boss else 0), 21, 5, 9, 1.5, cloth_dk)
+	cv.rrect(16 + (1 if boss else 0), 21, 5, 9, 1.5, cloth_dk)
+	cv.rrect(10 - (1 if boss else 0), 27, 7, 4, 1.5, Color("2a2a38"))
+	cv.rrect(15 + (1 if boss else 0), 27, 7, 4, 1.5, Color("2a2a38"))
+	if stance == 1:
+		cv.rect(11, 24, 5, 1, cloth)
+		cv.rect(16, 24, 5, 1, cloth)
+	# --- arms
+	var arm_c := skin if ti != 0 or rng.randf() < 0.5 else cloth
+	cv.rrect(int(16.0 - shoulder) - 3, 13, 4, 10, 1.8, arm_c)
+	cv.rrect(int(16.0 + shoulder) - 1, 13, 4, 10, 1.8, arm_c)
+	cv.disc(int(16.0 - shoulder) - 1, 24, 2.2, skin)
+	cv.disc(int(16.0 + shoulder) + 1, 24, 2.2, skin)
+	# --- torso
+	cv.rrect(int(16.0 - tw), 12, int(tw * 2.0), 12, 3.0, cloth)
+	cv.ell(16.0 - shoulder + 1.0, 14.0, 3.4 * bulk, 2.8 * bulk, cloth_lt if ti != 1 else skin_dk)
+	cv.ell(16.0 + shoulder - 1.0, 14.0, 3.4 * bulk, 2.8 * bulk, cloth_lt if ti != 1 else skin_dk)
+	# --- neck + ears + head
+	cv.rect(14, 11, 4, 3, skin_dk)
+	var ears := rng.randi() % 3
+	if ears == 1:
+		cv.poly([Vector2(16 - hrx + 1, hcy), Vector2(16 - hrx - 4, hcy - 4), Vector2(16 - hrx + 1.5, hcy - 2.5)], skin)
+		cv.poly([Vector2(16 + hrx - 1, hcy), Vector2(16 + hrx + 4, hcy - 4), Vector2(16 + hrx - 1.5, hcy - 2.5)], skin)
+	elif ears == 2:
+		cv.ell(16 - hrx, hcy, 2.0, 3.0, skin_dk)
+		cv.ell(16 + hrx, hcy, 2.0, 3.0, skin_dk)
+	if hs == 3:
+		cv.rrect(int(16 - hrx), int(hcy - hry), int(hrx * 2), int(hry * 2), 4.0, skin)
+	else:
+		cv.ell(16, hcy, hrx, hry, skin)
+	# crest / horns / antennae behind the face
+	var top := rng.randi() % 5
+	if boss:
+		top = 1
+	var topy := hcy - hry
+	if top == 1:
+		for k in 2:
+			var sgn := -1.0 if k == 0 else 1.0
+			cv.poly([Vector2(16 + sgn * 2.5, topy + 1.5), Vector2(16 + sgn * 5.5, topy + 2.5), Vector2(16 + sgn * 6.5, topy - 5.5)], Color("ece3c8"))
+	elif top == 2:
 		for k in 3:
-			var vx := rng.randi_range(9, 22)
-			cv.line(vx, cy + ry - 1, vx + rng.randi_range(-2, 2), cy + ry + 2, Color("3b9a4a"))
-	elif ti == 2:
-		cv.rect(int(cx - rx) + 1, int(cy + 1), int(rx * 2) - 2, 1, Color(0, 0, 0, 0.35))
-	cv.outline(body.darkened(0.82))
+			var sx := 16.0 + (k - 1) * 3.2
+			cv.poly([Vector2(sx - 1.6, topy + 2), Vector2(sx + 1.6, topy + 2), Vector2(sx, topy - 3.5 - (1.5 if k == 1 else 0.0))], skin_lt)
+	elif top == 3:
+		for k in 2:
+			var sgn2 := -1.0 if k == 0 else 1.0
+			cv.line(16 + sgn2 * 2.0, topy + 1, 16 + sgn2 * 5.0, topy - 4, skin_dk)
+			cv.disc(16 + sgn2 * 5.0, topy - 4.5, 1.6, Color("fff27a"))
+	elif top == 4:
+		for k in 5:
+			var hx := 16.0 + (k - 2) * 2.6
+			cv.line(hx, topy + 2, hx + (k - 2) * 1.4, topy - 2.5 + abs(k - 2) * 1.0, skin_dk, 2.0)
+	cv.shade(0.3)
+	# --- details (after shading so they stay crisp)
+	var ey := hcy - 0.8
+	var etype := rng.randi() % 4
+	var glow := Color("ff4a4a") if boss else Color("fffbe6")
+	var pupil := Color("14141c")
+	var blink_c := skin.darkened(0.05)
+	var eyes: Array = []
+	if etype == 0:
+		eyes = [Vector3(13.2, ey, 2.0), Vector3(18.8, ey, 2.0)]
+	elif etype == 1:
+		eyes = [Vector3(12.6, ey + 0.8, 1.8), Vector3(19.4, ey + 0.8, 1.8), Vector3(16.0, ey - 2.8, 1.5)]
+	elif etype == 2:
+		eyes = [Vector3(16.0, ey, 3.2)]
+	else:
+		eyes = [Vector3(12.8, ey - 1.6, 1.4), Vector3(19.2, ey - 1.6, 1.4), Vector3(13.6, ey + 1.8, 1.4), Vector3(18.4, ey + 1.8, 1.4)]
+	for e in eyes:
+		var ex: float = e.x
+		var eyy: float = e.y
+		var er: float = e.z
+		if blink:
+			cv.ell(ex, eyy, er + 0.8, er + 0.8, skin)
+			cv.line(ex - er, eyy + 0.5, ex + er, eyy + 0.5, pupil)
+		else:
+			cv.ell(ex, eyy, er + 0.9, er + 1.1, pupil)
+			cv.ell(ex, eyy, er, er + 0.2, glow)
+			cv.disc(ex + (0.3 if ex < 16 else -0.3), eyy + 0.5, maxf(0.9, er * 0.55), pupil if not boss else Color("7a0a0a"))
+			cv.px(int(ex - er * 0.4), int(eyy - er * 0.5), Color.WHITE)
+	# brow
+	if etype != 2:
+		cv.line(11, ey - 3.2, 15, ey - 2.2, skin_dk.darkened(0.3), 1.5)
+		cv.line(17, ey - 2.2, 21, ey - 3.2, skin_dk.darkened(0.3), 1.5)
+	else:
+		cv.line(12.5, ey - 4.6, 19.5, ey - 4.6, skin_dk.darkened(0.3), 1.5)
+	# nose slits
+	cv.px(15, int(hcy + 1.5), skin_dk.darkened(0.3))
+	cv.px(17, int(hcy + 1.5), skin_dk.darkened(0.3))
+	# mouth
+	var my := hcy + hry * 0.55
+	var mt := rng.randi() % 4
+	if mt == 0:
+		cv.rect(13, int(my), 6, 2, Color("2a0f18"))
+		cv.px(13, int(my) + 2, Color("f6efd6"))
+		cv.px(18, int(my) + 2, Color("f6efd6"))
+		cv.px(14, int(my), Color("f6efd6"))
+		cv.px(17, int(my), Color("f6efd6"))
+	elif mt == 1:
+		cv.rect(12, int(my), 8, 3, Color("2a0f18"))
+		for k in range(12, 20, 2):
+			cv.px(k, int(my), Color("f6efd6"))
+		cv.px(13, int(my) + 2, Color("f6efd6"))
+		cv.px(18, int(my) + 2, Color("f6efd6"))
+	elif mt == 2:
+		cv.line(12, my, 15, my + 2, skin_dk.darkened(0.4), 1.5)
+		cv.line(20, my, 17, my + 2, skin_dk.darkened(0.4), 1.5)
+		cv.line(15, my + 2, 17, my + 2, Color("2a0f18"))
+	else:
+		cv.rect(14, int(my), 4, 2, Color("2a0f18"))
+		for k in 3:
+			var tx := 13.5 + k * 2.5
+			cv.line(tx, my + 2, tx + (k - 1) * 0.8, my + 5.5, skin_dk, 1.4)
+	# --- outfit details per theme
+	if ti == 0:
+		cv.rect(int(16 - tw), 19, int(tw * 2), 2, cloth_dk)
+		cv.rect(15, 19, 2, 2, Color("ffd84f"))
+		cv.rect(int(16 - tw) + 2, 14, 4, 3, Color("e8e2d0"))
+		cv.px(int(16 - tw) + 3, 15, Color("c93b3b"))
+		cv.line(14, 12, 16, 15, cloth_lt)
+		cv.line(18, 12, 16, 15, cloth_lt)
+		if rng.randf() < 0.6:
+			cv.poly([Vector2(16 + tw - 3, 21), Vector2(16 + tw, 20), Vector2(16 + tw - 1, 24), Vector2(16 + tw - 3, 23)], arm_c)
+	elif ti == 1:
+		for k in 4:
+			var lx := 16.0 - tw + 2 + k * 3.0
+			cv.poly([Vector2(lx, 16), Vector2(lx + 2.5, 14), Vector2(lx + 1.5, 19)], Color("5fc06a"))
+		cv.line(16 - tw - 2, 15, 16 - tw - 2, 22, Color("2f7a3a"))
+		cv.line(16 + tw + 2, 15, 16 + tw + 2, 22, Color("2f7a3a"))
+		cv.rect(int(16 - tw), 20, int(tw * 2), 2, Color("6a4f2a"))
+		cv.px(15, 20, Color("ffe066"))
+		for k in 3:
+			var lh := 16.0 + (k - 1) * 3.6
+			cv.poly([Vector2(lh - 1.5, topy + 3), Vector2(lh + 1.5, topy + 3), Vector2(lh, topy - 2.5 - (k % 2))], Color("5fc06a"))
+	else:
+		cv.line(16 - tw + 1, 12, 16 + tw - 1, 22, Color("4a3220"), 2.0)
+		cv.rect(int(16 - tw), 20, int(tw * 2), 2, Color("3a2814"))
+		cv.rect(15, 20, 3, 2, Color("ffd84f"))
+		cv.rect(int(16 - hrx) + 1, int(topy) + 2, int(hrx * 2) - 2, 3, Color("b83a2c"))
+		cv.line(16 + hrx - 2, topy + 3, 16 + hrx + 3, topy + 6, Color("b83a2c"), 1.5)
+		if rng.randf() < 0.5 and etype != 2:
+			cv.disc(19.0, ey, 2.4, Color("14141c"))
+			cv.line(14, topy + 4, 24, ey + 5, Color("14141c"))
+	# --- held item on the right hand
+	var wep := rng.randi() % 4
+	var hxw := 16.0 + shoulder + 1.0
+	if wep == 0:
+		cv.line(hxw, 24, hxw + 2, 6, Color("d3d9e8"), 2.0)
+		cv.line(hxw - 1, 24, hxw + 1, 6, Color("f4f7ff"))
+		cv.rect(int(hxw) - 2, 23, 5, 2, Color("8a5a2a"))
+	elif wep == 1:
+		cv.line(hxw, 25, hxw + 1, 10, Color("8a5a2a"), 2.5)
+		cv.ell(hxw + 1, 9, 3.0, 3.4, Color("6a6f80"))
+		cv.px(int(hxw), 8, Color("a8aec0"))
+	elif wep == 2:
+		for k in 3:
+			cv.line(hxw + (k - 1) * 1.6, 24, hxw + (k - 1) * 2.2, 19, Color("ece3c8"))
+	else:
+		cv.rect(int(hxw) - 1, 23, 5, 3, Color("39415f"))
+		cv.rect(int(hxw) + 3, 23, 3, 1, Color("39415f"))
+		cv.px(int(hxw) + 2, 23, Color("4fd1ff"))
+	# --- boss extras
+	if boss:
+		var cy0 := int(topy) - 1
+		cv.poly([Vector2(9, cy0 + 4), Vector2(9, cy0 - 3), Vector2(12.5, cy0 + 1), Vector2(16, cy0 - 5), Vector2(19.5, cy0 + 1), Vector2(23, cy0 - 3), Vector2(23, cy0 + 4)], Color("ffc93c"))
+		cv.rect(9, cy0 + 3, 14, 2, Color("c98a12"))
+		cv.px(16, cy0 - 1, Color("ff5252"))
+		cv.px(12, cy0 + 2, Color("4fd1ff"))
+		cv.px(20, cy0 + 2, Color("4fd1ff"))
+		cv.rect(4, 13, 24, 2, Color("c93b3b"))
+		cv.px(8, 13, Color("ffd84f"))
+		cv.px(23, 13, Color("ffd84f"))
+	cv.outline(skin.darkened(0.85))
 	cv.img.fix_alpha_edges()
 	var t := cv.tex()
 	cache[key] = t

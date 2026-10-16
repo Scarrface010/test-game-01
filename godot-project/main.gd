@@ -571,6 +571,13 @@ func _item_tex(kind: String) -> ImageTexture:
 	return spr_gen.item(kind)
 
 
+func _tile_var(x: int, y: int) -> int:
+	var h := (x * 374761393 + y * 668265263) & 0x7fffffff
+	h = ((h ^ (h >> 13)) * 1274126177) & 0x7fffffff
+	h = h ^ (h >> 16)
+	return h % 16
+
+
 func _floor_tex(ti: int, parity: int, variant: int) -> ImageTexture:
 	return spr_gen.floor_tile(ti, parity, variant)
 
@@ -1992,12 +1999,7 @@ func _amb_draw(band: Rect2, ti: int) -> void:
 		if not band.has_point(Vector2(x, y)):
 			continue
 		if ti == 0:
-			var al := 0.12 + 0.12 * sin(t * sp * 3.0 + ph)
-			draw_rect(Rect2(x, y, sz * 0.7, sz * 0.7), Color(0.75, 0.88, 1.0, al))
-			if sin(t * sp * 7.0 + ph * 5.0) > 0.985:
-				var cc := Color(0.6, 0.9, 1.0, 0.9)
-				draw_line(Vector2(x - 5, y), Vector2(x + 5, y), cc, 2.0)
-				draw_line(Vector2(x, y - 5), Vector2(x, y + 5), cc, 2.0)
+			draw_rect(Rect2(x, y, sz * 0.6, sz * 0.6), Color(0.75, 0.88, 1.0, 0.1))
 		elif ti == 1:
 			var g := 0.5 + 0.5 * sin(t * 1.6 * sp + ph)
 			var col := Color(0.55, 1.0, 0.65) if int(ph * 10.0) % 3 != 0 else Color(1.0, 0.65, 0.85)
@@ -2174,7 +2176,7 @@ func _anim_update(dt: float) -> void:
 	if level < anim_level:
 		anim_level = level
 	elif level > anim_level:
-		if steps > 0 and state == PLAY:
+		if steps > 0 and state == PLAY and mode == "adv":
 			_fx_levelup()
 		anim_level = level
 	if mode == "adv" and state == PLAY:
@@ -2308,12 +2310,15 @@ func _draw() -> void:
 			_draw_overlay(acc)
 		return
 	draw_rect(Rect2(0, 0, 720, 1280), th["bg"])
+	var grid_r := Rect2(GX - 4, GY - 4, N * cell + 8, N * cell + 8)
 	for s in stars:
 		var a := 0.12 + 0.28 * (0.5 + 0.5 * sin(t * 1.5 + float(s[2])))
 		var sz: float = s[3]
 		var drift := 0.0
 		if ti == 1:
 			drift = sin(t * 0.7 + float(s[2])) * 6.0
+		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
+			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	if state == MODE:
 		_draw_overlay(acc)
@@ -2372,7 +2377,7 @@ func _draw() -> void:
 			if is_dark(c):
 				draw_rect(r, th["dark"])
 				continue
-			draw_texture_rect(_floor_tex(ti, (x + y) % 2, (x * 7 + y * 3) % 3), r.grow(-1.0), false)
+			draw_texture_rect(_floor_tex(ti, (x + y) % 2, _tile_var(x, y)), r.grow(-1.0), false)
 			if ring(c) == depth:
 				draw_rect(r.grow(-1.0), Color(0, 0, 0, 0.28))
 				if warn:
@@ -4144,7 +4149,7 @@ func _adv_draw() -> void:
 				if wfa > 0.01:
 					draw_rect(r, Color(0, 0, 0, wfa))
 				continue
-			draw_texture_rect(_floor_tex(ti, (cx + cy) & 1, (cx * 7 + cy * 3) % 3), r.grow(-1.0), false)
+			draw_texture_rect(_floor_tex(ti, (cx + cy) & 1, _tile_var(cx, cy)), r.grow(-1.0), false)
 			var bob := sin(t * 3.0 + cx * 1.7 + cy) * 2.0
 			if c == stairs:
 				var ok := adv_pts >= adv_req
