@@ -101,3 +101,9 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - Two turret types per theme (Laser Sentry / Plasma Cannon, Thorn Shooter / Spore Spitter, Auto Gun / Rocket Rack). They never move, face one of four directions (set at spawn) and shoot 5 tiles down that lane. Sentries fire every step, cannons every other step. Damage equals a monster of their level. They can be fought, zapped or bombed; other monsters block their shots.
 - Six hazards: Arc plate (shocks only while lit) and Hull breach (-8 air) on the station; Toxic pool (poison 4 steps, cured by Nano Injector or medical station) and Slick patch (skid one tile) in the jungle; Mine (big blast, hurts nearby monsters) and Alarm gate (wakes nearby monsters into hunters) in the smuggler world. Bombs clear hazards.
 - Tutorial pages TURRETS and HAZARDS added.
+
+## v19 - Ranged weapons, corpses, kill behaviour
+- Turrets no longer hit back when you attack them; they only damage you when they shoot.
+- A killing blow no longer moves you onto the enemy's tile; press again to step there.
+- Five ranged weapons (Blaster Pistol, Thorn Crossbow, Arc Carbine, Plasma Rifle, Rail Sniper). Tap a monster in a straight, clear line within range to shoot it (no counter-hit, but the turn still passes). Walking into a monster with one equipped also shoots.
+- Every killed enemy leaves a corpse sprite (derived from its own sprite, with a themed pool; wrecked turrets smoulder) that stays on the floor.

@@ -172,6 +172,11 @@ const ART := {
 	"katana": {"s": "katana", "a": "eef2fa", "b": "ff5d5d", "c": "2a2f40"},
 	"singedge": {"s": "edge", "a": "2a2147", "b": "c07cff", "c": "14101f"},
 	"novacleaver": {"s": "cleaver", "a": "d8dde8", "b": "ff7a45", "c": "6b3a1e"},
+	"blaster": {"s": "pistol", "a": "9aa3c7", "b": "7fe8ff", "c": "3a4160"},
+	"thornbow": {"s": "xbow", "a": "8a5a2a", "b": "c9e8a0", "c": "4a3a2a"},
+	"arccarbine": {"s": "carbine", "a": "6b7388", "b": "ffe14f", "c": "2b2f3d"},
+	"plasmarifle": {"s": "rifle", "a": "5a6280", "b": "ff6ad5", "c": "2a2f40"},
+	"railsniper": {"s": "sniper", "a": "c5cde6", "b": "4f9bff", "c": "3a4160"},
 	"visor": {"s": "visor", "a": "9aa3c7", "b": "4fd1ff"},
 	"hardcap": {"s": "cap", "a": "ffd23a", "b": "c9961a"},
 	"rebreather": {"s": "mask", "a": "5a6280", "b": "9fe0ff"},
@@ -352,6 +357,32 @@ func _weapon(cv: Cv, art: Dictionary, g: Vector2, d: Vector2, k: float) -> void:
 		_quad(cv, g, d, 3.5 * k, 13.5 * k, 0.7 * k, 0.7 * k, a.darkened(0.3), -2.6 * k)
 		var hp2 := g + d * 10.0 * k
 		cv.disc(hp2.x, hp2.y, 0.9 * k, Color(0, 0, 0, 0))
+	elif s == "xbow":
+		_quad(cv, g, d, 1.0 * k, 11.0 * k, 1.0 * k, 1.0 * k, a)
+		var l0 := g + d * 8.5 * k - p * 6.0 * k
+		var l1 := g + d * 11.0 * k
+		var l2 := g + d * 8.5 * k + p * 6.0 * k
+		cv.line(l0.x, l0.y, l1.x, l1.y, c.lightened(0.2), maxf(1.0, 1.4 * k))
+		cv.line(l1.x, l1.y, l2.x, l2.y, c.lightened(0.2), maxf(1.0, 1.4 * k))
+		cv.line(l0.x, l0.y, g.x + d.x * 4.0 * k, g.y + d.y * 4.0 * k, b)
+		cv.line(l2.x, l2.y, g.x + d.x * 4.0 * k, g.y + d.y * 4.0 * k, b)
+		var bp2 := g + d * 12.0 * k
+		cv.px(int(bp2.x), int(bp2.y), b)
+	elif s == "pistol" or s == "carbine" or s == "rifle" or s == "sniper":
+		var ln := 7.0
+		if s == "carbine":
+			ln = 10.0
+		elif s == "rifle":
+			ln = 13.0
+		elif s == "sniper":
+			ln = 17.0
+		_quad(cv, g, d, 2.0 * k, ln * k, 1.6 * k, 1.1 * k, a)
+		_quad(cv, g, d, 3.0 * k, ln * 0.7 * k, 0.5 * k, 0.5 * k, b)
+		_quad(cv, g, d, 1.0 * k, 3.5 * k, 2.2 * k, 2.2 * k, c.lightened(0.25))
+		if s == "sniper":
+			_quad(cv, g, d, 6.0 * k, 10.0 * k, 0.8 * k, 0.8 * k, b, -1.9 * k)
+		var mzp := g + d * (ln + 0.9) * k
+		cv.px(int(mzp.x), int(mzp.y), b.lightened(0.5))
 
 
 func _helm(cv: Cv, dir: int, art: Dictionary) -> void:
@@ -1046,6 +1077,64 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 		cv.img = sub
 	cv.img.fix_alpha_edges()
 	var t := cv.tex()
+	cache[key] = t
+	return t
+
+
+# ---------------------------------------------------------------- corpses
+
+func _pool(im: Image, cx: int, cy: int, rx: float, ry: float, col: Color) -> void:
+	for y in range(maxi(0, int(cy - ry) - 1), mini(im.get_height(), int(cy + ry) + 2)):
+		for x in range(maxi(0, int(cx - rx) - 1), mini(im.get_width(), int(cx + rx) + 2)):
+			var dx := (x - cx) / rx
+			var dy := (y - cy) / ry
+			if dx * dx + dy * dy <= 1.0:
+				im.set_pixel(x, y, col)
+
+
+func corpse(ti: int, lvl: int, boss: bool, tv: int, td: int, fl: int) -> ImageTexture:
+	var key := "corpse_%d_%d_%d_%d_%d_%d" % [ti, lvl, 1 if boss else 0, tv, td, fl]
+	if cache.has(key):
+		return cache[key]
+	var pcols: Array = [Color("7a1f2e"), Color("3f7a2a"), Color("5a2a8a")]
+	var pc: Color = pcols[ti % 3]
+	var out := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	var src: Image
+	if tv >= 0:
+		src = turret(ti, tv, td).get_image().duplicate()
+	else:
+		src = monster(ti, lvl, boss, true).get_image().duplicate()
+	src.convert(Image.FORMAT_RGBA8)
+	var dim := 0.78 if tv < 0 else 0.5
+	for y in src.get_height():
+		for x in src.get_width():
+			var c := src.get_pixel(x, y)
+			if c.a > 0.05:
+				var l := c.r * 0.3 + c.g * 0.59 + c.b * 0.11
+				src.set_pixel(x, y, Color(lerpf(c.r, l, 0.5) * dim * 1.1, lerpf(c.g, l, 0.5) * dim * 1.1, lerpf(c.b, l, 0.5) * dim * 1.1, c.a))
+	if tv >= 0:
+		_pool(out, 16, 26, 13.0, 4.5, Color(0.05, 0.05, 0.07, 0.8))
+		_pool(out, 16, 26, 9.0, 3.0, Color(0.12, 0.1, 0.1, 0.9))
+		src.resize(32, 22, Image.INTERPOLATE_NEAREST)
+		out.blend_rect(src, Rect2i(0, 0, 32, 22), Vector2i(0, 7))
+		for i in 5:
+			var sx := 6 + i * 5
+			out.set_pixel(sx, 22 - (i % 3) * 3 - 2, Color(0.55, 0.55, 0.6, 0.6))
+		for e in [Vector2i(9, 25), Vector2i(21, 24), Vector2i(15, 27), Vector2i(25, 27)]:
+			out.set_pixel(e.x, e.y, Color("ff9a3c"))
+	else:
+		_pool(out, 16, 25, 14.0, 5.5, pc.darkened(0.25))
+		_pool(out, 16, 25, 12.0, 4.4, pc)
+		_pool(out, 12, 24, 4.0, 1.6, pc.lightened(0.25))
+		if fl == 1:
+			src.rotate_90(COUNTERCLOCKWISE)
+		else:
+			src.rotate_90(CLOCKWISE)
+		src.resize(32, 20, Image.INTERPOLATE_NEAREST)
+		out.blend_rect(src, Rect2i(0, 0, 32, 20), Vector2i(0, 9))
+		for sp in [Vector2i(3, 28), Vector2i(28, 22), Vector2i(26, 29)]:
+			out.set_pixel(sp.x, sp.y, pc.darkened(0.1))
+	var t := ImageTexture.create_from_image(out)
 	cache[key] = t
 	return t
 
