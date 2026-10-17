@@ -82,3 +82,10 @@ Mode menu has a HOW TO PLAY button: 8 Puzzle pages and 9 Adventure pages, each i
 
 ## v15 – Leaderboard
 LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with player names and floors cleared, change-name button. Scores submit on floor clear and death. Needs a free Firebase Realtime Database: see LEADERBOARD_SETUP.md. Until `LB_URL` is set it shows a "not switched on yet" message and the player's own best.
+
+## v16 - armour, medical stations, new tools and gear
+- Armour plates no longer cap at 6 (the old cap made total armour stop at 9 with gear).
+- New tools: Nano Injector (full heal), Shield Cell, Plating Kit (+1 armour), Pulse Scanner, Ration Pack (adventure only).
+- Medical stations (green cross, from floor 2): step on one, then tap your own tile to pay coins and heal. Short on coins heals what you can afford.
+- 31 new gear pieces across all slots and tiers.
+- XP potions are now a percent of the current level's XP need (20% / 25% x multipliers); Elixir gives 75%.

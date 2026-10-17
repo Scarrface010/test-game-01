@@ -149,6 +149,7 @@ var sh := 0
 var sh_max := 16
 var mon_hp: Dictionary = {}
 var stations: Dictionary = {}
+var meds: Dictionary = {}   # medical stations: cell -> true
 var adv_names := {
 	"slowdark": "Deep Lungs", "lantern": "Wide Scanner", "ember": "Overclock Scanner",
 	"iron": "Iron Lungs", "oil": "Air Filter", "crystal": "Air Canister",
@@ -186,7 +187,7 @@ var adv_text := {
 	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters for 10",
 	"tool_zap": "Zaps a monster within 3 tiles for 12 damage",
 	"tool_crystal": "+20 air", "tool_cloak": "+3 attack until your next kill",
-	"tool_draught": "+30 XP", "tool_magnet": "Pulls in coins within 7 tiles",
+	"tool_draught": "Gives 75% of a level's worth of XP", "tool_magnet": "Pulls in coins within 7 tiles",
 	"tool_blink": "Teleport to a nearby explored tile",
 }
 var reset_armed := -10.0
@@ -382,6 +383,11 @@ func _make_defs() -> void:
 		"magnet": {"name": "Magnet", "desc": "Pulls in every coin on the board", "col": Color("ff5d5d")},
 		"pick": {"name": "Pickaxe", "desc": "Breaks any one wall", "col": Color("c9a55a")},
 		"zap": {"name": "Zap Rod", "desc": "Zaps a monster within 2 tiles (up to your level +1)", "col": Color("ffe14f")},
+		"nano": {"name": "Nano Injector", "desc": "Fully restores your health", "col": Color("ff8a9a"), "adv": true},
+		"cell": {"name": "Shield Cell", "desc": "Fully recharges your shield", "col": Color("7db2ff"), "adv": true},
+		"plate": {"name": "Plating Kit", "desc": "+1 armour for the rest of the run", "col": Color("c9d3f0"), "adv": true},
+		"scan": {"name": "Pulse Scanner", "desc": "Reveals the map around you", "col": Color("5fe0b0"), "adv": true},
+		"ration": {"name": "Ration Pack", "desc": "Heals 40% health and gives +15 air", "col": Color("ffb347"), "adv": true},
 	}
 	class_defs = [
 		{"id": "scout", "name": "Scout", "desc": "The dark waits +1 step per ring. Starts with a Blink Scroll and a Time Crystal.", "col": Color("4fd1ff"), "lvl": 0, "per": 1, "kit": ["blink", "crystal"]},
@@ -804,7 +810,7 @@ func _random_layout(tries: int) -> void:
 		items[_take(free)] = "lamp"
 	for i in nshield:
 		items[_take(free)] = "shield"
-	var uids := use_defs.keys()
+	var uids := _use_ids()
 	var nuse := 1 + (1 if k >= 1 else 0) + relic_n("scavenger")
 	for i in nuse:
 		items[_take(free)] = "use_" + String(uids[randi() % uids.size()])
@@ -952,6 +958,14 @@ func _pop(c: Vector2i, text: String, col: Color) -> void:
 		_fx_burst(cf, Color("c9d3f0"), 10, 3.0, 0.5, 5.0)
 
 
+func _use_ids() -> Array:
+	var out: Array = []
+	for k in use_defs.keys():
+		if mode == "adv" or not bool(use_defs[k].get("adv", false)):
+			out.append(k)
+	return out
+
+
 func _use_name(id: String) -> String:
 	return _aname(id, String(use_defs[id]["name"]))
 
@@ -964,7 +978,7 @@ func _give_use(id: String) -> bool:
 
 
 func _random_use() -> String:
-	var ids := use_defs.keys()
+	var ids := _use_ids()
 	var id := String(ids[randi() % ids.size()])
 	while mode == "adv" and id == "pick":
 		id = String(ids[randi() % ids.size()])
@@ -1278,7 +1292,7 @@ func _roll_doors() -> Array:
 
 
 func _open_market() -> void:
-	var ids := use_defs.keys()
+	var ids := _use_ids()
 	ids.shuffle()
 	market_stock.clear()
 	for i in 3:
@@ -2481,8 +2495,8 @@ func _tut_pages(which: int) -> Array:
 	return [
 		{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Exit (sealed)"], ["icon:door_open", "Exit (open)"]],
 		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\\n\\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
-		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes cost extra.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins."},
+		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
+		"x": "Every step costs 1 air. At 0 air you die. Spikes cost extra.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one, then tap your own tile to pay. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
 		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage."},
 		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
@@ -3275,6 +3289,7 @@ func _adv_gen() -> void:
 		if k != "pick":
 			tool_ids.append(k)
 	stations.clear()
+	meds.clear()
 	merchants.clear()
 	mon_hp.clear()
 	stations[start] = true
@@ -3389,8 +3404,14 @@ func _adv_gen() -> void:
 					var gd3: Dictionary = gear_defs[gid3]
 					offers.append({"kind": "gear", "id": gid3, "price": maxi(5, int(gd3["price"]) - 2 * up("haggle")), "sold": false})
 				var tid := String(tool_ids[rng.randi() % tool_ids.size()])
-				offers.append({"kind": "tool", "id": tid, "price": maxi(3, 6 + floor_n / 5 - up("haggle")), "sold": false})
+				var tprice := 6 + floor_n / 5 + (4 if tid == "nano" or tid == "plate" else 0)
+				offers.append({"kind": "tool", "id": tid, "price": maxi(3, tprice - up("haggle")), "sold": false})
 				merchants[mcell2] = offers
+	if floor_n >= 2 and adv_rooms.size() > 3 and rng.randf() < 0.75:
+		var mdr := rng.randi_range(1, adv_rooms.size() - 1)
+		var mdc := _adv_pick(rng, adv_rooms[mdr], true, taken)
+		if mdc.x >= 0 and not merchants.has(mdc) and not stations.has(mdc):
+			meds[mdc] = true
 	if relic_n("scavenger") > 0:
 		var er: Rect2i = adv_rooms[rng.randi_range(1, adv_rooms.size() - 1)]
 		var ec := _adv_pick(rng, er, false, taken)
@@ -3589,6 +3610,36 @@ func _make_gear() -> void:
 		{"id": "ward", "slot": "trinket", "name": "Ward Emitter", "tier": 2, "price": 36, "stats": {"shield": 8}},
 		{"id": "reaperchip", "slot": "trinket", "name": "Reaper Chip", "tier": 3, "price": 60, "stats": {"killheal": 6, "atk": 1}},
 		{"id": "datalens", "slot": "trinket", "name": "Data Lens", "tier": 3, "price": 55, "stats": {"xp": 30}},
+		{"id": "stunbaton", "slot": "weapon", "name": "Stun Baton", "tier": 1, "price": 16, "stats": {"atk": 2, "crit": 5}},
+		{"id": "cutlass", "slot": "weapon", "name": "Vibro Cutlass", "tier": 2, "price": 36, "stats": {"atk": 3, "leech": 1}},
+		{"id": "gravhammer", "slot": "weapon", "name": "Gravity Hammer", "tier": 2, "price": 40, "stats": {"atk": 5}},
+		{"id": "ionlance", "slot": "weapon", "name": "Ion Lance", "tier": 3, "price": 62, "stats": {"atk": 6, "crit": 10, "leech": 1}},
+		{"id": "katana", "slot": "weapon", "name": "Pulse Katana", "tier": 3, "price": 64, "stats": {"atk": 5, "crit": 25}},
+		{"id": "singedge", "slot": "weapon", "name": "Singularity Edge", "tier": 4, "price": 95, "stats": {"atk": 9, "crit": 15, "leech": 3}},
+		{"id": "novacleaver", "slot": "weapon", "name": "Nova Cleaver", "tier": 4, "price": 94, "stats": {"atk": 10, "crit": 20}},
+		{"id": "weldmask", "slot": "helmet", "name": "Welder Mask", "tier": 1, "price": 13, "stats": {"sight": 1, "dodge": 4}},
+		{"id": "pilothelm", "slot": "helmet", "name": "Pilot Helm", "tier": 2, "price": 32, "stats": {"air": 15, "sight": 1}},
+		{"id": "riothelm", "slot": "helmet", "name": "Riot Helm", "tier": 2, "price": 36, "stats": {"armor": 2}},
+		{"id": "sentinel", "slot": "helmet", "name": "Sentinel Helm", "tier": 3, "price": 56, "stats": {"armor": 2, "hp": 8}},
+		{"id": "voidcrown", "slot": "helmet", "name": "Void Crown", "tier": 4, "price": 88, "stats": {"sight": 2, "xp": 30, "crit": 10}},
+		{"id": "padded", "slot": "armour", "name": "Padded Vest", "tier": 1, "price": 15, "stats": {"hp": 8}},
+		{"id": "riveted", "slot": "armour", "name": "Riveted Plate", "tier": 2, "price": 36, "stats": {"armor": 2, "dodge": 3}},
+		{"id": "ablative", "slot": "armour", "name": "Ablative Coat", "tier": 2, "price": 36, "stats": {"armor": 1, "shield": 6, "hp": 4}},
+		{"id": "titan", "slot": "armour", "name": "Titan Plate", "tier": 3, "price": 64, "stats": {"armor": 4, "hp": 8}},
+		{"id": "phaseweave", "slot": "armour", "name": "Phase Weave", "tier": 3, "price": 60, "stats": {"armor": 2, "dodge": 10, "shield": 6}},
+		{"id": "aegiscore", "slot": "armour", "name": "Aegis Core", "tier": 4, "price": 96, "stats": {"armor": 5, "hp": 14, "shield": 8, "thorns": 3}},
+		{"id": "soles", "slot": "boots", "name": "Rubber Soles", "tier": 1, "price": 14, "stats": {"dodge": 3, "airsave": 4}},
+		{"id": "spiked", "slot": "boots", "name": "Spiked Boots", "tier": 2, "price": 34, "stats": {"thorns": 3, "armor": 1}},
+		{"id": "runner", "slot": "boots", "name": "Runner Boots", "tier": 2, "price": 35, "stats": {"airsave": 18}},
+		{"id": "hover", "slot": "boots", "name": "Hover Treads", "tier": 3, "price": 58, "stats": {"airsave": 20, "armor": 1, "dodge": 6}},
+		{"id": "warp", "slot": "boots", "name": "Warp Striders", "tier": 4, "price": 92, "stats": {"airsave": 34, "dodge": 10, "sight": 1}},
+		{"id": "goldtooth", "slot": "trinket", "name": "Gold Tooth", "tier": 2, "price": 32, "stats": {"coin": 2}},
+		{"id": "stimpack", "slot": "trinket", "name": "Stim Pack", "tier": 2, "price": 34, "stats": {"killheal": 2, "atk": 1}},
+		{"id": "aegisemit", "slot": "trinket", "name": "Aegis Emitter", "tier": 3, "price": 56, "stats": {"shield": 12}},
+		{"id": "battlecore", "slot": "trinket", "name": "Battle Core", "tier": 3, "price": 62, "stats": {"atk": 2, "crit": 10}},
+		{"id": "fusioncell", "slot": "trinket", "name": "Fusion Cell", "tier": 3, "price": 56, "stats": {"air": 35}},
+		{"id": "stationheart", "slot": "trinket", "name": "Station Heart", "tier": 4, "price": 95, "stats": {"hp": 20, "killheal": 4}},
+		{"id": "overlord", "slot": "trinket", "name": "Overlord Chip", "tier": 4, "price": 96, "stats": {"atk": 3, "xp": 40}},
 	]
 	gear_defs.clear()
 	for d in gear_list:
@@ -4140,7 +4191,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				_pop(nc, "+%d HP" % heal, Color("ff8a9a"))
 				snd = "pot"
 		elif kind == "armor":
-			armor = mini(6, armor + 1)
+			armor += 1
 			adv_pts += 3
 			msg = "Armour plate! Every hit you take is reduced by %d" % armor_total()
 			_pop(nc, "ARMOUR", Color("c9d3f0"))
@@ -4159,14 +4210,14 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				msg = "Pack is full! Sell or drop something in the BAG"
 				snd = "blocked"
 		elif kind == "pot":
-			var pxp := 4 * pot_g()
+			var pxp := maxi(2, int(round(xp_need() * 0.2 * pot_g())))
 			adv_pts += 2
 			msg = "%s! +%d XP" % [th["pot"], pxp]
 			_pop(nc, "+%d XP" % pxp, Color("ffd84f"))
 			_adv_gain_xp(pxp)
 			snd = "pot"
 		elif kind == "big":
-			var bxp := 5 * big_g()
+			var bxp := maxi(3, int(round(xp_need() * 0.25 * big_g())))
 			adv_pts += 4
 			msg = "Overcharged %s! +%d XP" % [th["pot"], bxp]
 			_pop(nc, "+%d XP" % bxp, Color("4fd1ff"))
@@ -4241,6 +4292,10 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				if String(kinds.get(c, "")) == "hunter":
 					msg += " (it hunts you!)"
 				break
+	if moved and meds.has(pos) and state == PLAY:
+		walk.clear()
+		_adv_med_prompt()
+		snd = "ui"
 	if moved and merchants.has(pos) and state == PLAY:
 		_adv_open_trade(pos)
 	if snd != "":
@@ -4334,6 +4389,46 @@ func _adv_aim_any(id: String) -> bool:
 	return false
 
 
+func _med_rate() -> float:
+	return 0.3 + 0.04 * float(floor_n)
+
+
+func _med_cost(missing: int) -> int:
+	return maxi(1, int(ceil(missing * _med_rate())) - up("haggle"))
+
+
+func _adv_med_prompt() -> void:
+	var miss := hp_cap() - hp
+	if miss <= 0:
+		msg = "Medical station: you are at full health"
+	else:
+		msg = "Medical station: full heal (+%d HP) costs %d coins. Tap your tile to pay" % [miss, _med_cost(miss)]
+
+
+func _adv_med_pay() -> void:
+	var miss := hp_cap() - hp
+	if miss <= 0:
+		msg = "Medical station: you are at full health"
+		_sfx("blocked")
+		return
+	var cost := _med_cost(miss)
+	var gain := miss
+	if coins < cost:
+		if coins <= 0:
+			msg = "Medical station: you need coins (%d for a full heal)" % cost
+			_sfx("blocked")
+			return
+		gain = clampi(int(float(coins) / _med_rate()), 1, miss)
+		cost = mini(coins, _med_cost(gain))
+	coins -= cost
+	hp = mini(hp_cap(), hp + gain)
+	msg = "Medical station: +%d HP for %d coins" % [gain, cost]
+	_pop(pos, "+%d HP" % gain, Color("6dff9a"))
+	_fx_ring(vis_pos, Color("6dff9a"), 1.4, 0.6, 5.0)
+	_fx_burst(vis_pos, Color("b6ffd2"), 18, 3.0, 0.9, 5.0)
+	_sfx("pot")
+
+
 func _adv_use_slot(i: int) -> void:
 	if state != PLAY or i >= inv.size():
 		return
@@ -4381,11 +4476,12 @@ func _adv_use_slot(i: int) -> void:
 		msg = "Air Canister: +20 air"
 		_sfx("lamp")
 	elif id == "draught":
-		_adv_gain_xp(30)
+		var dxp := maxi(5, int(round(xp_need() * 0.75)))
+		_adv_gain_xp(dxp)
 		_fx_burst(vis_pos, Color("6dff9a"), 18, 3.0, 0.8, 5.0)
 		_fx_ring(vis_pos, Color("6dff9a"), 1.1, 0.5, 5.0)
-		msg = "Elixir! +30 XP"
-		_pop(pos, "+30 XP", Color("6dff9a"))
+		msg = "Elixir! +%d XP" % dxp
+		_pop(pos, "+%d XP" % dxp, Color("6dff9a"))
 		_sfx("big")
 	elif id == "cloak":
 		if boost > 0:
@@ -4410,6 +4506,57 @@ func _adv_use_slot(i: int) -> void:
 		adv_pts += n
 		msg = "Magnet! +%d coins" % (n * coin_val())
 		_sfx("coin")
+	elif id == "nano":
+		if hp >= hp_cap():
+			msg = "Health is already full"
+			_sfx("blocked")
+			return
+		var nh := hp_cap() - hp
+		hp = hp_cap()
+		_fx_ring(vis_pos, Color("ff8a9a"), 1.2, 0.5, 5.0)
+		_fx_burst(vis_pos, Color("ff8a9a"), 18, 3.0, 0.8, 5.0)
+		msg = "Nano Injector: health fully restored (+%d HP)" % nh
+		_pop(pos, "+%d HP" % nh, Color("ff8a9a"))
+		_sfx("pot")
+	elif id == "cell":
+		if sh >= sh_cap():
+			msg = "Shield is already full"
+			_sfx("blocked")
+			return
+		var ns := sh_cap() - sh
+		sh = sh_cap()
+		_fx_ring(vis_pos, Color("7db2ff"), 1.3, 0.5, 5.0)
+		_fx_burst(vis_pos, Color("9fd0ff"), 16, 3.0, 0.7, 5.0)
+		msg = "Shield Cell: shield fully recharged (+%d)" % ns
+		_pop(pos, "+%d SHIELD" % ns, Color("7db2ff"))
+		_sfx("shield")
+	elif id == "plate":
+		armor += 1
+		_fx_ring(vis_pos, Color("c9d3f0"), 1.0, 0.45, 5.0)
+		_fx_burst(vis_pos, Color("c9d3f0"), 10, 3.0, 0.5, 5.0)
+		msg = "Plating Kit: armour is now %d" % armor_total()
+		_pop(pos, "+1 ARMOUR", Color("c9d3f0"))
+		_sfx("shield")
+	elif id == "scan":
+		scan_r = 6 + lamp_amt() / 4
+		scan_steps = 8
+		_adv_update_vis()
+		_fx_ring(vis_pos, Color("5fe0b0"), 2.4, 0.7, 4.0)
+		msg = "Pulse Scanner: nearby rooms revealed"
+		_pop(pos, "SCAN", Color("5fe0b0"))
+		_sfx("lamp")
+	elif id == "ration":
+		if hp >= hp_cap() and oxy >= oxy_max:
+			msg = "You are already at full health and air"
+			_sfx("blocked")
+			return
+		var rh := mini(hp_cap() - hp, int(hp_cap() * 0.4))
+		hp += rh
+		oxy = minf(oxy_max, oxy + 15.0)
+		_fx_burst(vis_pos, Color("ffb347"), 14, 2.6, 0.7, 5.0)
+		msg = "Ration Pack: +%d HP, +15 air" % rh
+		_pop(pos, "+%d HP" % rh, Color("ffb347"))
+		_sfx("pot")
 	else:
 		if not _adv_aim_any(id):
 			msg = "No valid target right now"
@@ -4467,6 +4614,9 @@ func _adv_input(p: Vector2) -> void:
 	if c == pos and merchants.has(pos):
 		_adv_open_trade(pos)
 		return
+	if c == pos and meds.has(pos):
+		_adv_med_pay()
+		return
 	if c == pos or not _aopen(c) or not _aseen(c):
 		return
 	var path := _adv_path(c)
@@ -4515,6 +4665,21 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
 		if thief_held.has(c):
 			_ctext("holds %d" % int(thief_held[c]), ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a"))
+
+
+func _draw_med(ctr: Vector2) -> void:
+	var pc := Color("6dff9a")
+	var fl := 0.5 + 0.5 * sin(t * 2.4)
+	draw_circle(ctr, AC * 0.58, Color(pc.r, pc.g, pc.b, 0.06 + 0.04 * fl))
+	draw_circle(ctr, AC * 0.44, Color(pc.r, pc.g, pc.b, 0.10 + 0.05 * fl))
+	_spr(spr_gen.icon("medstation"), ctr, AC * 0.85)
+	for bi in 3:
+		var ph := fmod(t * 0.5 + bi * 0.33, 1.0)
+		var bp := Vector2(ctr.x + (bi - 1) * AC * 0.22, ctr.y + AC * 0.1 - ph * AC * 0.55)
+		var ba := sin(ph * PI) * 0.8
+		var ar := AC * 0.05
+		draw_rect(Rect2(bp.x - ar * 0.4, bp.y - ar, ar * 0.8, ar * 2.0), Color(0.7, 1.0, 0.8, ba))
+		draw_rect(Rect2(bp.x - ar, bp.y - ar * 0.4, ar * 2.0, ar * 0.8), Color(0.7, 1.0, 0.8, ba))
 
 
 func _draw_station(ctr: Vector2) -> void:
@@ -4594,6 +4759,8 @@ func _adv_draw() -> void:
 				_ctext("EXIT" if ok else "%d" % adv_req, ctr + Vector2(0, AC * 0.1), int(AC * 0.2), dc)
 			elif stations.has(c):
 				_draw_station(ctr)
+			elif meds.has(c):
+				_draw_med(ctr)
 			elif merchants.has(c):
 				_draw_merchant(ctr)
 			elif vaults.has(c):
@@ -4678,6 +4845,9 @@ func _adv_draw() -> void:
 	for stc in stations:
 		if _aseen(stc):
 			draw_rect(Rect2(mm.position.x + 3 + stc.x * msc - 1, mm.position.y + 3 + stc.y * msc - 1, 4, 4), Color("7fd8ff"))
+	for mdc in meds:
+		if _aseen(mdc):
+			draw_rect(Rect2(mm.position.x + 3 + mdc.x * msc - 1, mm.position.y + 3 + mdc.y * msc - 1, 4, 4), Color("6dff9a"))
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
 	# HUD
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
