@@ -113,3 +113,7 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - A shot monster that survives starts hunting you (bosses, turrets and thieves excepted).
 - Shooting a monster that is adjacent gets hit back like melee (not turrets).
 - Shooting lanes are tinted; shootable monsters get a reticle with the air cost, and monsters within range but not lined up get a dim "line up" marker.
+
+## v21 - Gunslinger class
+- New fifth class. Puzzle: two Zap Rods, dark 1 step faster. Adventure: starts with a Blaster Pistol equipped and 2 Zap Rods, but has 4 less max health and 10 less air.
+- Brown hat and bandolier sprites for all four facings; class cards re-laid out to fit five.

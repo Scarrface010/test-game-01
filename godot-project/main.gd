@@ -199,6 +199,7 @@ var adv_text := {
 	"syn_phoenix_aegis": "Phoenix revive also gives +1 level", "gate": "The exit needs 4 fewer points per level",
 	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.",
 	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
+	"cls_gunslinger": "Starts with a Blaster Pistol and 2 Zap Rods, but is frail: 4 less health and 10 less air.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
 	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
 	"phoenix": "Survive one death: restores full health and air",
@@ -412,6 +413,7 @@ func _make_defs() -> void:
 		{"id": "brute", "name": "Brute", "desc": "+2 starting levels, but the dark is 1 step faster. Starts with a Bomb.", "col": Color("ff6a5c"), "lvl": 2, "per": -1, "kit": ["bomb"]},
 		{"id": "mystic", "name": "Mystic", "desc": "A shield every floor and +1 item slot. Starts with a Shadow Cloak.", "col": Color("c07cff"), "lvl": 0, "per": 0, "kit": ["cloak"]},
 		{"id": "gambler", "name": "Gambler", "desc": "Begins with 2 random relics (maybe cursed!) and sees 4 relic cards, not 3.", "col": Color("ffd84f"), "lvl": 0, "per": 0, "kit": []},
+		{"id": "gunslinger", "name": "Gunslinger", "desc": "Starts with two Zap Rods, but the dark is 1 step faster.", "col": Color("ff9a4f"), "lvl": 0, "per": -1, "kit": ["zap", "zap"]},
 	]
 	door_defs = {
 		"standard": {"name": "Steady Path", "desc": "A normal floor.", "col": Color("9fb3d9")},
@@ -1361,7 +1363,7 @@ func _shop_pages() -> int:
 
 
 func _class_rect(i: int) -> Rect2:
-	return Rect2(50, 270 + i * 190, 620, 172)
+	return Rect2(50, 262 + i * 152, 620, 140)
 
 
 func _door_rect(i: int) -> Rect2:
@@ -2528,8 +2530,8 @@ func _tut_pages(which: int) -> Array:
 		return [
 			{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Gate (locked)"], ["icon:door_open", "Gate (open)"]],
 			"x": "Each floor is a small board. Walk to the gate to reach the next floor. The gate shows the level you need (Lv N): you must be at least that level to pass.\\n\\nTap any tile and you walk there automatically. You stop early if something new needs your attention."},
-			{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"]],
-			"x": "Pick a class at the start of a run. Each has a different starting kit and a twist on the rules:\\n\\nScout: the dark waits longer, starts with Blink and Time Crystal.\\nBrute: +2 starting levels, a faster dark, starts with a Bomb.\\nMystic: a shield every floor, +1 item slot, starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3."},
+			{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"]], "s2": [["pcls:gunslinger", "Gunslinger"]],
+			"x": "Pick a class at the start of a run. Each has a different starting kit and a twist on the rules:\\n\\nScout: the dark waits longer, starts with Blink and Time Crystal.\\nBrute: +2 starting levels, a faster dark, starts with a Bomb.\\nMystic: a shield every floor, +1 item slot, starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3.\\nGunslinger: starts with two Zap Rods, but a faster dark. In Adventure: starts with a Blaster Pistol but is frail (4 less health, 10 less air)."},
 			{"t": "MONSTERS AND LEVELS", "ti": 1, "s": [["mon:1:2:none:g", "Easy"], ["mon:1:5:none:r", "Deadly"], ["mon:1:4:none:r", "Equal = lose"]],
 			"x": "Every monster has a level shown in a badge. Walk into one to fight it instantly.\\n\\nIf your level is HIGHER you win and gain levels. If it is equal or higher you die. A green badge means you win, red means you die, amber means only your shield would save you.\\n\\nSo grab potions first, then pick your fights."},
 			{"t": "THE DARK", "ti": 1, "s": [["dark", "Dark tile"], ["player", "You"], ["icon:spikes", "Spikes"]],
@@ -3151,12 +3153,12 @@ func _draw_overlay(acc: Color) -> void:
 			var ccol: Color = cd["col"]
 			draw_rect(cr, Color(ccol.r, ccol.g, ccol.b, 0.12))
 			draw_rect(cr, ccol, false, 3.0)
-			_txt(String(cd["name"]), Vector2(cr.position.x + 24, cr.position.y + 54), 40, ccol, 500.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_para(_atext("cls_" + String(cd["id"]), String(cd["desc"])), Vector2(cr.position.x + 24, cr.position.y + 98), 23, Color.WHITE, 570.0)
+			_txt(String(cd["name"]), Vector2(cr.position.x + 24, cr.position.y + 42), 36, ccol, 500.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_atext("cls_" + String(cd["id"]), String(cd["desc"])), Vector2(cr.position.x + 24, cr.position.y + 72), 21, Color.WHITE, 570.0)
 			var kx := cr.end.x - 40.0
 			for kid in cd["kit"]:
-				_use_icon(String(kid), Vector2(kx, cr.position.y + 40), 44)
-				kx -= 56.0
+				_use_icon(String(kid), Vector2(kx, cr.position.y + 34), 40)
+				kx -= 50.0
 		_button(btn_shop2, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
@@ -4014,11 +4016,13 @@ func _adv_reset() -> void:
 func _adv_init_run() -> void:
 	level = start_lvl()
 	xp = 0
-	hp_max = 24 + 3 * (level - START_LEVEL)
+	hp_max = 24 + 3 * (level - START_LEVEL) - (4 if cls == "gunslinger" else 0)
 	armor = 1 if cls == "brute" else 0
 	sh = 0
 	equip.clear()
 	bag.clear()
+	if cls == "gunslinger":
+		equip["weapon"] = "blaster"
 	for i in up("kit"):
 		var kid := _adv_roll_gear(null, -1)
 		if not equip.has(String(gear_defs[kid]["slot"])):
@@ -6097,7 +6101,7 @@ func _self_test() -> void:
 		floor_n = f
 		relics.clear()
 		ups = {"vet": 0, "iron": 0, "packed": 0, "lucky": 0}
-		cls = ["scout", "brute", "mystic", "gambler"][f % 4]
+		cls = ["scout", "brute", "mystic", "gambler", "gunslinger"][f % 5]
 		fmod = ["standard", "danger", "calm", "vault"][(f / 2) % 4]
 		if f > 6:
 			relics = {"vanguard": 2, "slowdark": 1, "aegis": 1, "boots": 1, "alchemist": 1, "lantern": 1, "skeleton": 1}

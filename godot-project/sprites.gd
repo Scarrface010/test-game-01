@@ -890,6 +890,15 @@ func _build_player(accent: Color, cls: String, frame: int, dir: int, eq: Diction
 		elif cls == "mystic":
 			cv.poly([Vector2(16, 0), Vector2(18, 2), Vector2(16, 4), Vector2(14, 2)], accent.lightened(0.45))
 			cv.px(15, 1, Color.WHITE)
+		elif cls == "gunslinger":
+			cv.rect(6, 4, 20, 2, Color("6b4423"))
+			cv.rect(6, 4, 20, 1, Color("a67238"))
+			cv.rrect(10, 0, 12, 5, 1.5, Color("7a4e2a"))
+			cv.rect(10, 3, 12, 1, accent)
+			cv.line(11, 14, 19, 22, Color("8a5a2a"), 2.0)
+			cv.px(13, 16, accent.lightened(0.4))
+			cv.px(16, 19, accent.lightened(0.4))
+			cv.rect(9, 6, 5, 1, Color("6b4423"))
 		elif cls == "gambler":
 			cv.rect(9, 5, 14, 2, Color("ffd84f"))
 			cv.rect(9, 5, 14, 1, Color("fff1a0"))
@@ -953,6 +962,14 @@ func _build_player(accent: Color, cls: String, frame: int, dir: int, eq: Diction
 			cv.ell(6.5, 14, 3.6, 2.8, accent)
 			cv.ell(25.5, 14, 3.6, 2.8, accent)
 			cv.rect(13, 12, 6, 2, accent.darkened(0.1))
+		elif cls == "gunslinger":
+			cv.rect(6, 4, 20, 2, Color("6b4423"))
+			cv.rect(6, 4, 20, 1, Color("a67238"))
+			cv.rrect(10, 0, 12, 5, 1.5, Color("7a4e2a"))
+			cv.rect(10, 3, 12, 1, accent)
+			cv.line(10, 14, 22, 22, Color("8a5a2a"), 2.0)
+			cv.px(13, 16, accent.lightened(0.4))
+			cv.px(19, 20, accent.lightened(0.4))
 		elif cls == "gambler":
 			cv.rect(9, 5, 14, 2, Color("ffd84f"))
 			cv.rect(9, 5, 14, 1, Color("fff1a0"))
@@ -1020,6 +1037,16 @@ func _build_player(accent: Color, cls: String, frame: int, dir: int, eq: Diction
 		elif cls == "mystic":
 			cv.poly([Vector2(16, 0), Vector2(18, 2), Vector2(16, 4), Vector2(14, 2)], accent.lightened(0.45))
 			cv.px(15, 1, Color.WHITE)
+		elif cls == "gunslinger":
+			cv.rect(6, 4, 20, 2, Color("6b4423"))
+			cv.rect(6, 4, 20, 1, Color("a67238"))
+			cv.rrect(10, 0, 12, 5, 1.5, Color("7a4e2a"))
+			cv.rect(10, 3, 12, 1, accent)
+			cv.line(10, 14, 22, 22, Color("8a5a2a"), 2.0)
+			cv.px(13, 16, accent.lightened(0.4))
+			cv.px(16, 19, accent.lightened(0.4))
+			cv.px(19, 21, accent.lightened(0.4))
+			cv.rect(12, 9, 8, 2, accent.darkened(0.2))
 		elif cls == "gambler":
 			cv.rect(9, 5, 14, 2, Color("ffd84f"))
 			cv.rect(9, 5, 14, 1, Color("fff1a0"))
