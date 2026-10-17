@@ -2549,7 +2549,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
 		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
-		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it, and it cannot hit back that turn."},
+		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it (orange tint and reticle show what you can hit). Each shot costs air equal to the weapon tier, shot monsters start hunting you, and a monster right next to you still hits back."},
 		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
 		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\\n\\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
 		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]], "s2": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"]],
@@ -3794,7 +3794,7 @@ func _gear_desc(d: Dictionary) -> String:
 		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
 		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
 		"xp": "+%d%% XP", "coin": "+%d per coin", "dodge": "%d%% dodge", "thorns": "%d thorns damage", "killheal": "heal %d on kill",
-		"pod": "+%d air per pod", "range": "shoots %d tiles in a line, no counter-hit",
+		"pod": "+%d air per pod", "range": "shoots %d tiles in a line (air per shot = tier)",
 	}
 	var parts: Array[String] = []
 	var st: Dictionary = d["stats"]
@@ -4520,6 +4520,29 @@ func _adv_hunters() -> void:
 			_adv_move_mon(c, bn)
 
 
+func _shot_cost() -> float:
+	var wid := String(equip.get("weapon", ""))
+	var tier := 1
+	if wid != "" and gear_defs.has(wid):
+		tier = int(gear_defs[wid]["tier"])
+	return float(tier) * (1.0 - gear("airsave") / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0)
+
+
+func _adv_draw_shoot_lanes() -> void:
+	var rg := int(gear("range"))
+	if rg <= 0 or aim >= 0:
+		return
+	for dv in TDIRS:
+		for st in range(1, rg + 1):
+			var lc: Vector2i = pos + dv * st
+			if not _aopen(lc) or vaults.has(lc) or not _aseen(lc):
+				break
+			var lr := Rect2(_actr(lc) - Vector2(AC, AC) * 0.5, Vector2(AC, AC)).grow(-6)
+			draw_rect(lr, Color(1.0, 0.7, 0.3, 0.07))
+			if mons.has(lc):
+				break
+
+
 func _adv_can_shoot(c: Vector2i) -> bool:
 	var rg := int(gear("range"))
 	if rg <= 0 or not mons.has(c) or not adv_vis.has(c):
@@ -4563,8 +4586,17 @@ func _adv_shoot(c: Vector2i) -> void:
 		mon_hp[c] = left
 		msg = "You shoot %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(c)]
 	_sfx("step")
+	if mons.has(c) and not tur.has(c) and not is_boss:
+		var kd := String(kinds.get(c, ""))
+		if kd == "" or kd == "sleeper" or kd == "feeder":
+			kinds[c] = "hunter"
+			msg += "  It charges you!"
+	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c):
+		mon_lunge[c] = [t + 0.12, Vector2(pos - c).normalized()]
+		if not _adv_hurt(mon_atk(c), nm, c):
+			return
 	adv_steps += 1
-	oxy -= (1.0 - gear("airsave") / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0)
+	oxy -= _shot_cost()
 	if scan_steps > 0:
 		scan_steps -= 1
 	_adv_update_vis()
@@ -5042,11 +5074,21 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	draw_rect(Rect2(bx - 1, by - 1, bw + 2, 11), Color(0, 0, 0, 0.75))
 	draw_rect(Rect2(bx, by, bw * clampf(float(hpn) / float(hpm), 0.0, 1.0), 9), Color("e8505b"))
 	_ctext("%d" % hpn, Vector2(ctr.x, by + 4.5), 10, Color.WHITE)
-	if _adv_can_shoot(c):
-		var rc := Color(1.0, 0.7, 0.3, 0.55 + 0.3 * sin(t * 7.0))
-		draw_arc(ctr, AC * 0.5, 0.0, TAU, 28, rc, 2.5)
-		draw_line(ctr + Vector2(-AC * 0.58, 0), ctr + Vector2(-AC * 0.4, 0), rc, 2.5)
-		draw_line(ctr + Vector2(AC * 0.4, 0), ctr + Vector2(AC * 0.58, 0), rc, 2.5)
+	var rgw := int(gear("range"))
+	if rgw > 0 and adv_vis.has(c):
+		if _adv_can_shoot(c):
+			var rc := Color(1.0, 0.7, 0.3, 0.55 + 0.3 * sin(t * 7.0))
+			draw_arc(ctr, AC * 0.5, 0.0, TAU, 28, rc, 2.5)
+			draw_line(ctr + Vector2(-AC * 0.58, 0), ctr + Vector2(-AC * 0.4, 0), rc, 2.5)
+			draw_line(ctr + Vector2(AC * 0.4, 0), ctr + Vector2(AC * 0.58, 0), rc, 2.5)
+			draw_line(ctr + Vector2(0, -AC * 0.58), ctr + Vector2(0, -AC * 0.4), rc, 2.5)
+			draw_line(ctr + Vector2(0, AC * 0.4), ctr + Vector2(0, AC * 0.58), rc, 2.5)
+			_ctext("SHOOT -%s air" % str(snappedf(_shot_cost(), 0.1)), ctr + Vector2(0, AC * 0.56), 11, Color("ffcf8a"))
+		elif maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= rgw:
+			var dc := Color(1.0, 0.7, 0.3, 0.3)
+			for qa in 4:
+				draw_arc(ctr, AC * 0.5, qa * PI * 0.5 + 0.25, qa * PI * 0.5 + 0.9, 6, dc, 2.0)
+			_ctext("in range: line up", ctr + Vector2(0, AC * 0.56), 11, Color(1, 0.8, 0.5, 0.5))
 	var mk := ctr + Vector2(-AC * 0.3, AC * 0.2)
 	if kind == "turret":
 		var rdy := _tur_ready(c, adv_steps + 1)
@@ -5263,6 +5305,7 @@ func _adv_draw() -> void:
 			if ffa > 0.01:
 				draw_rect(r, Color(0, 0, 0, ffa))
 	_adv_draw_lanes(ti)
+	_adv_draw_shoot_lanes()
 	mlist.sort_custom(func(a, b): return a[1].y < b[1].y)
 	for mm2 in mlist:
 		_adv_draw_mon(mm2[0], mm2[1], ti, names, acc)

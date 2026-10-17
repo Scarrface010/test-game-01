@@ -107,3 +107,9 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - A killing blow no longer moves you onto the enemy's tile; press again to step there.
 - Five ranged weapons (Blaster Pistol, Thorn Crossbow, Arc Carbine, Plasma Rifle, Rail Sniper). Tap a monster in a straight, clear line within range to shoot it (no counter-hit, but the turn still passes). Walking into a monster with one equipped also shoots.
 - Every killed enemy leaves a corpse sprite (derived from its own sprite, with a themed pool; wrecked turrets smoulder) that stays on the floor.
+
+## v20 - Ranged balance
+- Each shot costs air equal to the weapon's tier (reduced by air-saving gear) instead of a normal step.
+- A shot monster that survives starts hunting you (bosses, turrets and thieves excepted).
+- Shooting a monster that is adjacent gets hit back like melee (not turrets).
+- Shooting lanes are tinted; shootable monsters get a reticle with the air cost, and monsters within range but not lined up get a dim "line up" marker.
