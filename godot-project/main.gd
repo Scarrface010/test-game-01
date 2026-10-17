@@ -149,6 +149,7 @@ var sh := 0
 var sh_max := 16
 var mon_hp: Dictionary = {}
 var stations: Dictionary = {}
+var trade_med := false
 var meds: Dictionary = {}   # medical stations: cell -> true
 var adv_names := {
 	"slowdark": "Deep Lungs", "lantern": "Wide Scanner", "ember": "Overclock Scanner",
@@ -613,11 +614,28 @@ func _item_tex(kind: String) -> ImageTexture:
 	return spr_gen.item(kind)
 
 
-func _tile_var(x: int, y: int) -> int:
+func _tile_hash(x: int, y: int) -> int:
 	var h := (x * 374761393 + y * 668265263) & 0x7fffffff
 	h = ((h ^ (h >> 13)) * 1274126177) & 0x7fffffff
-	h = h ^ (h >> 16)
-	return h % 16
+	return h ^ (h >> 16)
+
+
+func _tile_feat(x: int, y: int) -> bool:
+	return _tile_hash(x, y) % 100 < 7
+
+
+# Variant 0 is the plain base tile of each theme. Variant 3 is a subtle alternate of it,
+# and variants 6-15 are the feature tiles (grates, puddles, flowers...), kept sparse and never adjacent.
+func _tile_var(x: int, y: int) -> int:
+	var h := _tile_hash(x, y)
+	var r := h % 100
+	if r < 7:
+		if _tile_feat(x - 1, y) or _tile_feat(x, y - 1) or _tile_feat(x + 1, y) or _tile_feat(x, y + 1):
+			return 0
+		return 6 + (h / 100) % 10
+	if r < 24:
+		return 3
+	return 0
 
 
 func _floor_tex(ti: int, parity: int, variant: int) -> ImageTexture:
@@ -2496,7 +2514,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Exit (sealed)"], ["icon:door_open", "Exit (open)"]],
 		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\\n\\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes cost extra.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one, then tap your own tile to pay. Nano Injectors heal you fully for free."},
+		"x": "Every step costs 1 air. At 0 air you die. Spikes cost extra.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
 		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage."},
 		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
@@ -3748,6 +3766,7 @@ func _adv_unequip(slot: String) -> bool:
 
 
 func _adv_open_trade(c: Vector2i) -> void:
+	trade_med = false
 	trade_cell = c
 	state = TRADE
 	walk.clear()
@@ -3760,6 +3779,9 @@ func _trade_rect(i: int) -> Rect2:
 
 
 func _trade_input(p: Vector2) -> void:
+	if trade_med:
+		_med_input(p)
+		return
 	if btn_back.has_point(p):
 		state = PLAY
 		_sfx("ui")
@@ -3788,6 +3810,9 @@ func _trade_input(p: Vector2) -> void:
 
 
 func _draw_trade(acc: Color) -> void:
+	if trade_med:
+		_draw_med_menu(acc)
+		return
 	_txt("OUTFITTER", Vector2(0, 220), 56, Color("ffc93c"))
 	_txt("Your coins: %d      Pack: %d / %d" % [coins, bag.size(), BAG_MAX], Vector2(0, 270), 26, Color.WHITE)
 	var offers: Array = merchants.get(trade_cell, [])
@@ -4294,8 +4319,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				break
 	if moved and meds.has(pos) and state == PLAY:
 		walk.clear()
-		_adv_med_prompt()
-		snd = "ui"
+		_adv_med_touch()
+		snd = ""
 	if moved and merchants.has(pos) and state == PLAY:
 		_adv_open_trade(pos)
 	if snd != "":
@@ -4390,43 +4415,85 @@ func _adv_aim_any(id: String) -> bool:
 
 
 func _med_rate() -> float:
-	return 0.3 + 0.04 * float(floor_n)
+	return 0.3 + 0.07 * float(floor_n) + 0.002 * float(floor_n * floor_n)
 
 
 func _med_cost(missing: int) -> int:
 	return maxi(1, int(ceil(missing * _med_rate())) - up("haggle"))
 
 
-func _adv_med_prompt() -> void:
-	var miss := hp_cap() - hp
-	if miss <= 0:
-		msg = "Medical station: you are at full health"
-	else:
-		msg = "Medical station: full heal (+%d HP) costs %d coins. Tap your tile to pay" % [miss, _med_cost(miss)]
-
-
-func _adv_med_pay() -> void:
-	var miss := hp_cap() - hp
-	if miss <= 0:
+func _adv_med_touch() -> void:
+	if hp_cap() - hp <= 0:
 		msg = "Medical station: you are at full health"
 		_sfx("blocked")
 		return
-	var cost := _med_cost(miss)
-	var gain := miss
-	if coins < cost:
-		if coins <= 0:
-			msg = "Medical station: you need coins (%d for a full heal)" % cost
-			_sfx("blocked")
+	trade_med = true
+	state = TRADE
+	walk.clear()
+	aim = -1
+	_sfx("ui")
+
+
+func _med_opts() -> Array:
+	var out: Array = []
+	var miss := hp_cap() - hp
+	if miss <= 0:
+		return out
+	var last := 0
+	for d in [["Quick patch", 0.25], ["Half repair", 0.5]]:
+		var amt := mini(miss, int(ceil(hp_cap() * float(d[1]))))
+		if amt > last and amt < miss:
+			out.append({"name": d[0], "amt": amt})
+			last = amt
+	out.append({"name": "Full heal", "amt": miss})
+	return out
+
+
+func _med_input(p: Vector2) -> void:
+	if btn_back.has_point(p):
+		state = PLAY
+		_sfx("ui")
+		return
+	var opts := _med_opts()
+	for i in opts.size():
+		if _trade_rect(i).has_point(p):
+			var o: Dictionary = opts[i]
+			var amt := int(o["amt"])
+			var cost := _med_cost(amt)
+			if coins < cost:
+				_sfx("blocked")
+				return
+			coins -= cost
+			hp = mini(hp_cap(), hp + amt)
+			msg = "Medical station: +%d HP for %d coins" % [amt, cost]
+			_pop(pos, "+%d HP" % amt, Color("6dff9a"))
+			_fx_ring(vis_pos, Color("6dff9a"), 1.4, 0.6, 5.0)
+			_fx_burst(vis_pos, Color("b6ffd2"), 18, 3.0, 0.9, 5.0)
+			_sfx("pot")
 			return
-		gain = clampi(int(float(coins) / _med_rate()), 1, miss)
-		cost = mini(coins, _med_cost(gain))
-	coins -= cost
-	hp = mini(hp_cap(), hp + gain)
-	msg = "Medical station: +%d HP for %d coins" % [gain, cost]
-	_pop(pos, "+%d HP" % gain, Color("6dff9a"))
-	_fx_ring(vis_pos, Color("6dff9a"), 1.4, 0.6, 5.0)
-	_fx_burst(vis_pos, Color("b6ffd2"), 18, 3.0, 0.9, 5.0)
-	_sfx("pot")
+
+
+func _draw_med_menu(acc: Color) -> void:
+	_txt("MEDICAL STATION", Vector2(0, 220), 52, Color("6dff9a"))
+	_txt("Your coins: %d      Health: %d / %d" % [coins, hp, hp_cap()], Vector2(0, 270), 26, Color.WHITE)
+	var opts := _med_opts()
+	if opts.is_empty():
+		_txt("You are at full health", Vector2(0, 400), 34, Color("6dff9a"))
+	for i in opts.size():
+		var o: Dictionary = opts[i]
+		var amt := int(o["amt"])
+		var cost := _med_cost(amt)
+		var rr := _trade_rect(i)
+		var can := coins >= cost
+		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
+		draw_rect(rr, Color(col.r, col.g, col.b, 0.1))
+		draw_rect(rr, col, false, 2.0)
+		_spr(spr_gen.icon("medstation"), Vector2(rr.position.x + 56, rr.position.y + 67), 72.0)
+		_txt("+%d HP" % amt, Vector2(rr.position.x + 110, rr.position.y + 52), 34, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt(String(o["name"]), Vector2(rr.position.x + 110, rr.position.y + 82), 20, Color("6dff9a"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Health after: %d / %d" % [mini(hp_cap(), hp + amt), hp_cap()], Vector2(rr.position.x + 110, rr.position.y + 110), 19, Color(1, 1, 1, 0.7), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("%d coins" % cost, Vector2(rr.end.x - 170, rr.position.y + 76), 28, col, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_button(btn_back, "LEAVE", acc, 28)
 
 
 func _adv_use_slot(i: int) -> void:
@@ -4615,7 +4682,7 @@ func _adv_input(p: Vector2) -> void:
 		_adv_open_trade(pos)
 		return
 	if c == pos and meds.has(pos):
-		_adv_med_pay()
+		_adv_med_touch()
 		return
 	if c == pos or not _aopen(c) or not _aseen(c):
 		return

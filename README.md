@@ -86,6 +86,7 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 ## v16 - armour, medical stations, new tools and gear
 - Armour plates no longer cap at 6 (the old cap made total armour stop at 9 with gear).
 - New tools: Nano Injector (full heal), Shield Cell, Plating Kit (+1 armour), Pulse Scanner, Ration Pack (adventure only).
-- Medical stations (green cross, from floor 2): step on one, then tap your own tile to pay coins and heal. Short on coins heals what you can afford.
+- Medical stations (green cross, from floor 2): step on one (or tap it) to open a menu with Quick patch / Half repair / Full heal, each showing the HP gained and the coin cost. Prices rise steeply on deeper floors.
 - 31 new gear pieces across all slots and tiers.
 - XP potions are now a percent of the current level's XP need (20% / 25% x multipliers); Elixir gives 75%.
+- Floor tiles: each theme now uses one plain base tile most of the time, a subtle alternate now and then, and sparse, never-adjacent feature tiles.
