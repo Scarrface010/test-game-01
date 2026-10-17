@@ -21,6 +21,7 @@ var font: Font = ThemeDB.fallback_font
 var tex_cache: Dictionary = {}
 var vis_pos := Vector2.ZERO
 var pface := 1.0
+var pdir := 0   # 0 down, 1 up, 2 left, 3 right
 var walk_phase := 0.0
 var idle_t := 0.0
 var fx: Array = []
@@ -175,11 +176,11 @@ var lb_mode := 0
 var tut_page := 0
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions and power cells give double XP", "slayer": "Elites give 50% more XP",
-	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes cost 6 more air",
+	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
 	"boots": "Spikes no longer cost air", "skeleton": "The exit needs 4 fewer points",
 	"blade": "Every kill gives 50% more XP, but the exit needs 12 more points",
 	"iron": "+8 starting air per level", "oil": "Air pods give +5 air; +1 sight per 2 levels",
-	"steel": "Spikes cost 3 less air", "gate": "The exit needs 4 fewer points per level",
+	"steel": "Spikes hurt half as much", "gate": "The exit needs 4 fewer points per level",
 	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.",
 	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
@@ -606,8 +607,14 @@ func _tex_from_rows(rows: Array, pal: Dictionary) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-func _player_tex(frame := 0) -> ImageTexture:
-	return spr_gen.player((cdef()["col"] as Color), cls, frame)
+func _player_tex(frame := 0, dir := -1, geared := true) -> ImageTexture:
+	var dd := pdir if dir < 0 else dir
+	var eq: Dictionary = equip if (geared and mode == "adv") else {}
+	return spr_gen.player((cdef()["col"] as Color), cls, frame, dd, eq)
+
+
+func _gear_tex(id: String) -> ImageTexture:
+	return spr_gen.gear_icon(id, String(gear_defs[id]["slot"]))
 
 
 func _item_tex(kind: String) -> ImageTexture:
@@ -2006,10 +2013,10 @@ func _draw_player(prc: Vector2, sz: float) -> void:
 	var feet := -(sy - 1.0) * sz * 0.5
 	var tex := _player_tex(fr)
 	var at := prc + Vector2(0, -hop + feet)
-	_spr_ex(tex, at, sz, Color.WHITE, pface, wob + lean, sx, sy)
+	_spr_ex(tex, at, sz, Color.WHITE, 1.0, wob + lean, sx, sy)
 	var fl := clampf(1.0 - (t - p_hit_t0) / 0.3, 0.0, 1.0)
 	if fl > 0.0:
-		_spr_ex(spr_gen.white(tex), at, sz, Color(1.0, 0.35, 0.35, fl * 0.85), pface, wob + lean, sx, sy)
+		_spr_ex(spr_gen.white(tex), at, sz, Color(1.0, 0.35, 0.35, fl * 0.85), 1.0, wob + lean, sx, sy)
 
 
 func _draw_mon_sprite(c: Vector2i, ctr: Vector2, ti: int, base_lv: int, is_boss: bool, sz: float, mod := Color.WHITE, asleep := false, yoff := 0.0) -> void:
@@ -2251,8 +2258,11 @@ func _anim_update(dt: float) -> void:
 	if dist > 0.05:
 		walk_phase += dt * 9.0
 		idle_t = 0.0
-		if absf(d.x) > 0.02:
-			pface = 1.0 if d.x > 0.0 else -1.0
+		if absf(d.x) > 0.02 or absf(d.y) > 0.02:
+			if absf(d.x) >= absf(d.y):
+				pdir = 3 if d.x > 0.0 else 2
+			else:
+				pdir = 0 if d.y > 0.0 else 1
 	else:
 		idle_t += dt
 		if idle_t > 0.12:
@@ -2514,7 +2524,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Exit (sealed)"], ["icon:door_open", "Exit (open)"]],
 		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\\n\\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes cost extra.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
+		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
 		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage."},
 		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
@@ -2545,7 +2555,7 @@ func _tut_icon(spec: String, ctr: Vector2, s: float, ti: int) -> void:
 	draw_rect(rr, Color(1, 1, 1, 0.25), false, 2.0)
 	var th: Dictionary = themes[ti]
 	if k == "player":
-		_spr(_player_tex(), ctr, s * 0.8)
+		_spr(_player_tex(0, 0, false), ctr, s * 0.8)
 	elif k == "pcls":
 		var col := Color.WHITE
 		for d in class_defs:
@@ -3582,6 +3592,26 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	return true
 
 
+func _adv_spike_hurt(d: int) -> bool:
+	var absorbed := mini(sh, d)
+	sh -= absorbed
+	hp -= d - absorbed
+	_pop(pos, "-%d" % d, Color("ff6a6a") if absorbed < d else Color("7db2ff"))
+	if absorbed > 0:
+		_fx_ring(vis_pos, Color("7db2ff"), 0.9, 0.35, 5.0)
+	if absorbed < d:
+		p_hit_t0 = t
+		_fx_burst(vis_pos, Color("ff5d5d"), 10, 3.2, 0.45, 5.0)
+		_shake(4.0, 0.25)
+	msg = "Spikes! You lose %d health" % d
+	_sfx("spike")
+	if hp <= 0:
+		hp = 0
+		_die("You were impaled on spikes")
+		return state == PLAY
+	return true
+
+
 func _adv_damage_mon(c: Vector2i, dmg: int) -> void:
 	var left := mon_hp_now(c) - dmg
 	_pop(c, "-%d" % dmg, Color("ff9a3c"))
@@ -3827,9 +3857,10 @@ func _draw_trade(acc: Color) -> void:
 		if String(o["kind"]) == "gear":
 			var gd: Dictionary = gear_defs[String(o["id"])]
 			var gc := _gear_col(String(gd["slot"]))
-			_txt(String(gd["name"]), Vector2(rr.position.x + 20, rr.position.y + 40), 28, _tier_col(int(gd["tier"])), 420.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(gd["slot"]).to_upper() + "  T" + str(gd["tier"]), Vector2(rr.position.x + 20, rr.position.y + 68), 18, gc, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_para(_gear_desc(gd), Vector2(rr.position.x + 20, rr.position.y + 96), 20, Color(1, 1, 1, 0.8), 420.0)
+			_spr(_gear_tex(String(o["id"])), Vector2(rr.position.x + 56, rr.position.y + 67), 78.0)
+			_txt(String(gd["name"]), Vector2(rr.position.x + 108, rr.position.y + 40), 28, _tier_col(int(gd["tier"])), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(gd["slot"]).to_upper() + "  T" + str(gd["tier"]), Vector2(rr.position.x + 108, rr.position.y + 68), 18, gc, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_gear_desc(gd), Vector2(rr.position.x + 108, rr.position.y + 96), 20, Color(1, 1, 1, 0.8), 340.0)
 		else:
 			var uid := String(o["id"])
 			_use_icon(uid, Vector2(rr.position.x + 56, rr.position.y + 67), 70)
@@ -3841,7 +3872,9 @@ func _draw_trade(acc: Color) -> void:
 
 func _draw_crate(ctr: Vector2, id: String, bob: float) -> void:
 	var d: Dictionary = gear_defs[id]
-	_spr(spr_gen.icon("crate_" + String(d["slot"])), ctr + Vector2(0, bob), AC * 0.62)
+	var tc := _tier_col(int(d["tier"]))
+	draw_circle(ctr + Vector2(0, bob), AC * 0.34, Color(tc.r, tc.g, tc.b, 0.16))
+	_spr(_gear_tex(id), ctr + Vector2(0, bob), AC * 0.66)
 
 
 func _draw_merchant(ctr: Vector2) -> void:
@@ -4136,6 +4169,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	var th := cur_theme()
 	var snd := "step"
 	var extra := 0.0
+	var spike_dmg := 0
 	var moved := true
 	var fought := false
 	var before_m := _adv_vis_mons()
@@ -4264,9 +4298,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	elif spikes.has(nc):
 		var sx := spike_x()
 		if sx > 0:
-			extra = sx * 3.0
-			msg = "Spikes! Lost %d extra air" % int(extra)
-			_pop(nc, "OUCH", Color("ff7a7a"))
+			spike_dmg = maxi(1, int(round(float(2 + floor_n / 2 + level / 4) * float(sx) / 2.0)))
+			msg = "Spikes! They tear into you"
 			snd = "spike"
 		else:
 			msg = "Heavy Boots shrug off the spikes"
@@ -4293,6 +4326,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if scan_steps > 0:
 		scan_steps -= 1
 	_adv_update_vis()
+	if spike_dmg > 0 and not _adv_spike_hurt(spike_dmg):
+		return
 	if oxy <= 0.0:
 		oxy = 0.0
 		_die("You ran out of air")
@@ -5175,8 +5210,9 @@ func _draw_inv(acc: Color) -> void:
 				_txt("Find gear in crates or buy it from an outfitter", Vector2(58, y + 84), 16, Color(1, 1, 1, 0.4), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
 			else:
 				var gd: Dictionary = gear_defs[gid]
-				_txt(String(gd["name"]), Vector2(58, y + 58), 26, _tier_col(int(gd["tier"])), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt(_gear_desc(gd), Vector2(58, y + 82), 16, Color(1, 1, 1, 0.7), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
+				_spr(_gear_tex(gid), Vector2(96, y + 58), 52.0)
+				_txt(String(gd["name"]), Vector2(140, y + 58), 26, _tier_col(int(gd["tier"])), 390.0, HORIZONTAL_ALIGNMENT_LEFT)
+				_txt(_gear_desc(gd), Vector2(140, y + 82), 16, Color(1, 1, 1, 0.7), 390.0, HORIZONTAL_ALIGNMENT_LEFT)
 				_button(_gear_btn_rect(i), "REMOVE", col, 20)
 	else:
 		var pages2 := maxi(1, (bag.size() + 5) / 6)
@@ -5193,9 +5229,10 @@ func _draw_inv(acc: Color) -> void:
 			var y2 := 262.0 + k * 100.0 + 8.0
 			draw_rect(Rect2(40, y2, 640, 90), Color(gc.r, gc.g, gc.b, 0.08))
 			draw_rect(Rect2(40, y2, 640, 90), Color(gc.r, gc.g, gc.b, 0.6), false, 2.0)
-			_txt(String(gd2["name"]), Vector2(58, y2 + 32), 24, _tier_col(int(gd2["tier"])), 370.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(gd2["slot"]).to_upper(), Vector2(58, y2 + 54), 15, gc, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(_gear_desc(gd2), Vector2(58, y2 + 78), 15, Color(1, 1, 1, 0.7), 370.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_spr(_gear_tex(String(bag[idx])), Vector2(88, y2 + 45), 62.0)
+			_txt(String(gd2["name"]), Vector2(128, y2 + 32), 24, _tier_col(int(gd2["tier"])), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(gd2["slot"]).to_upper(), Vector2(128, y2 + 54), 15, gc, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(_gear_desc(gd2), Vector2(128, y2 + 78), 15, Color(1, 1, 1, 0.7), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_button(Rect2(430, y2 + 16, 110, 52), "EQUIP", gc, 20)
 			_button(Rect2(550, y2 + 16, 110, 52), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 18)
 		if pages2 > 1:

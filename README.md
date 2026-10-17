@@ -90,3 +90,9 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - 31 new gear pieces across all slots and tiers.
 - XP potions are now a percent of the current level's XP need (20% / 25% x multipliers); Elixir gives 75%.
 - Floor tiles: each theme now uses one plain base tile most of the time, a subtle alternate now and then, and sparse, never-adjacent feature tiles.
+
+## v17 - directions, worn gear, item sprites, spike damage
+- Player sprites now exist for 4 directions (down, up, left, right) x 3 walk frames, for every class.
+- Every equipped item is drawn on the character (weapon in hand, helmet, armour, boots, trinket), in each direction.
+- All 62 gear items have their own sprite (sprites.gd `ART` table); shown on floor pickups, the outfitter, GEAR and PACK tabs.
+- Adventure spikes now damage health (scales with floor and level; shield soaks it; Heavy Boots still negate; Steel halves it; Ember doubles it) instead of costing air.

@@ -155,82 +155,896 @@ func _text(cv: Cv, s: String, x: int, y: int, c: Color) -> void:
 
 # ---------------------------------------------------------------- player
 
-func player(accent: Color, cls: String, frame: int = 0) -> ImageTexture:
-	var key := "player_%s_%d" % [cls, frame]
+# ---------------------------------------------------------------- player + gear art
+
+const ART := {
+	"dagger": {"s": "dagger", "a": "d5dbe8", "b": "8a93b5", "c": "7a4a1e"},
+	"wrench": {"s": "wrench", "a": "c9a23a", "b": "ff7a45", "c": "6b7388"},
+	"arcblade": {"s": "blade", "a": "7fe8ff", "b": "e8fbff", "c": "3a4160"},
+	"plasmaaxe": {"s": "axe", "a": "ff6ad5", "b": "ffd1f2", "c": "5a3d20"},
+	"leechfang": {"s": "fang", "a": "e8f2d0", "b": "6dff9a", "c": "3a4a2a"},
+	"railspike": {"s": "rail", "a": "c5cde6", "b": "4f9bff", "c": "3a4160"},
+	"voidcutter": {"s": "cutter", "a": "b57cff", "b": "f0e0ff", "c": "2a1c46"},
+	"stunbaton": {"s": "baton", "a": "ffe14f", "b": "fff6b0", "c": "2b2f3d"},
+	"cutlass": {"s": "cutlass", "a": "ffb347", "b": "fff0c8", "c": "6b4a2a"},
+	"gravhammer": {"s": "hammer", "a": "6b86c9", "b": "9fe0ff", "c": "4a3a2a"},
+	"ionlance": {"s": "lance", "a": "e8f2ff", "b": "4fd1ff", "c": "5a6280"},
+	"katana": {"s": "katana", "a": "eef2fa", "b": "ff5d5d", "c": "2a2f40"},
+	"singedge": {"s": "edge", "a": "2a2147", "b": "c07cff", "c": "14101f"},
+	"novacleaver": {"s": "cleaver", "a": "d8dde8", "b": "ff7a45", "c": "6b3a1e"},
+	"visor": {"s": "visor", "a": "9aa3c7", "b": "4fd1ff"},
+	"hardcap": {"s": "cap", "a": "ffd23a", "b": "c9961a"},
+	"rebreather": {"s": "mask", "a": "5a6280", "b": "9fe0ff"},
+	"tachelm": {"s": "tac", "a": "3d5a40", "b": "6dff9a"},
+	"scholar": {"s": "scholar", "a": "2a3a6a", "b": "ffd84f"},
+	"oracle": {"s": "oracle", "a": "e8e0f8", "b": "c07cff"},
+	"weldmask": {"s": "weld", "a": "2b2f3d", "b": "ff9a3c"},
+	"pilothelm": {"s": "pilot", "a": "e8ebf5", "b": "4f8cff"},
+	"riothelm": {"s": "riot", "a": "3a4160", "b": "9fe0ff"},
+	"sentinel": {"s": "sentinel", "a": "9fb3d9", "b": "ff5d5d"},
+	"voidcrown": {"s": "crown", "a": "2a1c46", "b": "c07cff"},
+	"jacket": {"s": "jacket", "a": "6b7a9a", "b": "c9a55a"},
+	"scrap": {"s": "scrap", "a": "8a7a6a", "b": "b8683a"},
+	"kevlar": {"s": "kevlar", "a": "2f3a4a", "b": "7b8aa8"},
+	"reactive": {"s": "reactive", "a": "7a2a2a", "b": "ff5d5d"},
+	"exo": {"s": "exo", "a": "9fb3d9", "b": "4fd1ff"},
+	"bulwark": {"s": "bulwark", "a": "5a6a9a", "b": "ffd84f"},
+	"padded": {"s": "padded", "a": "7a5a3a", "b": "b8946a"},
+	"riveted": {"s": "riveted", "a": "6a727f", "b": "c5cde6"},
+	"ablative": {"s": "ablative", "a": "e8dcc0", "b": "7db2ff"},
+	"titan": {"s": "titan", "a": "8a8f9f", "b": "ffd84f"},
+	"phaseweave": {"s": "weave", "a": "3a2a6a", "b": "7fe8ff"},
+	"aegiscore": {"s": "core", "a": "2a3a5a", "b": "4fffb0"},
+	"sneakers": {"s": "sneak", "a": "f0f0f0", "b": "4fd1ff"},
+	"magboots": {"s": "mag", "a": "4a4f6a", "b": "ff5d5d"},
+	"jets": {"s": "jet", "a": "6b7388", "b": "ff9a3c"},
+	"grip": {"s": "grip", "a": "3d4a3a", "b": "6dff9a"},
+	"gravity": {"s": "grav", "a": "4a3a6a", "b": "c07cff"},
+	"phase": {"s": "phase", "a": "1b2440", "b": "7fe8ff"},
+	"soles": {"s": "soles", "a": "5a4a3a", "b": "d9c9a0"},
+	"spiked": {"s": "spiked", "a": "3a3a44", "b": "e8e8f0"},
+	"runner": {"s": "runner", "a": "ff7a45", "b": "ffe0b0"},
+	"hover": {"s": "hover", "a": "5a6280", "b": "7fe8ff"},
+	"warp": {"s": "warp", "a": "2a1c46", "b": "ffd84f"},
+	"luckychip": {"s": "chip", "a": "ffd84f", "b": "fff3a8"},
+	"battery": {"s": "cell", "a": "4f9bff", "b": "e6f4ff"},
+	"medpatch": {"s": "patch", "a": "ff6b6b", "b": "ffffff"},
+	"podamp": {"s": "amp", "a": "7fd8ff", "b": "e6fbff"},
+	"ward": {"s": "ward", "a": "7db2ff", "b": "e0f0ff"},
+	"reaperchip": {"s": "reaper", "a": "e8e8f0", "b": "ff4f4f"},
+	"datalens": {"s": "lens", "a": "4fd1ff", "b": "e6fbff"},
+	"goldtooth": {"s": "tooth", "a": "ffd84f", "b": "fff3a8"},
+	"stimpack": {"s": "stim", "a": "ff8a9a", "b": "ffe0e6"},
+	"aegisemit": {"s": "emit", "a": "9fb3ff", "b": "ffffff"},
+	"battlecore": {"s": "bcore", "a": "ff7a45", "b": "ffe0a0"},
+	"fusioncell": {"s": "fusion", "a": "6dff9a", "b": "eaffee"},
+	"stationheart": {"s": "heart", "a": "ff4f6a", "b": "ffc0cc"},
+	"overlord": {"s": "overlord", "a": "c07cff", "b": "ffd84f"},
+}
+
+const SLOT_ORDER := ["weapon", "helmet", "armour", "boots", "trinket"]
+
+
+func _ac(art: Dictionary, k: String) -> Color:
+	return Color(String(art[k]))
+
+
+func _quad(cv: Cv, o: Vector2, d: Vector2, a0: float, a1: float, w0: float, w1: float, c: Color, off := 0.0) -> void:
+	var p := Vector2(-d.y, d.x)
+	var s0 := o + d * a0 + p * off
+	var s1 := o + d * a1 + p * off
+	cv.poly([s0 + p * w0, s1 + p * w1, s1 - p * w1, s0 - p * w0], c)
+
+
+func _weapon(cv: Cv, art: Dictionary, g: Vector2, d: Vector2, k: float) -> void:
+	var a := _ac(art, "a")
+	var b := _ac(art, "b")
+	var c := _ac(art, "c")
+	var s := String(art["s"])
+	var p := Vector2(-d.y, d.x)
+	_quad(cv, g, d, -2.5 * k, 2.8 * k, 0.9 * k, 0.9 * k, c)
+	if s == "dagger":
+		_quad(cv, g, d, 2.6 * k, 3.7 * k, 2.2 * k, 2.2 * k, b)
+		_quad(cv, g, d, 3.7 * k, 11.0 * k, 1.5 * k, 0.4 * k, a)
+		cv.line((g + d * 4.5 * k).x, (g + d * 4.5 * k).y, (g + d * 10.0 * k).x, (g + d * 10.0 * k).y, a.lightened(0.5))
+	elif s == "wrench":
+		_quad(cv, g, d, 2.5 * k, 10.0 * k, 1.0 * k, 1.0 * k, a)
+		_quad(cv, g, d, -2.5 * k, 2.5 * k, 1.2 * k, 1.2 * k, b)
+		_quad(cv, g, d, 9.5 * k, 12.8 * k, 2.7 * k, 2.7 * k, a)
+		_quad(cv, g, d, 11.4 * k, 13.2 * k, 1.0 * k, 1.0 * k, Color(0, 0, 0, 0))
+		var hp := g + d * 10.5 * k
+		cv.px(int(hp.x - p.x * 1.6 * k), int(hp.y - p.y * 1.6 * k), a.lightened(0.5))
+	elif s == "blade":
+		_quad(cv, g, d, 2.2 * k, 3.4 * k, 3.4 * k, 3.4 * k, c.lightened(0.35))
+		_quad(cv, g, d, 3.4 * k, 14.0 * k, 1.9 * k, 1.2 * k, a)
+		_quad(cv, g, d, 3.4 * k, 13.2 * k, 0.8 * k, 0.5 * k, b)
+		var tp := g + d * 14.6 * k
+		cv.px(int(tp.x), int(tp.y), b)
+	elif s == "cutlass":
+		cv.disc((g + d * 2.6 * k).x, (g + d * 2.6 * k).y, 2.4 * k, c.lightened(0.2))
+		var lastp := g + d * 3.0 * k
+		for i in range(1, 9):
+			var tt := float(i) / 8.0
+			var np := g + d * (3.0 + 11.0 * tt) * k + p * sin(tt * PI * 0.9) * 2.6 * k
+			cv.line(lastp.x, lastp.y, np.x, np.y, a, maxf(1.0, 2.6 * k * (1.0 - 0.6 * tt)))
+			cv.px(int(np.x - p.x * 0.8 * k), int(np.y - p.y * 0.8 * k), b)
+			lastp = np
+	elif s == "axe":
+		_quad(cv, g, d, 2.5 * k, 12.0 * k, 0.9 * k, 0.9 * k, c)
+		cv.poly([g + d * 8.0 * k + p * 1.0 * k, g + d * 8.0 * k + p * 5.6 * k, g + d * 12.8 * k + p * 6.6 * k, g + d * 12.8 * k + p * 0.9 * k], a)
+		cv.poly([g + d * 8.5 * k - p * 0.9 * k, g + d * 11.8 * k - p * 0.9 * k, g + d * 10.2 * k - p * 3.6 * k], c.lightened(0.3))
+		var e0 := g + d * 8.2 * k + p * 5.6 * k
+		var e1 := g + d * 12.8 * k + p * 6.6 * k
+		cv.line(e0.x, e0.y, e1.x, e1.y, b)
+	elif s == "fang":
+		cv.disc((g + d * 3.0 * k).x, (g + d * 3.0 * k).y, 1.9 * k, b)
+		for i in 8:
+			var tt := float(i) / 7.0
+			var fp := g + d * (3.0 + 11.0 * tt) * k - p * tt * tt * 4.2 * k
+			cv.disc(fp.x, fp.y, maxf(0.7, 2.0 * k * (1.0 - tt) + 0.3 * k), a)
+	elif s == "rail":
+		_quad(cv, g, d, 2.5 * k, 16.0 * k, 0.9 * k, 0.5 * k, a)
+		_quad(cv, g, d, 2.8 * k, 5.0 * k, 2.0 * k, 2.0 * k, b)
+		var r0 := g + d * 5.0 * k
+		var r1 := g + d * 14.0 * k
+		cv.line(r0.x + p.x * 1.4 * k, r0.y + p.y * 1.4 * k, r1.x + p.x * 0.8 * k, r1.y + p.y * 0.8 * k, b)
+		cv.line(r0.x - p.x * 1.4 * k, r0.y - p.y * 1.4 * k, r1.x - p.x * 0.8 * k, r1.y - p.y * 0.8 * k, b)
+		var tp2 := g + d * 16.6 * k
+		cv.px(int(tp2.x), int(tp2.y), b.lightened(0.5))
+	elif s == "cutter":
+		var outer: Array = []
+		var inner: Array = []
+		for i in 10:
+			var tt := float(i) / 9.0
+			var base := g + d * (2.6 + 11.0 * tt) * k
+			outer.append(base + p * sin(tt * PI) * 5.2 * k)
+			inner.append(base + p * sin(tt * PI) * 1.2 * k)
+		inner.reverse()
+		cv.poly(outer + inner, a)
+		for i in range(outer.size() - 1):
+			var o0: Vector2 = outer[i]
+			var o1: Vector2 = outer[i + 1]
+			cv.line(o0.x, o0.y, o1.x, o1.y, b)
+	elif s == "baton":
+		_quad(cv, g, d, -2.0 * k, 9.0 * k, 1.2 * k, 1.2 * k, c)
+		_quad(cv, g, d, 9.0 * k, 12.5 * k, 0.7 * k, 0.7 * k, a, 1.5 * k)
+		_quad(cv, g, d, 9.0 * k, 12.5 * k, 0.7 * k, 0.7 * k, a, -1.5 * k)
+		var sp := g + d * 11.2 * k
+		cv.px(int(sp.x), int(sp.y), b)
+		cv.px(int(sp.x + p.x * 2.4 * k), int(sp.y + p.y * 2.4 * k), b)
+		cv.px(int(sp.x - p.x * 2.4 * k), int(sp.y - p.y * 2.4 * k), b)
+		_quad(cv, g, d, 2.0 * k, 4.0 * k, 1.5 * k, 1.5 * k, a)
+	elif s == "hammer":
+		_quad(cv, g, d, 2.5 * k, 11.0 * k, 0.9 * k, 0.9 * k, c)
+		_quad(cv, g, d, 9.0 * k, 13.4 * k, 3.7 * k, 3.7 * k, a)
+		_quad(cv, g, d, 10.0 * k, 12.4 * k, 1.9 * k, 1.9 * k, b)
+		_quad(cv, g, d, 9.0 * k, 9.8 * k, 3.7 * k, 3.7 * k, a.darkened(0.25))
+	elif s == "lance":
+		_quad(cv, g, d, 2.5 * k, 14.0 * k, 0.9 * k, 0.9 * k, c)
+		_quad(cv, g, d, 11.0 * k, 17.5 * k, 1.1 * k, 0.3 * k, a)
+		_quad(cv, g, d, 10.5 * k, 15.0 * k, 0.5 * k, 0.3 * k, a, 2.0 * k)
+		_quad(cv, g, d, 10.5 * k, 15.0 * k, 0.5 * k, 0.3 * k, a, -2.0 * k)
+		var op := g + d * 10.0 * k
+		cv.disc(op.x, op.y, 1.4 * k, b)
+	elif s == "katana":
+		_quad(cv, g, d, -2.5 * k, 2.2 * k, 1.1 * k, 1.1 * k, c)
+		for i in range(-2, 3):
+			var wp := g + d * float(i) * k
+			cv.px(int(wp.x), int(wp.y), b)
+		cv.disc((g + d * 2.8 * k).x, (g + d * 2.8 * k).y, 1.9 * k, c.lightened(0.35))
+		var lp := g + d * 3.2 * k
+		for i in range(1, 9):
+			var tt := float(i) / 8.0
+			var kp := g + d * (3.2 + 12.4 * tt) * k + p * sin(tt * PI) * 1.2 * k
+			cv.line(lp.x, lp.y, kp.x, kp.y, a, maxf(1.0, 1.7 * k * (1.0 - 0.55 * tt)))
+			lp = kp
+	elif s == "edge":
+		_quad(cv, g, d, 2.2 * k, 3.6 * k, 3.0 * k, 3.0 * k, b)
+		_quad(cv, g, d, 3.6 * k, 15.0 * k, 2.6 * k, 1.2 * k, b)
+		_quad(cv, g, d, 3.6 * k, 14.6 * k, 1.8 * k, 0.7 * k, a)
+		var c0 := g + d * 5.0 * k
+		var c1 := g + d * 13.0 * k
+		cv.line(c0.x, c0.y, c1.x, c1.y, b.lightened(0.4))
+	elif s == "cleaver":
+		_quad(cv, g, d, 2.5 * k, 3.5 * k, 2.6 * k, 2.6 * k, c.lightened(0.3))
+		_quad(cv, g, d, 3.5 * k, 13.5 * k, 3.1 * k, 3.1 * k, a)
+		_quad(cv, g, d, 3.5 * k, 13.5 * k, 0.8 * k, 0.8 * k, b, 2.9 * k)
+		_quad(cv, g, d, 3.5 * k, 13.5 * k, 0.7 * k, 0.7 * k, a.darkened(0.3), -2.6 * k)
+		var hp2 := g + d * 10.0 * k
+		cv.disc(hp2.x, hp2.y, 0.9 * k, Color(0, 0, 0, 0))
+
+
+func _helm(cv: Cv, dir: int, art: Dictionary) -> void:
+	var a := _ac(art, "a")
+	var b := _ac(art, "b")
+	var s := String(art["s"])
+	var side := dir >= 2
+	var back := dir == 1
+	var hx := 16.5 if side else 16.0
+	if s == "visor":
+		if back:
+			cv.rect(8, 7, 16, 1, a)
+			cv.line(22, 3, 25, 0, a)
+			cv.px(25, 0, b)
+		elif side:
+			cv.ell(20.3, 8.8, 3.9, 2.3, a.darkened(0.35))
+			cv.rect(18, 8, 6, 1, b)
+			cv.line(12, 4, 10, 0, a)
+			cv.px(10, 0, b)
+		else:
+			cv.rect(9, 7, 14, 4, a.darkened(0.35))
+			cv.rect(10, 8, 12, 1, b)
+			cv.rect(8, 8, 2, 3, a)
+			cv.rect(22, 8, 2, 3, a)
+			cv.line(23, 4, 25, 0, a)
+			cv.px(25, 0, b)
+	elif s == "cap":
+		cv.ell(hx, 5.0, 8.6, 5.0, a)
+		cv.rect(int(hx) - 9, 7, 18, 2, a.darkened(0.15))
+		if side:
+			cv.rect(int(hx) + 4, 7, 6, 2, a.darkened(0.15))
+		cv.rect(int(hx) - 1, 1, 2, 5, a.lightened(0.35))
+		cv.px(int(hx) - 4, 3, a.lightened(0.5))
+	elif s == "mask":
+		if back:
+			cv.rect(8, 10, 16, 2, a)
+			cv.line(9, 12, 8, 20, b)
+			cv.line(23, 12, 24, 20, b)
+		elif side:
+			cv.rrect(19, 10, 6, 6, 2.0, a)
+			cv.disc(22.5, 13, 1.8, b)
+			cv.line(21, 15, 19, 22, b)
+		else:
+			cv.rrect(10, 10, 12, 6, 2.0, a)
+			cv.disc(11.5, 13, 2.0, b)
+			cv.disc(20.5, 13, 2.0, b)
+			cv.line(10, 15, 8, 22, a.darkened(0.2))
+			cv.line(22, 15, 24, 22, a.darkened(0.2))
+			cv.rect(14, 13, 4, 1, a.lightened(0.4))
+	elif s == "tac":
+		cv.ell(hx, 5.4, 8.5, 5.2, a)
+		cv.rect(int(hx) - 1, 0, 2, 5, a.lightened(0.3))
+		if back:
+			cv.rect(10, 8, 12, 1, a.darkened(0.3))
+		elif side:
+			cv.rect(18, 6, 6, 2, b)
+			cv.rect(9, 6, 8, 2, a.darkened(0.2))
+		else:
+			cv.rect(7, 6, 3, 4, b)
+			cv.rect(8, 7, 1, 2, Color.WHITE)
+			cv.rect(10, 6, 12, 1, a.darkened(0.2))
+	elif s == "scholar":
+		cv.poly([Vector2(hx, 0), Vector2(hx + 12, 3), Vector2(hx, 6), Vector2(hx - 12, 3)], a)
+		cv.rect(int(hx) - 6, 3, 12, 1, a.lightened(0.25))
+		cv.px(int(hx), 3, b)
+		var tx := int(hx) + 9
+		cv.line(tx, 4, tx, 9, b)
+		cv.px(tx, 10, b)
+		cv.px(tx, 9, b.lightened(0.4))
+	elif s == "oracle":
+		if back:
+			cv.rect(8, 8, 16, 1, a)
+		elif side:
+			cv.rrect(21, 7, 3, 7, 1.0, a)
+			cv.poly([Vector2(19, 2), Vector2(21, 4), Vector2(19, 6), Vector2(17, 4)], b)
+			cv.px(19, 3, Color.WHITE)
+		else:
+			cv.rrect(7, 7, 3, 7, 1.0, a)
+			cv.rrect(22, 7, 3, 7, 1.0, a)
+			cv.rect(10, 5, 12, 1, a)
+			cv.poly([Vector2(16, 1), Vector2(18, 3.5), Vector2(16, 6), Vector2(14, 3.5)], b)
+			cv.px(15, 2, Color.WHITE)
+	elif s == "weld":
+		if back:
+			cv.rrect(9, 3, 14, 7, 3.0, a)
+			cv.rect(9, 7, 14, 1, a.lightened(0.2))
+		elif side:
+			cv.rrect(13, 3, 11, 12, 3.0, a)
+			cv.rect(18, 8, 6, 2, b)
+			cv.rect(14, 4, 9, 1, a.lightened(0.25))
+		else:
+			cv.rrect(8, 3, 16, 12, 3.0, a)
+			cv.rect(10, 8, 12, 2, b)
+			cv.rect(9, 4, 14, 1, a.lightened(0.25))
+			cv.px(10, 12, a.lightened(0.3))
+			cv.px(21, 12, a.lightened(0.3))
+	elif s == "pilot":
+		cv.ell(hx, 5.0, 8.6, 5.0, a)
+		cv.rect(int(hx) - 1, 0, 2, 4, a.darkened(0.15))
+		if back:
+			cv.rect(8, 6, 16, 1, b.darkened(0.3))
+		elif side:
+			cv.disc(19.5, 5.5, 2.3, a.darkened(0.4))
+			cv.disc(19.5, 5.5, 1.5, b)
+			cv.rect(10, 5, 8, 1, b.darkened(0.3))
+		else:
+			cv.disc(12, 5.5, 2.3, a.darkened(0.4))
+			cv.disc(20, 5.5, 2.3, a.darkened(0.4))
+			cv.disc(12, 5.5, 1.5, b)
+			cv.disc(20, 5.5, 1.5, b)
+			cv.rect(8, 5, 16, 1, b.darkened(0.3))
+	elif s == "riot":
+		cv.ell(hx, 4.6, 8.9, 4.6, a)
+		if back:
+			cv.rect(8, 8, 16, 1, a.lightened(0.2))
+		elif side:
+			cv.rrect(17, 3, 8, 12, 3.0, Color(b.r, b.g, b.b, 0.32))
+			cv.rect(17, 3, 8, 1, b)
+		else:
+			cv.rrect(8, 3, 16, 13, 4.0, Color(b.r, b.g, b.b, 0.3))
+			cv.rect(9, 3, 14, 1, b)
+			cv.line(10, 5, 12, 12, Color(1, 1, 1, 0.5))
+		cv.rect(int(hx) - 3, 1, 6, 1, a.lightened(0.3))
+	elif s == "sentinel":
+		cv.ell(hx, 5.0, 8.5, 5.0, a)
+		if back:
+			cv.rect(15, 0, 2, 9, b)
+			cv.rect(8, 9, 3, 6, a.darkened(0.15))
+			cv.rect(21, 9, 3, 6, a.darkened(0.15))
+		elif side:
+			cv.poly([Vector2(8, 5), Vector2(14, 0), Vector2(22, 1), Vector2(14, 5)], b)
+			cv.rect(21, 9, 3, 6, a.darkened(0.15))
+		else:
+			cv.poly([Vector2(14, 0), Vector2(18, 0), Vector2(17, 6), Vector2(15, 6)], b)
+			cv.rect(7, 9, 3, 6, a.darkened(0.15))
+			cv.rect(22, 9, 3, 6, a.darkened(0.15))
+	elif s == "crown":
+		var cx := int(hx)
+		cv.rect(cx - 7, 4, 14, 2, a)
+		cv.rect(cx - 7, 4, 14, 1, b)
+		for i in 4:
+			var sx := cx - 7 + i * 4
+			cv.poly([Vector2(sx, 4), Vector2(sx + 3, 4), Vector2(sx + 1.5, 0)], b)
+		cv.px(cx - 1, 5, Color.WHITE)
+
+
+func _armor_fb(cv: Cv, dir: int, art: Dictionary) -> void:
+	var a := _ac(art, "a")
+	var b := _ac(art, "b")
+	var s := String(art["s"])
+	var back := dir == 1
+	cv.rrect(9, 13, 14, 10, 2.5, a)
+	cv.rrect(5, 14, 5, 6, 2.0, a)
+	cv.rrect(22, 14, 5, 6, 2.0, a)
+	cv.rect(10, 14, 12, 1, a.lightened(0.25))
+	cv.rect(9, 22, 14, 1, a.darkened(0.3))
+	if s == "jacket":
+		cv.rect(12, 13, 8, 2, a.lightened(0.3))
+		cv.line(16, 15, 16, 22, b)
+		if not back:
+			cv.rect(10, 18, 3, 3, a.darkened(0.25))
+			cv.rect(19, 18, 3, 3, a.darkened(0.25))
+			cv.px(11, 18, b)
+			cv.px(20, 18, b)
+	elif s == "scrap":
+		cv.rect(10, 14, 6, 5, b)
+		cv.rect(17, 17, 5, 5, b.darkened(0.25))
+		cv.px(11, 15, Color("40485e"))
+		cv.px(14, 17, Color("40485e"))
+		cv.px(19, 19, Color("40485e"))
+		cv.rect(6, 15, 3, 3, b.darkened(0.1))
+	elif s == "kevlar":
+		cv.line(9, 14, 22, 22, b, 2.0)
+		cv.line(22, 14, 9, 22, b, 2.0)
+		cv.rect(12, 19, 8, 3, a.darkened(0.3))
+		cv.rect(12, 19, 8, 1, b)
+	elif s == "reactive":
+		cv.poly([Vector2(5, 14), Vector2(9, 14), Vector2(5, 9)], b)
+		cv.poly([Vector2(23, 14), Vector2(27, 14), Vector2(27, 9)], b)
+		cv.rect(11, 17, 10, 1, b)
+		cv.px(12, 19, b.lightened(0.4))
+		cv.px(19, 19, b.lightened(0.4))
+	elif s == "exo":
+		cv.rect(15, 14, 2, 8, b)
+		cv.line(10, 14, 10, 22, b)
+		cv.line(21, 14, 21, 22, b)
+		cv.disc(7.5, 16, 1.8, b)
+		cv.disc(24.5, 16, 1.8, b)
+		cv.px(15, 15, Color.WHITE)
+	elif s == "bulwark":
+		cv.ell(6.5, 15, 4.6, 3.6, b)
+		cv.ell(25.5, 15, 4.6, 3.6, b)
+		cv.poly([Vector2(11, 14), Vector2(21, 14), Vector2(20, 21), Vector2(16, 23), Vector2(12, 21)], b)
+		cv.poly([Vector2(13, 15), Vector2(19, 15), Vector2(18.5, 20), Vector2(16, 21), Vector2(13.5, 20)], a)
+		cv.rect(15, 16, 2, 4, Color.WHITE)
+	elif s == "padded":
+		for yy in range(15, 23, 3):
+			cv.rect(10, yy, 12, 1, b)
+		cv.line(16, 14, 16, 22, a.darkened(0.3))
+	elif s == "riveted":
+		cv.rect(10, 15, 12, 1, b.darkened(0.3))
+		cv.rect(10, 19, 12, 1, b.darkened(0.3))
+		for px_ in [Vector2i(11, 14), Vector2i(20, 14), Vector2i(11, 21), Vector2i(20, 21), Vector2i(6, 16), Vector2i(25, 16)]:
+			cv.px(px_.x, px_.y, b)
+	elif s == "ablative":
+		cv.rect(8, 23, 16, 5, a)
+		cv.rect(8, 27, 16, 1, b)
+		cv.line(16, 23, 16, 27, a.darkened(0.3))
+		cv.rect(9, 17, 14, 1, b)
+	elif s == "titan":
+		cv.rect(9, 13, 14, 1, b)
+		cv.rect(9, 22, 14, 1, b)
+		cv.ell(6.5, 15.5, 4.8, 3.8, a.lightened(0.1))
+		cv.ell(25.5, 15.5, 4.8, 3.8, a.lightened(0.1))
+		cv.rect(2, 15, 9, 1, b)
+		cv.rect(21, 15, 9, 1, b)
+		cv.disc(16, 18, 2.6, b)
+		cv.disc(16, 18, 1.4, a)
+	elif s == "weave":
+		for i in range(-2, 4):
+			cv.line(9 + i * 5, 13, 13 + i * 5, 22, b.darkened(0.2))
+		cv.px(12, 16, Color.WHITE)
+		cv.px(18, 19, Color.WHITE)
+		cv.px(7, 17, b)
+		cv.px(25, 17, b)
+	elif s == "core":
+		cv.disc(16, 17.5, 3.4, a.darkened(0.3))
+		cv.disc(16, 17.5, 2.4, b)
+		cv.px(15, 16, Color.WHITE)
+		cv.poly([Vector2(5, 14), Vector2(9, 14), Vector2(6, 10)], b.darkened(0.2))
+		cv.poly([Vector2(23, 14), Vector2(27, 14), Vector2(26, 10)], b.darkened(0.2))
+		cv.rect(10, 14, 12, 1, b.darkened(0.2))
+	if back and s != "ablative":
+		cv.rect(10, 15, 12, 1, a.lightened(0.15))
+
+
+func _armor_side(cv: Cv, art: Dictionary, ax: int) -> void:
+	var a := _ac(art, "a")
+	var b := _ac(art, "b")
+	var s := String(art["s"])
+	cv.rrect(10, 13, 12, 10, 2.5, a)
+	cv.rect(11, 14, 10, 1, a.lightened(0.25))
+	cv.rect(10, 22, 12, 1, a.darkened(0.3))
+	if s == "ablative":
+		cv.rect(9, 23, 14, 5, a)
+		cv.rect(9, 27, 14, 1, b)
+	elif s == "jacket":
+		cv.line(21, 14, 21, 22, b)
+		cv.rect(12, 18, 3, 3, a.darkened(0.25))
+	elif s == "scrap":
+		cv.rect(11, 14, 6, 5, b)
+		cv.px(12, 15, Color("40485e"))
+	elif s == "kevlar":
+		cv.line(11, 14, 21, 22, b, 2.0)
+		cv.rect(13, 19, 6, 3, a.darkened(0.3))
+	elif s == "reactive":
+		cv.rect(12, 17, 8, 1, b)
+		cv.px(14, 19, b.lightened(0.4))
+	elif s == "exo":
+		cv.rect(15, 14, 2, 8, b)
+		cv.line(11, 14, 11, 22, b)
+	elif s == "bulwark" or s == "titan":
+		cv.poly([Vector2(12, 14), Vector2(21, 14), Vector2(20, 21), Vector2(16, 23), Vector2(12, 21)], b)
+		cv.rect(14, 16, 4, 4, a)
+	elif s == "padded":
+		for yy in range(15, 23, 3):
+			cv.rect(11, yy, 10, 1, b)
+	elif s == "riveted":
+		cv.rect(11, 15, 10, 1, b.darkened(0.3))
+		cv.px(12, 14, b)
+		cv.px(20, 14, b)
+		cv.px(12, 21, b)
+		cv.px(20, 21, b)
+	elif s == "weave":
+		for i in range(-1, 3):
+			cv.line(10 + i * 5, 13, 14 + i * 5, 22, b.darkened(0.2))
+		cv.px(15, 17, Color.WHITE)
+	elif s == "core":
+		cv.disc(19, 17.5, 2.6, a.darkened(0.3))
+		cv.disc(19, 17.5, 1.7, b)
+		cv.px(18, 16, Color.WHITE)
+	# sleeve + pauldron on the near arm
+	cv.rrect(13 + ax, 14, 5, 6, 2.0, a)
+	if s == "bulwark" or s == "titan":
+		cv.ell(15.5 + ax, 14.5, 4.4, 3.4, b)
+	elif s == "reactive" or s == "core":
+		cv.poly([Vector2(13 + ax, 14), Vector2(18 + ax, 14), Vector2(15.5 + ax, 9)], b)
+	elif s == "exo":
+		cv.disc(15.5 + ax, 15, 1.8, b)
+
+
+func _boot(cv: Cv, x: int, y: int, w: int, art: Dictionary, toe_right: bool) -> void:
+	var a := _ac(art, "a")
+	var b := _ac(art, "b")
+	var s := String(art["s"])
+	cv.rrect(x, y, w, 5, 1.5, a)
+	cv.rect(x + 1, y - 2, w - 2, 3, a.lightened(0.12))
+	cv.rect(x, y + 4, w, 1, b if s == "soles" or s == "grip" or s == "mag" else a.darkened(0.35))
+	cv.rect(x + 1, y, w - 2, 1, a.lightened(0.3))
+	var tx := x + w - 2 if toe_right else x + 1
+	if s == "sneak":
+		cv.rect(x + 1, y + 1, w - 2, 1, b)
+		cv.px(x + w / 2, y - 1, b)
+	elif s == "mag":
+		cv.rect(x, y - 1, w, 1, b)
+		cv.rect(x, y + 3, w, 2, a.darkened(0.4))
+	elif s == "jet":
+		cv.rect(x + 1, y - 2, 2, 2, b)
+		cv.px(x + w / 2, y + 5, b)
+		cv.px(x + w / 2 - 1, y + 5, b.lightened(0.4))
+	elif s == "grip":
+		for i in range(0, w, 2):
+			cv.px(x + i, y + 4, b)
+		cv.rect(x + 1, y - 1, w - 2, 1, b)
+	elif s == "grav":
+		cv.rect(x, y + 2, w, 1, b)
+		cv.px(x + w / 2, y + 1, Color.WHITE)
+	elif s == "phase":
+		cv.rect(x, y + 4, w, 1, b)
+		cv.px(x + 1, y + 1, b)
+		cv.px(x + w - 2, y + 2, b)
+	elif s == "soles":
+		cv.rect(x + 1, y - 1, w - 2, 1, b.darkened(0.2))
+	elif s == "spiked":
+		cv.px(tx, y, b)
+		cv.px(tx, y - 1, b)
+		cv.px(x + w / 2, y - 1, b)
+		cv.px(x + w / 2, y - 2, b)
+	elif s == "runner":
+		cv.rect(x, y + 2, w, 1, b)
+		cv.rect(x + 1, y - 1, w - 2, 1, b)
+	elif s == "hover":
+		cv.rect(x, y + 4, w, 1, b)
+		cv.px(x + 1, y + 3, b)
+		cv.px(x + w - 2, y + 3, b)
+	elif s == "warp":
+		cv.poly([Vector2(x - 1, y - 1), Vector2(x + 1, y - 3), Vector2(x + 2, y)], b)
+		cv.poly([Vector2(x + w + 1, y - 1), Vector2(x + w - 1, y - 3), Vector2(x + w - 2, y)], b)
+
+
+func _trinket(cv: Cv, art: Dictionary, ox: int, oy: int, k: float) -> void:
+	var a := _ac(art, "a")
+	var b := _ac(art, "b")
+	var s := String(art["s"])
+	var f := func(x: float, y: float, w: float, h: float, c: Color) -> void:
+		cv.rect(ox + int(x * k), oy + int(y * k), maxi(1, int(w * k)), maxi(1, int(h * k)), c)
+	if s == "chip":
+		f.call(0, 1, 6, 4, a)
+		f.call(1, 2, 4, 2, a.darkened(0.3))
+		f.call(0, 0, 1, 1, b)
+		f.call(5, 5, 1, 1, b)
+		f.call(2, 2, 1, 1, b)
+	elif s == "cell":
+		f.call(1, 1, 4, 5, a)
+		f.call(2, 0, 2, 1, b)
+		f.call(2, 2, 1, 2, b)
+	elif s == "patch":
+		f.call(0, 0, 6, 6, b)
+		f.call(2, 1, 2, 4, a)
+		f.call(1, 2, 4, 2, a)
+	elif s == "amp":
+		f.call(2, 3, 2, 3, a)
+		f.call(3, 0, 1, 3, b)
+		f.call(1, 1, 1, 1, b)
+		f.call(5, 1, 1, 1, b)
+	elif s == "ward":
+		cv.disc(ox + 3 * k, oy + 3 * k, 3.0 * k, a)
+		cv.disc(ox + 3 * k, oy + 3 * k, 1.6 * k, b)
+	elif s == "reaper":
+		cv.disc(ox + 3 * k, oy + 2.6 * k, 2.7 * k, a)
+		f.call(2, 4, 2, 2, a)
+		f.call(1, 2, 1, 1, b)
+		f.call(4, 2, 1, 1, b)
+	elif s == "lens":
+		cv.disc(ox + 3 * k, oy + 3 * k, 3.0 * k, a)
+		cv.disc(ox + 3 * k, oy + 3 * k, 1.7 * k, b.darkened(0.3))
+		f.call(1, 1, 1, 1, b)
+	elif s == "tooth":
+		cv.poly([Vector2(ox, oy), Vector2(ox + 6 * k, oy), Vector2(ox + 5 * k, oy + 3 * k), Vector2(ox + 3 * k, oy + 6 * k), Vector2(ox + 1 * k, oy + 3 * k)], a)
+		f.call(1, 1, 2, 1, b)
+	elif s == "stim":
+		cv.line(ox, oy + 5 * k, ox + 4 * k, oy + 1 * k, a, maxf(1.0, 2.0 * k))
+		f.call(4, 0, 2, 1, b)
+		f.call(0, 5, 1, 1, b)
+	elif s == "emit":
+		cv.disc(ox + 3 * k, oy + 3 * k, 2.4 * k, a)
+		f.call(0, 3, 1, 1, b)
+		f.call(5, 3, 1, 1, b)
+		f.call(3, 0, 1, 1, b)
+		f.call(3, 5, 1, 1, b)
+		f.call(2, 2, 1, 1, Color.WHITE)
+	elif s == "bcore":
+		cv.poly([Vector2(ox + 3 * k, oy), Vector2(ox + 6 * k, oy + 3 * k), Vector2(ox + 3 * k, oy + 6 * k), Vector2(ox, oy + 3 * k)], a)
+		f.call(2, 2, 2, 2, b)
+	elif s == "fusion":
+		f.call(1, 1, 4, 4, a)
+		f.call(2, 2, 2, 2, b)
+		f.call(0, 0, 1, 1, b)
+		f.call(5, 5, 1, 1, b)
+		f.call(0, 5, 1, 1, b)
+		f.call(5, 0, 1, 1, b)
+	elif s == "heart":
+		cv.disc(ox + 1.8 * k, oy + 2 * k, 1.9 * k, a)
+		cv.disc(ox + 4.2 * k, oy + 2 * k, 1.9 * k, a)
+		cv.poly([Vector2(ox, oy + 2.5 * k), Vector2(ox + 6 * k, oy + 2.5 * k), Vector2(ox + 3 * k, oy + 6 * k)], a)
+		f.call(1, 1, 1, 1, b)
+	elif s == "overlord":
+		f.call(0, 3, 6, 3, a)
+		f.call(0, 0, 1, 3, b)
+		f.call(2, 1, 2, 2, b)
+		f.call(5, 0, 1, 3, b)
+		f.call(2, 4, 2, 1, Color.WHITE)
+
+
+func _art(eq: Dictionary, slot: String) -> Dictionary:
+	var id := String(eq.get(slot, ""))
+	if id != "" and ART.has(id):
+		return ART[id]
+	return {}
+
+
+func _eq_key(eq: Dictionary) -> String:
+	var parts: Array[String] = []
+	for sl in SLOT_ORDER:
+		parts.append(String(eq.get(sl, "")))
+	return "|".join(parts)
+
+
+func player(accent: Color, cls: String, frame: int = 0, dir: int = 0, eq: Dictionary = {}) -> ImageTexture:
+	var key := "pl_%s_%d_%d_%s" % [cls, frame, dir, _eq_key(eq)]
 	if cache.has(key):
 		return cache[key]
+	var t: ImageTexture
+	if dir == 2:
+		var img: Image = player(accent, cls, frame, 3, eq).get_image()
+		img.flip_x()
+		t = ImageTexture.create_from_image(img)
+	else:
+		t = _build_player(accent, cls, frame, dir, eq).tex()
+	cache[key] = t
+	return t
+
+
+func _build_player(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary) -> Cv:
 	var cv := Cv.new(32, 32)
 	var suit := Color("e6ebf8")
 	var suit_d := Color("a9b3d1")
 	var dark := Color("2b3254")
 	var metal := Color("69759a")
-	if cls == "mystic":
-		cv.poly([Vector2(9, 13), Vector2(23, 13), Vector2(28, 29), Vector2(4, 29)], accent.darkened(0.45))
-	cv.rrect(7, 12, 18, 11, 2.0, metal)
-	cv.rrect(4, 14, 4, 8, 1.5, dark)
-	cv.rrect(24, 14, 4, 8, 1.5, dark)
+	var wa := _art(eq, "weapon")
+	var ha := _art(eq, "helmet")
+	var aa := _art(eq, "armour")
+	var ba := _art(eq, "boots")
+	var ta := _art(eq, "trinket")
 	var dl := -3 if frame == 1 else 0
 	var dr := -3 if frame == 2 else 0
-	cv.rrect(10, 21 + dl, 5, 8, 1.5, suit_d)
-	cv.rrect(17, 21 + dr, 5, 8, 1.5, suit_d)
-	cv.rrect(9, 26 + dl, 7, 5, 1.5, dark)
-	cv.rrect(16, 26 + dr, 7, 5, 1.5, dark)
-	cv.rrect(9, 13, 14, 10, 2.5, suit)
-	cv.rrect(5, 14, 5, 9, 2.0, suit)
-	cv.rrect(22, 14, 5, 9, 2.0, suit)
-	cv.rrect(5, 21, 5, 4, 1.5, dark)
-	cv.rrect(22, 21, 5, 4, 1.5, dark)
-	cv.ell(16, 8.5, 8.0, 7.5, suit)
-	cv.shade(0.22)
-	# visor
-	cv.ell(16, 9, 5.8, 4.6, dark)
-	cv.ell(16, 9, 5.0, 3.8, accent.darkened(0.5))
-	cv.ell(16, 8.6, 5.0, 3.0, accent)
-	cv.ell(14.5, 7.4, 2.6, 1.0, accent.lightened(0.6))
-	cv.px(19, 10, accent.lightened(0.7))
-	# suit details
-	cv.rect(12, 15, 8, 5, dark)
-	cv.px(13, 16, Color("ff5d5d"))
-	cv.px(15, 16, Color("ffd84f"))
-	cv.px(17, 16, Color("6dff9a"))
-	cv.rect(13, 18, 6, 1, accent)
-	cv.rect(9, 22, 14, 2, accent.darkened(0.25))
-	cv.rect(15, 22, 2, 2, Color("ffd84f"))
-	cv.line(16, 20, 16, 21, suit_d)
-	cv.line(10, 14, 21, 14, suit_d)
-	cv.rect(10, 17, 1, 4, suit_d)
-	cv.rect(21, 17, 1, 4, suit_d)
-	cv.rect(11, 24 + dl, 4, 1, accent.darkened(0.2))
-	cv.rect(17, 24 + dr, 4, 1, accent.darkened(0.2))
-	cv.rect(10, 28 + dl, 5, 1, metal)
-	cv.rect(17, 28 + dr, 5, 1, metal)
-	# arm swing opposite to the raised leg
-	if frame == 1:
-		cv.rect(23, 20, 4, 2, dark)
-	elif frame == 2:
-		cv.rect(5, 20, 4, 2, dark)
-	if cls == "scout":
-		cv.line(23, 4, 25, 0, dark)
-		cv.disc(25, 1, 1.4, accent.lightened(0.5))
-		cv.rect(8, 7, 2, 4, accent.darkened(0.2))
-	elif cls == "brute":
-		cv.ell(6.5, 14, 3.6, 2.8, accent)
-		cv.ell(25.5, 14, 3.6, 2.8, accent)
-		cv.px(5, 13, accent.lightened(0.5))
-		cv.rect(13, 12, 6, 2, accent.darkened(0.1))
-		cv.line(7, 11, 9, 12, accent.lightened(0.3))
-	elif cls == "mystic":
-		cv.poly([Vector2(16, 0), Vector2(18, 2), Vector2(16, 4), Vector2(14, 2)], accent.lightened(0.45))
-		cv.px(15, 1, Color.WHITE)
-	elif cls == "gambler":
-		cv.rect(9, 5, 14, 2, Color("ffd84f"))
-		cv.rect(9, 5, 14, 1, Color("fff1a0"))
-		cv.rect(14, 15, 5, 5, Color.WHITE)
-		cv.px(15, 16, Color("14141c"))
-		cv.px(17, 18, Color("14141c"))
-		cv.px(17, 16, Color("14141c"))
-		cv.px(15, 18, Color("14141c"))
+	if dir == 3:
+		# ---- side view, facing right
+		var nx := 15
+		var ndy := 0
+		var fx := 12
+		var fdy := 0
+		var ax := 0
+		if frame == 1:
+			nx = 17
+			ndy = -3
+			fx = 10
+			ax = -3
+		elif frame == 2:
+			nx = 11
+			fx = 17
+			fdy = -3
+			ax = 3
+		if cls == "mystic":
+			cv.poly([Vector2(11, 13), Vector2(14, 13), Vector2(12, 29), Vector2(2, 29)], accent.darkened(0.45))
+		cv.rrect(6, 13, 6, 10, 2.0, metal)
+		cv.rrect(7, 14, 2, 8, 1.0, metal.lightened(0.25))
+		cv.rrect(fx, 21 + fdy, 5, 8, 1.5, suit_d)
+		cv.rrect(nx, 21 + ndy, 5, 8, 1.5, suit)
+		cv.rrect(fx, 26 + fdy, 8, 5, 1.5, dark)
+		cv.rrect(nx, 26 + ndy, 8, 5, 1.5, dark)
+		cv.rrect(10, 13, 12, 10, 2.5, suit)
+		cv.rrect(12 - ax, 15, 4, 8, 1.5, suit_d)
+		cv.ell(16.5, 8.5, 7.0, 7.5, suit)
+		cv.shade(0.22)
+		cv.ell(20.2, 9, 4.3, 4.3, dark)
+		cv.ell(20.5, 9, 3.6, 3.6, accent.darkened(0.5))
+		cv.ell(20.7, 8.7, 3.3, 2.7, accent)
+		cv.ell(20, 7.6, 1.8, 0.9, accent.lightened(0.6))
+		cv.rect(10, 22, 12, 2, accent.darkened(0.25))
+		cv.rect(15, 22, 2, 2, Color("ffd84f"))
+		cv.rect(nx + 1, 28 + ndy, 6, 1, metal)
+		cv.rect(fx + 1, 28 + fdy, 6, 1, metal)
+		cv.rect(11, 17, 1, 3, suit_d)
+		cv.rrect(13 + ax, 14, 5, 9, 2.0, suit)
+		cv.rrect(13 + ax, 21, 5, 4, 1.5, dark)
+		if cls == "scout":
+			cv.line(11, 4, 9, 0, dark)
+			cv.disc(9, 1, 1.4, accent.lightened(0.5))
+			cv.rect(10, 6, 2, 4, accent.darkened(0.2))
+		elif cls == "brute":
+			cv.ell(15.5 + ax, 14.5, 3.8, 3.0, accent)
+			cv.px(14 + ax, 13, accent.lightened(0.5))
+			cv.rect(11, 12, 8, 2, accent.darkened(0.1))
+		elif cls == "mystic":
+			cv.poly([Vector2(16, 0), Vector2(18, 2), Vector2(16, 4), Vector2(14, 2)], accent.lightened(0.45))
+			cv.px(15, 1, Color.WHITE)
+		elif cls == "gambler":
+			cv.rect(9, 5, 14, 2, Color("ffd84f"))
+			cv.rect(9, 5, 14, 1, Color("fff1a0"))
+		if not aa.is_empty():
+			_armor_side(cv, aa, ax)
+		if not ba.is_empty():
+			_boot(cv, fx, 26 + fdy, 8, ba, true)
+			_boot(cv, nx, 26 + ndy, 8, ba, true)
+		if not ta.is_empty():
+			_trinket(cv, ta, 11, 22, 0.9)
+		if not ha.is_empty():
+			_helm(cv, 3, ha)
+		if not wa.is_empty():
+			_weapon(cv, wa, Vector2(16.0 + ax * 0.6, 22.0), Vector2(0.8, -0.6), 0.8)
+	elif dir == 1:
+		# ---- back view
+		cv.rrect(7, 12, 18, 11, 2.0, metal)
+		cv.rrect(4, 14, 4, 8, 1.5, dark)
+		cv.rrect(24, 14, 4, 8, 1.5, dark)
+		cv.rrect(10, 21 + dl, 5, 8, 1.5, suit_d)
+		cv.rrect(17, 21 + dr, 5, 8, 1.5, suit_d)
+		cv.rrect(9, 26 + dl, 7, 5, 1.5, dark)
+		cv.rrect(16, 26 + dr, 7, 5, 1.5, dark)
+		cv.rrect(9, 13, 14, 10, 2.5, suit)
+		cv.rrect(5, 14, 5, 9, 2.0, suit)
+		cv.rrect(22, 14, 5, 9, 2.0, suit)
+		cv.rrect(5, 21, 5, 4, 1.5, dark)
+		cv.rrect(22, 21, 5, 4, 1.5, dark)
+		cv.ell(16, 8.5, 8.0, 7.5, suit)
+		cv.shade(0.22)
+		cv.rect(10, 7, 12, 1, suit_d)
+		cv.rect(14, 3, 4, 1, accent)
+		cv.rect(13, 11, 6, 2, suit_d)
+		cv.rect(9, 22, 14, 2, accent.darkened(0.25))
+		cv.rect(11, 24 + dl, 4, 1, accent.darkened(0.2))
+		cv.rect(17, 24 + dr, 4, 1, accent.darkened(0.2))
+		cv.rect(10, 28 + dl, 5, 1, metal)
+		cv.rect(17, 28 + dr, 5, 1, metal)
+		if frame == 1:
+			cv.rect(23, 20, 4, 2, dark)
+		elif frame == 2:
+			cv.rect(5, 20, 4, 2, dark)
+		if cls == "mystic":
+			cv.poly([Vector2(9, 13), Vector2(23, 13), Vector2(28, 29), Vector2(4, 29)], accent.darkened(0.45))
+			cv.line(16, 14, 16, 28, accent.darkened(0.6))
+			cv.line(11, 14, 9, 28, accent.darkened(0.55))
+			cv.line(21, 14, 23, 28, accent.darkened(0.55))
+			cv.poly([Vector2(16, 0), Vector2(18, 2), Vector2(16, 4), Vector2(14, 2)], accent.lightened(0.45))
+		if not aa.is_empty():
+			_armor_fb(cv, 1, aa)
+		if cls != "mystic":
+			cv.rrect(10, 14, 12, 9, 2.0, metal)
+			cv.rrect(11, 15, 4, 7, 1.5, metal.lightened(0.3))
+			cv.rrect(17, 15, 4, 7, 1.5, metal.lightened(0.3))
+			cv.rect(11, 17, 4, 1, accent)
+			cv.rect(17, 17, 4, 1, accent)
+		if cls == "scout":
+			cv.line(23, 4, 25, 0, dark)
+			cv.disc(25, 1, 1.4, accent.lightened(0.5))
+		elif cls == "brute":
+			cv.ell(6.5, 14, 3.6, 2.8, accent)
+			cv.ell(25.5, 14, 3.6, 2.8, accent)
+			cv.rect(13, 12, 6, 2, accent.darkened(0.1))
+		elif cls == "gambler":
+			cv.rect(9, 5, 14, 2, Color("ffd84f"))
+			cv.rect(9, 5, 14, 1, Color("fff1a0"))
+		if not ba.is_empty():
+			_boot(cv, 9, 26 + dl, 7, ba, false)
+			_boot(cv, 16, 26 + dr, 7, ba, false)
+		if not ta.is_empty():
+			_trinket(cv, ta, 20, 22, 0.9)
+		if not ha.is_empty():
+			_helm(cv, 1, ha)
+		if not wa.is_empty():
+			_weapon(cv, wa, Vector2(25.5, 22.0), Vector2(0.22, -0.97), 0.8)
+	else:
+		# ---- front view
+		if cls == "mystic":
+			cv.poly([Vector2(9, 13), Vector2(23, 13), Vector2(28, 29), Vector2(4, 29)], accent.darkened(0.45))
+		cv.rrect(7, 12, 18, 11, 2.0, metal)
+		cv.rrect(4, 14, 4, 8, 1.5, dark)
+		cv.rrect(24, 14, 4, 8, 1.5, dark)
+		cv.rrect(10, 21 + dl, 5, 8, 1.5, suit_d)
+		cv.rrect(17, 21 + dr, 5, 8, 1.5, suit_d)
+		cv.rrect(9, 26 + dl, 7, 5, 1.5, dark)
+		cv.rrect(16, 26 + dr, 7, 5, 1.5, dark)
+		cv.rrect(9, 13, 14, 10, 2.5, suit)
+		cv.rrect(5, 14, 5, 9, 2.0, suit)
+		cv.rrect(22, 14, 5, 9, 2.0, suit)
+		cv.rrect(5, 21, 5, 4, 1.5, dark)
+		cv.rrect(22, 21, 5, 4, 1.5, dark)
+		cv.ell(16, 8.5, 8.0, 7.5, suit)
+		cv.shade(0.22)
+		cv.ell(16, 9, 5.8, 4.6, dark)
+		cv.ell(16, 9, 5.0, 3.8, accent.darkened(0.5))
+		cv.ell(16, 8.6, 5.0, 3.0, accent)
+		cv.ell(14.5, 7.4, 2.6, 1.0, accent.lightened(0.6))
+		cv.px(19, 10, accent.lightened(0.7))
+		cv.rect(12, 15, 8, 5, dark)
+		cv.px(13, 16, Color("ff5d5d"))
+		cv.px(15, 16, Color("ffd84f"))
+		cv.px(17, 16, Color("6dff9a"))
+		cv.rect(13, 18, 6, 1, accent)
+		cv.rect(9, 22, 14, 2, accent.darkened(0.25))
+		cv.rect(15, 22, 2, 2, Color("ffd84f"))
+		cv.line(16, 20, 16, 21, suit_d)
+		cv.line(10, 14, 21, 14, suit_d)
+		cv.rect(10, 17, 1, 4, suit_d)
+		cv.rect(21, 17, 1, 4, suit_d)
+		cv.rect(11, 24 + dl, 4, 1, accent.darkened(0.2))
+		cv.rect(17, 24 + dr, 4, 1, accent.darkened(0.2))
+		cv.rect(10, 28 + dl, 5, 1, metal)
+		cv.rect(17, 28 + dr, 5, 1, metal)
+		if frame == 1:
+			cv.rect(23, 20, 4, 2, dark)
+		elif frame == 2:
+			cv.rect(5, 20, 4, 2, dark)
+		if cls == "scout":
+			cv.line(23, 4, 25, 0, dark)
+			cv.disc(25, 1, 1.4, accent.lightened(0.5))
+			cv.rect(8, 7, 2, 4, accent.darkened(0.2))
+		elif cls == "brute":
+			cv.ell(6.5, 14, 3.6, 2.8, accent)
+			cv.ell(25.5, 14, 3.6, 2.8, accent)
+			cv.px(5, 13, accent.lightened(0.5))
+			cv.rect(13, 12, 6, 2, accent.darkened(0.1))
+			cv.line(7, 11, 9, 12, accent.lightened(0.3))
+		elif cls == "mystic":
+			cv.poly([Vector2(16, 0), Vector2(18, 2), Vector2(16, 4), Vector2(14, 2)], accent.lightened(0.45))
+			cv.px(15, 1, Color.WHITE)
+		elif cls == "gambler":
+			cv.rect(9, 5, 14, 2, Color("ffd84f"))
+			cv.rect(9, 5, 14, 1, Color("fff1a0"))
+			cv.rect(14, 15, 5, 5, Color.WHITE)
+			cv.px(15, 16, Color("14141c"))
+			cv.px(17, 18, Color("14141c"))
+			cv.px(17, 16, Color("14141c"))
+			cv.px(15, 18, Color("14141c"))
+		if not aa.is_empty():
+			_armor_fb(cv, 0, aa)
+		if not ba.is_empty():
+			_boot(cv, 9, 26 + dl, 7, ba, false)
+			_boot(cv, 16, 26 + dr, 7, ba, false)
+		if not ta.is_empty():
+			_trinket(cv, ta, 10, 22, 0.9)
+		if not ha.is_empty():
+			_helm(cv, 0, ha)
+		if not wa.is_empty():
+			_weapon(cv, wa, Vector2(6.5, 22.0), Vector2(-0.22, -0.97), 0.8)
 	cv.outline(Color("0a0d1a"))
+	return cv
+
+
+func gear_icon(id: String, slot: String) -> ImageTexture:
+	var key := "gearicon_" + id
+	if cache.has(key):
+		return cache[key]
+	var cv := Cv.new(32, 32)
+	var ol := Color("0e1322")
+	if not ART.has(id):
+		cv.disc(16, 16, 9, Color("c9d3f0"))
+		cv.outline(ol)
+		var tf := cv.tex()
+		cache[key] = tf
+		return tf
+	var art: Dictionary = ART[id]
+	if slot == "weapon":
+		_weapon(cv, art, Vector2(5.5, 27.0), Vector2(0.62, -0.78).normalized(), 1.55)
+		cv.shade(0.16)
+		cv.outline(ol)
+	elif slot == "trinket":
+		_trinket(cv, art, 7, 7, 3.0)
+		cv.shade(0.2)
+		cv.outline(ol)
+	else:
+		var eq := {slot: id}
+		var full := _build_player(Color("4fd1ff"), "", 0, 0, eq)
+		var rect := Rect2i(8, 0, 16, 16)
+		if slot == "armour":
+			rect = Rect2i(8, 10, 16, 16)
+		elif slot == "boots":
+			rect = Rect2i(8, 16, 16, 16)
+		var sub: Image = full.img.get_region(rect)
+		sub.resize(32, 32, Image.INTERPOLATE_NEAREST)
+		cv.img = sub
+	cv.img.fix_alpha_edges()
 	var t := cv.tex()
 	cache[key] = t
 	return t
