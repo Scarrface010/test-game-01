@@ -3872,9 +3872,7 @@ func _draw_trade(acc: Color) -> void:
 
 func _draw_crate(ctr: Vector2, id: String, bob: float) -> void:
 	var d: Dictionary = gear_defs[id]
-	var tc := _tier_col(int(d["tier"]))
-	draw_circle(ctr + Vector2(0, bob), AC * 0.34, Color(tc.r, tc.g, tc.b, 0.16))
-	_spr(_gear_tex(id), ctr + Vector2(0, bob), AC * 0.66)
+	_spr(spr_gen.icon("crate_" + String(d["slot"])), ctr + Vector2(0, bob), AC * 0.62)
 
 
 func _draw_merchant(ctr: Vector2) -> void:
