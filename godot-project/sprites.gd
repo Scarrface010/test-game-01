@@ -1050,6 +1050,173 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 	return t
 
 
+# ---------------------------------------------------------------- turrets
+
+# dir: 0 faces down (towards the viewer), 1 up, 2 left, 3 right
+func _tbarrel(cv: Cv, dir: int, hx: int, hy: int, th: int, blen: int, col: Color, glow: Color, twin: bool) -> void:
+	var offs: Array[int] = []
+	if twin:
+		offs.append(-2)
+		offs.append(2)
+	else:
+		offs.append(0)
+	var bt := 2 if twin else th
+	for o in offs:
+		if dir == 3:
+			cv.rect(hx + 3, hy + o - bt / 2, blen, bt, col)
+			cv.rect(hx + 3, hy + o - bt / 2, blen, 1, col.lightened(0.3))
+			cv.rect(hx + 3 + blen - 2, hy + o - bt / 2, 2, bt, col.darkened(0.3))
+			cv.px(hx + 3 + blen, hy + o, glow)
+		elif dir == 2:
+			cv.rect(hx - 3 - blen, hy + o - bt / 2, blen, bt, col)
+			cv.rect(hx - 3 - blen, hy + o - bt / 2, blen, 1, col.lightened(0.3))
+			cv.rect(hx - 3 - blen, hy + o - bt / 2, 2, bt, col.darkened(0.3))
+			cv.px(hx - 4 - blen, hy + o, glow)
+		elif dir == 1:
+			cv.rect(hx + o - bt / 2, hy - 3 - blen, bt, blen, col)
+			cv.rect(hx + o - bt / 2, hy - 3 - blen, 1, blen, col.lightened(0.3))
+			cv.rect(hx + o - bt / 2, hy - 3 - blen, bt, 2, col.darkened(0.3))
+			cv.px(hx + o, hy - 4 - blen, glow)
+		else:
+			cv.rect(hx + o - bt / 2, hy + 2, bt, 5, col.darkened(0.15))
+			cv.disc(hx + o, hy + 3, float(bt) * 0.75, Color("0a0d1a"))
+			cv.disc(hx + o, hy + 3, float(bt) * 0.4, glow)
+
+
+func turret(ti: int, v: int, dir: int) -> ImageTexture:
+	var key := "tur_%d_%d_%d" % [ti, v, dir]
+	if cache.has(key):
+		return cache[key]
+	var cv := Cv.new(32, 32)
+	var hx := 16
+	var hy := 13
+	var base := Color("39415f")
+	var head := Color("9aa3c7")
+	var trim := Color("4a5270")
+	var glow := Color("7fe8ff")
+	var barrel := Color("6b7388")
+	var bth := 3
+	var blen := 10
+	var twin := false
+	if ti == 0 and v == 0:
+		pass
+	elif ti == 0:
+		base = Color("2a3050")
+		head = Color("4a5a8a")
+		trim = Color("ff9a3c")
+		glow = Color("ff7a45")
+		barrel = Color("3a4160")
+		bth = 6
+		blen = 8
+	elif ti == 1 and v == 0:
+		base = Color("6a4a2a")
+		head = Color("3fa84a")
+		trim = Color("8fe89a")
+		glow = Color("e8ffd0")
+		barrel = Color("c9e8a0")
+	elif ti == 1:
+		base = Color("6a4a2a")
+		head = Color("8a4fc0")
+		trim = Color("ff8ad0")
+		glow = Color("9dff4f")
+		barrel = Color("5a2f8a")
+		bth = 6
+		blen = 8
+	elif v == 0:
+		base = Color("7a4a1e")
+		head = Color("40485e")
+		trim = Color("c9a55a")
+		glow = Color("ffd84f")
+		barrel = Color("2a2f40")
+		blen = 11
+		twin = true
+	else:
+		base = Color("7a4a1e")
+		head = Color("5a6280")
+		trim = Color("ff5d5d")
+		glow = Color("ff7a45")
+		barrel = Color("3a4160")
+		bth = 6
+		blen = 8
+	# ---- pedestal
+	if ti == 0:
+		cv.ell(16, 27, 12, 4.5, base.darkened(0.3))
+		cv.ell(16, 26, 11, 4.0, base)
+		if v == 0:
+			cv.line(10, 25, 14, 19, trim, 2.0)
+			cv.line(22, 25, 18, 19, trim, 2.0)
+			cv.rect(15, 18, 2, 5, trim)
+		else:
+			cv.rrect(10, 18, 12, 9, 2.0, base.lightened(0.1))
+			cv.rect(10, 22, 12, 1, trim.darkened(0.3))
+	elif ti == 1:
+		cv.poly([Vector2(9, 21), Vector2(23, 21), Vector2(21, 30), Vector2(11, 30)], base)
+		cv.rect(8, 20, 16, 2, base.lightened(0.2))
+		cv.rect(10, 26, 12, 1, base.darkened(0.25))
+		var lf := Color("2f8a3a") if v == 0 else Color("5a8a2f")
+		cv.poly([Vector2(8, 21), Vector2(2, 17), Vector2(5, 22)], lf)
+		cv.poly([Vector2(24, 21), Vector2(30, 17), Vector2(27, 22)], lf)
+		cv.rect(15, 18, 2, 4, Color("2f7a3a"))
+	else:
+		cv.rrect(7, 19, 18, 11, 1.5, base)
+		cv.rect(7, 23, 18, 1, base.darkened(0.35))
+		cv.rect(7, 26, 18, 1, base.darkened(0.35))
+		cv.rect(7, 19, 18, 1, base.lightened(0.2))
+		for p in [Vector2i(8, 20), Vector2i(23, 20), Vector2i(8, 28), Vector2i(23, 28)]:
+			cv.px(p.x, p.y, trim)
+	# ---- barrel behind the head when facing up
+	if dir == 1:
+		_tbarrel(cv, dir, hx, hy, bth, blen - 1, barrel, glow, twin)
+	# ---- head
+	if ti == 0 and v == 0:
+		cv.ell(hx, hy, 6.5, 6.0, head)
+		cv.ell(hx, hy, 4.0, 3.6, trim)
+	elif ti == 0:
+		cv.ell(hx, hy - 0.5, 9.0, 7.0, head)
+		cv.rect(hx - 6, hy + 1, 3, 2, trim)
+		cv.rect(hx + 3, hy + 1, 3, 2, trim)
+	elif ti == 1 and v == 0:
+		cv.ell(hx, hy, 6.5, 6.5, head)
+		cv.poly([Vector2(hx - 7, hy + 4), Vector2(hx - 2, hy + 6), Vector2(hx - 6, hy + 8)], Color("2f8a3a"))
+		cv.poly([Vector2(hx + 7, hy + 4), Vector2(hx + 2, hy + 6), Vector2(hx + 6, hy + 8)], Color("2f8a3a"))
+		cv.px(hx - 3, hy - 3, trim)
+		cv.px(hx + 3, hy - 2, trim)
+	elif ti == 1:
+		cv.ell(hx, hy - 0.5, 9.0, 7.5, head)
+		cv.disc(hx - 4, hy - 3, 1.6, trim)
+		cv.disc(hx + 4, hy - 2, 1.3, trim)
+		cv.disc(hx + 1, hy - 5, 1.1, trim)
+	elif v == 0:
+		cv.rrect(hx - 7, hy - 4, 14, 11, 2.0, head)
+		cv.rect(hx - 7, hy - 4, 14, 2, trim)
+		cv.px(hx - 6, hy + 5, trim)
+		cv.px(hx + 5, hy + 5, trim)
+	else:
+		cv.rrect(hx - 8, hy - 5, 16, 12, 2.0, head)
+		cv.rect(hx - 8, hy + 1, 16, 1, trim.darkened(0.4))
+		cv.px(hx - 6, hy - 3, trim)
+		cv.px(hx + 6, hy - 3, trim)
+	# ---- barrel in front of the head for the other directions
+	if dir != 1:
+		_tbarrel(cv, dir, hx, hy, bth, blen, barrel, glow, twin)
+	# eye / sensor
+	if dir == 1:
+		cv.px(hx, hy + 2, glow)
+	elif dir == 0:
+		cv.px(hx - 4, hy - 3, glow)
+		cv.px(hx + 4, hy - 3, glow)
+	elif dir == 3:
+		cv.px(hx + 1, hy - 3, glow)
+	else:
+		cv.px(hx - 1, hy - 3, glow)
+	cv.shade(0.2)
+	cv.outline(Color("0a0d1a"))
+	cv.img.fix_alpha_edges()
+	var t := cv.tex()
+	cache[key] = t
+	return t
+
+
 # ---------------------------------------------------------------- items
 
 func item(kind: String) -> ImageTexture:
@@ -1278,6 +1445,85 @@ func icon(name: String) -> ImageTexture:
 		cv.rrect(10, 12, 12, 10, 2.0, col.darkened(0.55))
 		_slot_picto(cv, slot, col)
 		cv.outline(Color("120c06"))
+	elif name == "haz_arc":
+		cv.rrect(3, 3, 26, 26, 3.0, Color("2a3050"))
+		cv.rect(4, 4, 24, 1, Color("5a6a9a"))
+		for p in [Vector2i(5, 5), Vector2i(26, 5), Vector2i(5, 26), Vector2i(26, 26)]:
+			cv.rect(p.x - 1, p.y - 1, 3, 3, Color("ffe14f"))
+		cv.rect(7, 7, 18, 18, Color("181e38"))
+		cv.poly([Vector2(18, 6), Vector2(10, 17), Vector2(15, 17), Vector2(12, 27), Vector2(23, 14), Vector2(17, 14)], Color("ffe14f"))
+		cv.poly([Vector2(18, 9), Vector2(13, 16), Vector2(17, 16), Vector2(15, 22), Vector2(20, 15), Vector2(16, 15)], Color("fff6b0"))
+		cv.outline(Color("0a0d1a"))
+	elif name == "haz_breach":
+		cv.rrect(3, 3, 26, 26, 3.0, Color("2f3550"))
+		cv.ell(16, 16, 9, 7, Color("05080f"))
+		cv.ell(16, 16, 6, 4.5, Color("0b1730"))
+		cv.line(4, 6, 12, 11, Color("7fd8ff"))
+		cv.line(28, 5, 21, 11, Color("7fd8ff"))
+		cv.line(5, 27, 11, 21, Color("7fd8ff"))
+		cv.line(27, 26, 21, 21, Color("7fd8ff"))
+		cv.ell(16, 16, 9, 7, Color(0, 0, 0, 0))
+		cv.ell(16, 16, 9, 7, Color("05080f"))
+		cv.px(13, 14, Color("cfeeff"))
+		cv.px(18, 17, Color("cfeeff"))
+		cv.rect(5, 4, 4, 1, Color("5a6a9a"))
+		cv.outline(Color("0a0d1a"))
+	elif name == "haz_toxic":
+		cv.ell(16, 19, 14, 9, Color("1f5a2a"))
+		cv.ell(16, 18, 12.5, 8, Color("3fb04a"))
+		cv.ell(16, 17.5, 10, 6, Color("6fe06a"))
+		cv.disc(11, 17, 2.2, Color("b8ffa8"))
+		cv.disc(20, 20, 1.6, Color("b8ffa8"))
+		cv.disc(17, 15, 1.2, Color("e8ffd8"))
+		cv.px(10, 16, Color.WHITE)
+		cv.ell(16, 18, 14, 9, Color(0, 0, 0, 0))
+		cv.ell(16, 19, 14, 9, Color("1f5a2a"))
+		cv.ell(16, 18, 12.5, 8, Color("3fb04a"))
+		cv.ell(16, 17.5, 10, 6, Color("6fe06a"))
+		cv.disc(11, 17, 2.2, Color("b8ffa8"))
+		cv.disc(20, 20, 1.6, Color("b8ffa8"))
+		cv.disc(17, 15, 1.2, Color("e8ffd8"))
+		cv.px(10, 16, Color.WHITE)
+		cv.outline(Color("0a2a10"))
+	elif name == "haz_slick":
+		cv.ell(16, 19, 14, 9, Color("2a8a80"))
+		cv.ell(16, 18, 12.5, 8, Color("6fe0c8"))
+		cv.line(7, 16, 16, 13, Color("e8fff8"))
+		cv.line(18, 22, 25, 19, Color("b8fff0"))
+		cv.rect(10, 11, 2, 4, Color("e8dcc0"))
+		cv.ell(11, 10.5, 3.2, 2.2, Color("c07cff"))
+		cv.rect(21, 14, 2, 3, Color("e8dcc0"))
+		cv.ell(22, 13.5, 2.5, 1.8, Color("ff8ad0"))
+		cv.px(10, 10, Color("f0d8ff"))
+		cv.outline(Color("0a3a34"))
+	elif name == "haz_mine":
+		cv.ell(16, 26, 10, 3, Color(0, 0, 0, 0.35))
+		for i in 8:
+			var a := i * TAU / 8.0
+			cv.disc(16 + cos(a) * 9.5, 17 + sin(a) * 9.5, 1.8, Color("5a6070"))
+		cv.disc(16, 17, 8.5, Color("3a3f4f"))
+		cv.disc(16, 17, 6.0, Color("4a5062"))
+		cv.rect(10, 16, 12, 2, Color("2a2f3f"))
+		cv.disc(16, 17, 2.6, Color("ff4f4f"))
+		cv.px(15, 16, Color("ffc0c0"))
+		cv.px(11, 13, Color("8a93a8"))
+		cv.px(12, 12, Color("8a93a8"))
+		cv.outline(Color("0a0d1a"))
+	elif name == "haz_alarm":
+		cv.rect(3, 6, 4, 22, Color("5a6070"))
+		cv.rect(25, 6, 4, 22, Color("5a6070"))
+		cv.rect(3, 6, 1, 22, Color("8a93a8"))
+		cv.rect(25, 6, 1, 22, Color("8a93a8"))
+		cv.rect(2, 4, 6, 3, Color("ff4f4f"))
+		cv.rect(24, 4, 6, 3, Color("ff4f4f"))
+		cv.line(7, 16, 25, 16, Color("ff7a7a"))
+		cv.line(7, 17, 25, 17, Color("a82a2a"))
+		cv.rrect(13, 11, 6, 7, 1.5, Color("ffd84f"))
+		cv.px(15, 14, Color("5a4500"))
+		cv.px(16, 14, Color("5a4500"))
+		cv.rect(3, 27, 4, 2, Color("3a3f4f"))
+		cv.rect(25, 27, 4, 2, Color("3a3f4f"))
+		cv.outline(Color("0a0d1a"))
 	elif name == "medstation":
 		cv.ell(16, 27, 13, 3, Color("1b2440"))
 		cv.rrect(6, 5, 20, 21, 3.0, Color("dfe8f2"))

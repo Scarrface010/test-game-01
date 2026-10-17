@@ -96,3 +96,8 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - Every equipped item is drawn on the character (weapon in hand, helmet, armour, boots, trinket), in each direction.
 - All 62 gear items have their own sprite (sprites.gd `ART` table); shown on floor pickups, the outfitter, GEAR and PACK tabs.
 - Adventure spikes now damage health (scales with floor and level; shield soaks it; Heavy Boots still negate; Steel halves it; Ember doubles it) instead of costing air.
+
+## v18 - Turrets and themed hazards (adventure)
+- Two turret types per theme (Laser Sentry / Plasma Cannon, Thorn Shooter / Spore Spitter, Auto Gun / Rocket Rack). They never move, face one of four directions (set at spawn) and shoot 5 tiles down that lane. Sentries fire every step, cannons every other step. Damage equals a monster of their level. They can be fought, zapped or bombed; other monsters block their shots.
+- Six hazards: Arc plate (shocks only while lit) and Hull breach (-8 air) on the station; Toxic pool (poison 4 steps, cured by Nano Injector or medical station) and Slick patch (skid one tile) in the jungle; Mine (big blast, hurts nearby monsters) and Alarm gate (wakes nearby monsters into hunters) in the smuggler world. Bombs clear hazards.
+- Tutorial pages TURRETS and HAZARDS added.
