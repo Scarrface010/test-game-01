@@ -175,12 +175,16 @@ var lb_status := ""
 var lb_mode := 0
 var tut_page := 0
 var adv_text := {
-	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions and power cells give double XP", "slayer": "Elites give 50% more XP",
+	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
-	"boots": "Spikes no longer cost air", "skeleton": "The exit needs 4 fewer points",
+	"boots": "Spikes no longer hurt you", "skeleton": "The exit needs 4 fewer points",
 	"blade": "Every kill gives 50% more XP, but the exit needs 12 more points",
 	"iron": "+8 starting air per level", "oil": "Air pods give +5 air; +1 sight per 2 levels",
-	"steel": "Spikes hurt half as much", "gate": "The exit needs 4 fewer points per level",
+	"steel": "Spikes hurt half as much", "haggle": "Gear is 2 coins cheaper; tools and heals 1 cheaper",
+	"syn_vanguard_alchemist": "Potions give another +20% of a level's XP (+25% for overcharged)",
+	"syn_slowdark_lantern": "Scanner pulses reach even further",
+	"syn_skeleton_boots": "The exit needs another 4 fewer points",
+	"syn_phoenix_aegis": "Phoenix revive also gives +1 level", "gate": "The exit needs 4 fewer points per level",
 	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.",
 	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
@@ -1207,6 +1211,9 @@ func _die(why: String) -> void:
 		hp = hp_cap()
 		oxy = oxy_max
 		msg = "Phoenix Feather burns up! Health and air fully restored"
+		if syn("phoenix", "aegis"):
+			_adv_level_up(1)
+			msg += " (+1 level)"
 		_pop(pos, "REBORN", Color("ffb347"))
 		_sfx("shield")
 		return
@@ -3074,7 +3081,8 @@ func _draw_overlay(acc: Color) -> void:
 					for dd in relic_defs:
 						if dd["id"] == other:
 							oname = String(dd["name"])
-					var stxt := ("SYNERGY ACTIVE: " + String(sy["text"])) if have else ("Synergy with %s: %s" % [oname, sy["text"]])
+					var sytxt := _atext("syn_%s_%s" % [String(sy["a"]), String(sy["b"])], String(sy["text"]))
+					var stxt := ("SYNERGY ACTIVE: " + sytxt) if have else ("Synergy with %s: %s" % [oname, sytxt])
 					_txt(stxt, Vector2(rr.position.x + 22, rr.end.y - 10), 16, Color("ffd84f") if have else Color(1, 1, 1, 0.45), rr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
 					break
 		_button(btn_skip, "SKIP  (+3 coins)", Color(1, 1, 1, 0.75), 26)
