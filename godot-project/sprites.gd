@@ -225,6 +225,21 @@ const ART := {
 	"fusioncell": {"s": "fusion", "a": "6dff9a", "b": "eaffee"},
 	"stationheart": {"s": "heart", "a": "ff4f6a", "b": "ffc0cc"},
 	"overlord": {"s": "overlord", "a": "c07cff", "b": "ffd84f"},
+	"prismblade": {"s": "blade", "a": "d58cff", "b": "f5e6ff", "c": "3a2a6a"},
+	"shardspear": {"s": "lance", "a": "c9a0ff", "b": "7fe8ff", "c": "4a3a6a"},
+	"scattergun": {"s": "carbine", "a": "8a6a4a", "b": "ff9a3c", "c": "3a2a1a"},
+	"gaussrep": {"s": "rifle", "a": "4a6a6a", "b": "7fffd4", "c": "1a2a2a"},
+	"targetvisor": {"s": "visor", "a": "6a7a5a", "b": "ff5d5d"},
+	"crystalhelm": {"s": "riot", "a": "6a4fc0", "b": "d0a8ff"},
+	"hazmask": {"s": "mask", "a": "c9a23a", "b": "3a3a3a"},
+	"crystalmail": {"s": "titan", "a": "8a5ad0", "b": "7fe8ff"},
+	"ghillie": {"s": "jacket", "a": "4a6a3a", "b": "9ac86a"},
+	"mirrorvest": {"s": "kevlar", "a": "c5cde6", "b": "ffffff"},
+	"crystaltreads": {"s": "hover", "a": "6a4fc0", "b": "ff8ad0"},
+	"hazboots": {"s": "grip", "a": "c9a23a", "b": "2b2f3d"},
+	"ammorecycler": {"s": "cell", "a": "ffd84f", "b": "fff6b0"},
+	"scopemod": {"s": "lens", "a": "ff5d5d", "b": "ffd0d0"},
+	"critoptics": {"s": "lens", "a": "d58cff", "b": "f5e6ff"},
 }
 
 const SLOT_ORDER := ["weapon", "helmet", "armour", "boots", "trinket"]
@@ -1123,8 +1138,8 @@ func corpse(ti: int, lvl: int, boss: bool, tv: int, td: int, fl: int) -> ImageTe
 	var key := "corpse_%d_%d_%d_%d_%d_%d" % [ti, lvl, 1 if boss else 0, tv, td, fl]
 	if cache.has(key):
 		return cache[key]
-	var pcols: Array = [Color("7a1f2e"), Color("3f7a2a"), Color("5a2a8a")]
-	var pc: Color = pcols[ti % 3]
+	var pcols: Array = [Color("7a1f2e"), Color("3f7a2a"), Color("5a2a8a"), Color("3a5aa0")]
+	var pc: Color = pcols[ti % 4]
 	var out := Image.create(32, 32, false, Image.FORMAT_RGBA8)
 	var src: Image
 	if tv >= 0:
@@ -1238,6 +1253,22 @@ func turret(ti: int, v: int, dir: int) -> ImageTexture:
 		barrel = Color("5a2f8a")
 		bth = 6
 		blen = 8
+	elif ti == 3 and v == 0:
+		base = Color("3a2a6a")
+		head = Color("b58cff")
+		trim = Color("e8d0ff")
+		glow = Color("ff8ad0")
+		barrel = Color("7fe8ff")
+		bth = 2
+		blen = 11
+	elif ti == 3:
+		base = Color("3a2a6a")
+		head = Color("6a4fc0")
+		trim = Color("ffd0ff")
+		glow = Color("7fe8ff")
+		barrel = Color("a070ff")
+		bth = 6
+		blen = 8
 	elif v == 0:
 		base = Color("7a4a1e")
 		head = Color("40485e")
@@ -1273,6 +1304,12 @@ func turret(ti: int, v: int, dir: int) -> ImageTexture:
 		cv.poly([Vector2(8, 21), Vector2(2, 17), Vector2(5, 22)], lf)
 		cv.poly([Vector2(24, 21), Vector2(30, 17), Vector2(27, 22)], lf)
 		cv.rect(15, 18, 2, 4, Color("2f7a3a"))
+	elif ti == 3:
+		cv.poly([Vector2(8, 30), Vector2(10, 21), Vector2(13, 30)], base.lightened(0.15))
+		cv.poly([Vector2(12, 30), Vector2(16, 19), Vector2(20, 30)], base.lightened(0.3))
+		cv.poly([Vector2(19, 30), Vector2(22, 21), Vector2(25, 30)], base.lightened(0.1))
+		cv.line(16, 21, 16, 29, trim.darkened(0.2))
+		cv.ell(16, 29.5, 11, 2.5, base.darkened(0.3))
 	else:
 		cv.rrect(7, 19, 18, 11, 1.5, base)
 		cv.rect(7, 23, 18, 1, base.darkened(0.35))
@@ -1302,6 +1339,14 @@ func turret(ti: int, v: int, dir: int) -> ImageTexture:
 		cv.disc(hx - 4, hy - 3, 1.6, trim)
 		cv.disc(hx + 4, hy - 2, 1.3, trim)
 		cv.disc(hx + 1, hy - 5, 1.1, trim)
+	elif ti == 3 and v == 0:
+		cv.poly([Vector2(hx, hy - 8), Vector2(hx + 6, hy), Vector2(hx, hy + 7), Vector2(hx - 6, hy)], head)
+		cv.poly([Vector2(hx, hy - 8), Vector2(hx + 2, hy), Vector2(hx, hy + 7), Vector2(hx - 6, hy)], head.lightened(0.25))
+		cv.px(hx - 2, hy - 3, trim)
+	elif ti == 3:
+		cv.poly([Vector2(hx - 4, hy - 8), Vector2(hx + 5, hy - 6), Vector2(hx + 9, hy + 1), Vector2(hx + 4, hy + 7), Vector2(hx - 6, hy + 6), Vector2(hx - 9, hy - 1)], head)
+		cv.poly([Vector2(hx - 4, hy - 8), Vector2(hx + 1, hy - 1), Vector2(hx - 9, hy - 1)], head.lightened(0.3))
+		cv.px(hx + 4, hy - 3, trim)
 	elif v == 0:
 		cv.rrect(hx - 7, hy - 4, 14, 11, 2.0, head)
 		cv.rect(hx - 7, hy - 4, 14, 2, trim)
@@ -1625,6 +1670,27 @@ func icon(name: String) -> ImageTexture:
 		cv.px(11, 13, Color("8a93a8"))
 		cv.px(12, 12, Color("8a93a8"))
 		cv.outline(Color("0a0d1a"))
+	elif name == "haz_warp":
+		cv.rrect(3, 3, 26, 26, 3.0, Color("2a1c46"))
+		cv.ell(16, 16, 10, 10, Color("120a22"))
+		for i in 3:
+			var rr := 9.0 - i * 3.0
+			cv.ell(16, 16, rr, rr * 0.9, [Color("7fe8ff"), Color("d58cff"), Color("ff8ad0")][i])
+			cv.ell(16, 16, rr - 1.5, (rr - 1.5) * 0.9, Color("120a22"))
+		cv.disc(16, 16, 1.6, Color("ffffff"))
+		for p in [Vector2i(5, 5), Vector2i(26, 5), Vector2i(5, 26), Vector2i(26, 26)]:
+			cv.px(p.x, p.y, Color("d58cff"))
+		cv.outline(Color("0a0d1a"))
+	elif name == "haz_shard":
+		cv.ell(16, 26, 12, 3.5, Color(0, 0, 0, 0.35))
+		cv.poly([Vector2(4, 27), Vector2(8, 12), Vector2(12, 27)], Color("8a5ad0"))
+		cv.poly([Vector2(10, 27), Vector2(16, 4), Vector2(22, 27)], Color("c9a0ff"))
+		cv.poly([Vector2(16, 4), Vector2(18, 16), Vector2(22, 27), Vector2(16, 27)], Color("a070e8"))
+		cv.poly([Vector2(20, 27), Vector2(25, 10), Vector2(29, 27)], Color("7fe8ff"))
+		cv.line(16, 6, 16, 14, Color("f0e0ff"))
+		cv.px(8, 14, Color.WHITE)
+		cv.px(25, 12, Color.WHITE)
+		cv.outline(Color("0a0d1a"))
 	elif name == "haz_alarm":
 		cv.rect(3, 6, 4, 22, Color("5a6070"))
 		cv.rect(25, 6, 4, 22, Color("5a6070"))
@@ -1866,6 +1932,8 @@ func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
 		_floor0(cv, base, rng, variant)
 	elif ti == 1:
 		_floor1(cv, base, rng, variant)
+	elif ti == 3:
+		_floor3(cv, base, rng, variant)
 	else:
 		_floor2(cv, base, rng, variant)
 	cv.img.fix_alpha_edges()
@@ -2066,6 +2134,44 @@ func _floor1(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
 				cv.px(int(q.x) - 1, int(q.y), Color("5fc06a"))
 
 
+func _floor3(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
+	var dk := base.darkened(0.4)
+	for i in rng.randi_range(2, 4):
+		var sx := rng.randi_range(2, 28)
+		var sy := rng.randi_range(2, 28)
+		cv.line(sx, sy, sx + rng.randi_range(-8, 8), sy + rng.randi_range(-8, 8), dk)
+	for i in 32:
+		cv.px(i, 0, dk)
+		cv.px(0, i, dk)
+		cv.px(i, 31, base.darkened(0.15))
+		cv.px(31, i, base.darkened(0.15))
+	if v == 3:
+		cv.poly([Vector2(4, 28), Vector2(8, 22), Vector2(12, 28)], base.lightened(0.1))
+	elif v == 6 or v == 7:
+		var ox := rng.randi_range(8, 22)
+		var oy := rng.randi_range(14, 26)
+		cv.poly([Vector2(ox - 3, oy), Vector2(ox - 1, oy - 9), Vector2(ox + 1, oy)], Color("a070ff"))
+		cv.poly([Vector2(ox, oy), Vector2(ox + 2, oy - 12), Vector2(ox + 5, oy)], Color("d0a8ff"))
+		cv.poly([Vector2(ox + 4, oy), Vector2(ox + 6, oy - 6), Vector2(ox + 8, oy)], Color("7fe8ff"))
+		cv.px(ox + 2, oy - 11, Color.WHITE)
+	elif v == 8 or v == 9:
+		var vy := rng.randi_range(6, 24)
+		cv.line(0, vy, 31, vy + rng.randi_range(-6, 6), Color("7fe8ff").darkened(0.3))
+		cv.line(0, vy + 1, 31, vy + 1 + rng.randi_range(-6, 6), Color("d58cff").darkened(0.2))
+	elif v == 10 or v == 11:
+		var ox2 := rng.randf_range(11.0, 21.0)
+		var oy2 := rng.randf_range(11.0, 21.0)
+		cv.ell(ox2, oy2, 7.0, 4.5, base.darkened(0.5))
+		cv.ell(ox2 - 1.0, oy2 - 1.0, 4.0, 2.5, Color("5a3aa0"))
+		cv.px(int(ox2) - 2, int(oy2) - 2, Color("ffd0ff"))
+	elif v >= 12:
+		for k in 5:
+			var gx := rng.randi_range(3, 28)
+			var gy := rng.randi_range(3, 28)
+			cv.px(gx, gy, Color("d0a8ff"))
+			cv.px(gx + 1, gy, Color("7fe8ff"))
+
+
 func _floor2(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
 	for y in [0, 16]:
 		cv.rect(0, y, 32, 1, base.darkened(0.45))
@@ -2213,6 +2319,21 @@ func wall_tile(ti: int) -> ImageTexture:
 			var fy := rng.randi_range(4, 27)
 			cv.disc(fx, fy, 1.6, Color("ff5c7a"))
 			cv.px(fx, fy, Color("ffd0da"))
+	elif ti == 3:
+		for i in 32:
+			for e in [0, 31]:
+				cv.px(i, e, base.darkened(0.7))
+				cv.px(e, i, base.darkened(0.7))
+			cv.px(i, 1, base.lightened(0.2))
+			cv.px(1, i, base.lightened(0.2))
+		for k in 6:
+			var cx := 4 + k * 5
+			var ch := rng.randi_range(8, 20)
+			cv.poly([Vector2(cx, 29), Vector2(cx + 2, 29 - ch), Vector2(cx + 5, 29)], base.lightened(0.1 + 0.08 * (k % 3)))
+			cv.line(cx + 2, 29 - ch, cx + 2, 28, base.lightened(0.45))
+		cv.rect(2, 29, 28, 2, base.darkened(0.45))
+		for i in 8:
+			cv.px(rng.randi_range(3, 28), rng.randi_range(3, 26), Color("ffd0ff"))
 	else:
 		for i in 32:
 			for e in [0, 31]:
@@ -2243,8 +2364,8 @@ func wall_tile(ti: int) -> ImageTexture:
 
 # ---------------------------------------------------------------- monsters
 
-func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture:
-	var key := "m%d_%d_%d_%d" % [ti, lvl, 1 if boss else 0, 1 if blink else 0]
+func monster(ti: int, lvl: int, boss: bool, blink: bool = false, dir: int = 0) -> ImageTexture:
+	var key := "m%d_%d_%d_%d_%d" % [ti, lvl, 1 if boss else 0, 1 if blink else 0, dir]
 	if cache.has(key):
 		return cache[key]
 	var cols: Array = themes[ti]["mcols"]
@@ -2258,6 +2379,7 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 		[Color("3f5f8f"), Color("7a8296"), Color("8a3f3f"), Color("4a4f68")],
 		[Color("3f7a3f"), Color("6a4f2a"), Color("2f6a5a"), Color("7a6a2a")],
 		[Color("6a3a2a"), Color("3a3a4a"), Color("7a2f3f"), Color("4a4a2a")],
+		[Color("4a3a8a"), Color("6a5ab0"), Color("2a4a7a"), Color("5a2a6a")],
 	]
 	var cloth: Color = (outfits[ti] as Array)[rng.randi() % 4]
 	if absf(cloth.h - skin.h) < 0.05 and absf(cloth.v - skin.v) < 0.25:
@@ -2341,6 +2463,9 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 			cv.line(hx, topy + 2, hx + (k - 2) * 1.4, topy - 2.5 + abs(k - 2) * 1.0, skin_dk, 2.0)
 	cv.shade(0.3)
 	# --- details (after shading so they stay crisp)
+	var real_cv: Cv = cv
+	if dir != 0:
+		cv = Cv.new(32, 32)
 	var ey := hcy - 0.8
 	var etype := rng.randi() % 4
 	var glow := Color("ff4a4a") if boss else Color("fffbe6")
@@ -2400,6 +2525,11 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 		for k in 3:
 			var tx := 13.5 + k * 2.5
 			cv.line(tx, my + 2, tx + (k - 1) * 0.8, my + 5.5, skin_dk, 1.4)
+	cv = real_cv
+	if dir == 1:
+		cv.line(12, hcy - 1, 20, hcy - 1, skin_dk)
+		cv.line(13, hcy + 2, 19, hcy + 2, skin_dk)
+		cv.rect(14, int(hcy) - 4, 4, 2, skin_lt)
 	# --- outfit details per theme
 	if ti == 0:
 		cv.rect(int(16 - tw), 19, int(tw * 2), 2, cloth_dk)
@@ -2421,6 +2551,15 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 		for k in 3:
 			var lh := 16.0 + (k - 1) * 3.6
 			cv.poly([Vector2(lh - 1.5, topy + 3), Vector2(lh + 1.5, topy + 3), Vector2(lh, topy - 2.5 - (k % 2))], Color("5fc06a"))
+	elif ti == 3:
+		for k in 2:
+			var sg := -1.0 if k == 0 else 1.0
+			var sx3 := 16.0 + sg * (tw - 1.0)
+			cv.poly([Vector2(sx3 - 2.0, 14), Vector2(sx3 + 2.0, 14), Vector2(sx3 + sg * 1.0, 6.5)], Color("c9a0ff"))
+			cv.poly([Vector2(sx3 - 1.0, 14), Vector2(sx3 + 1.0, 14), Vector2(sx3, 9)], Color("f0e0ff"))
+		cv.poly([Vector2(16, 14), Vector2(18.5, 17.5), Vector2(16, 21), Vector2(13.5, 17.5)], Color("7fe8ff"))
+		cv.poly([Vector2(16, 14), Vector2(16.8, 17.5), Vector2(16, 21), Vector2(13.5, 17.5)], Color("d6fbff"))
+		cv.rect(int(16 - tw), 22, int(tw * 2), 1, cloth_lt)
 	else:
 		cv.line(16 - tw + 1, 12, 16 + tw - 1, 22, Color("4a3220"), 2.0)
 		cv.rect(int(16 - tw), 20, int(tw * 2), 2, Color("3a2814"))
@@ -2449,7 +2588,15 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 		cv.rect(int(hxw) + 3, 23, 3, 1, Color("39415f"))
 		cv.px(int(hxw) + 2, 23, Color("4fd1ff"))
 	# --- boss extras
-	if boss:
+	if boss and ti == 3:
+		var cy3 := int(topy) - 1
+		for k in 5:
+			var kx := 9.0 + k * 3.5
+			cv.poly([Vector2(kx - 1.8, cy3 + 4), Vector2(kx + 1.8, cy3 + 4), Vector2(kx, cy3 - 4 - (3 if k == 2 else 0))], Color("d58cff") if k % 2 == 0 else Color("7fe8ff"))
+		cv.rect(4, 13, 24, 2, Color("6a3aa0"))
+		cv.px(8, 13, Color("7fe8ff"))
+		cv.px(23, 13, Color("ff8ad0"))
+	elif boss:
 		var cy0 := int(topy) - 1
 		cv.poly([Vector2(9, cy0 + 4), Vector2(9, cy0 - 3), Vector2(12.5, cy0 + 1), Vector2(16, cy0 - 5), Vector2(19.5, cy0 + 1), Vector2(23, cy0 - 3), Vector2(23, cy0 + 4)], Color("ffc93c"))
 		cv.rect(9, cy0 + 3, 14, 2, Color("c98a12"))
@@ -2459,8 +2606,30 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false) -> ImageTexture
 		cv.rect(4, 13, 24, 2, Color("c93b3b"))
 		cv.px(8, 13, Color("ffd84f"))
 		cv.px(23, 13, Color("ffd84f"))
+	if dir >= 2:
+		var side_src: Image = cv.img.duplicate()
+		side_src.resize(22, 32, Image.INTERPOLATE_NEAREST)
+		cv.img.fill(Color(0, 0, 0, 0))
+		cv.img.blend_rect(side_src, Rect2i(0, 0, 22, 32), Vector2i(5, 0))
+		var fx0 := 16.0 + hrx * 0.3
+		if blink:
+			cv.line(fx0 - 1.5, ey + 0.5, fx0 + 1.5, ey + 0.5, pupil)
+		else:
+			cv.ell(fx0, ey, 1.8, 2.1, pupil)
+			cv.ell(fx0, ey, 1.3, 1.6, glow)
+			cv.disc(fx0 + 0.4, ey + 0.4, 0.8, pupil if not boss else Color("7a0a0a"))
+			cv.px(int(fx0 - 0.4), int(ey - 0.8), Color.WHITE)
+			if etype != 2:
+				cv.ell(fx0 - 3.2, ey + 0.3, 1.2, 1.5, pupil)
+				cv.ell(fx0 - 3.2, ey + 0.3, 0.8, 1.1, glow)
+		cv.line(fx0 - 1.5, ey - 3.0, fx0 + 2.0, ey - 2.2, skin_dk.darkened(0.3), 1.5)
+		cv.px(int(16.0 + hrx * 0.69) - 1, int(hcy + 1.5), skin_dk.darkened(0.3))
+		cv.rect(int(fx0) - 1, int(my), 4, 2, Color("2a0f18"))
+		cv.px(int(fx0), int(my), Color("f6efd6"))
 	cv.outline(skin.darkened(0.85))
 	cv.img.fix_alpha_edges()
+	if dir == 2:
+		cv.img.flip_x()
 	var t := cv.tex()
 	cache[key] = t
 	return t

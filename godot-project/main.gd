@@ -79,10 +79,10 @@ var poison_d := 1
 var slide_depth := 0
 const TDIRS: Array[Vector2i] = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0)]
 const TUR_RANGE := 5
-const TUR_NAMES := [["Laser Sentry", "Plasma Cannon"], ["Thorn Shooter", "Spore Spitter"], ["Auto Gun", "Rocket Rack"]]
-const TUR_COLS := [[Color("7fe8ff"), Color("ff9a3c")], [Color("9dff6a"), Color("c07cff")], [Color("ffe14f"), Color("ff5d5d")]]
-const HAZ_IDS := [["arc", "breach"], ["toxic", "slick"], ["mine", "alarm"]]
-const HAZ_NAMES := {"arc": "Arc plate", "breach": "Hull breach", "toxic": "Toxic pool", "slick": "Slick patch", "mine": "Mine", "alarm": "Alarm gate"}
+const TUR_NAMES := [["Laser Sentry", "Plasma Cannon"], ["Thorn Shooter", "Spore Spitter"], ["Auto Gun", "Rocket Rack"], ["Prism Beam", "Shard Launcher"]]
+const TUR_COLS := [[Color("7fe8ff"), Color("ff9a3c")], [Color("9dff6a"), Color("c07cff")], [Color("ffe14f"), Color("ff5d5d")], [Color("ff8ad0"), Color("7fe8ff")]]
+const HAZ_IDS := [["arc", "breach"], ["toxic", "slick"], ["mine", "alarm"], ["warp", "shard"]]
+const HAZ_NAMES := {"arc": "Arc plate", "breach": "Hull breach", "toxic": "Toxic pool", "slick": "Slick patch", "mine": "Mine", "alarm": "Alarm gate", "warp": "Warp pad", "shard": "Crystal shards"}
 var walls: Dictionary = {}    # Vector2i -> true
 var portals: Dictionary = {}  # Vector2i -> Vector2i (both directions)
 var walk: Array[Vector2i] = []
@@ -365,6 +365,13 @@ func _make_themes() -> void:
 			"mons": ["Pest", "Cutpurse", "Bruiser", "Gunhand", "Enforcer", "Captain", "Assassin", "Warlord", "Kingpin"],
 			"pot": "Medkit", "gate": "Cargo door", "boss": "Crime Lord",
 		},
+		{
+			"name": "CRYSTAL DEEP", "bg": Color("120a22"), "tile": Color("221540"), "tile2": Color("2a1b4e"),
+			"wall": Color("6a4fa0"), "accent": Color("d58cff"), "dark": Color("04020a"),
+			"mcols": [Color("c9a0ff"), Color("7fe8ff"), Color("ff8ad0"), Color("a0ffd8"), Color("ffe08a"), Color("8fa0ff"), Color("ff9a7a"), Color("e0c8ff"), Color("ff5cc8")],
+			"mons": ["Glimmer", "Geode", "Wisp", "Shardling", "Prism", "Golem", "Stalker", "Oracle", "Heart crystal"],
+			"pot": "Shard tonic", "gate": "Rift door", "boss": "Crystal Titan",
+		},
 	]
 
 
@@ -385,6 +392,12 @@ func _make_defs() -> void:
 		{"id": "glass", "name": "Glass Cannon", "desc": "+3 starting levels, but the dark is 3 steps faster", "max": 1, "curse": true},
 		{"id": "greedy", "name": "Greedy Pact", "desc": "Coins are worth triple, but every monster gets +1 level", "max": 1, "curse": true},
 		{"id": "blade", "name": "Hungry Blade", "desc": "Every kill gives +1 extra level, but gates need 3 more", "max": 1, "curse": true},
+		{"id": "deadeye", "name": "Deadeye Scope", "desc": "Ranged weapons reach 1 tile further", "max": 2, "adv": true},
+		{"id": "efficient", "name": "Efficient Barrel", "desc": "Ranged shots cost 1 less air (never below 0.5)", "max": 1, "adv": true},
+		{"id": "plating", "name": "Deflector Plating", "desc": "Enemy ranged shots deal 2 less damage", "max": 2, "adv": true},
+		{"id": "hazmat", "name": "Hazmat Suit", "desc": "Floor hazards hurt half as much", "max": 1, "adv": true},
+		{"id": "gravedigger", "name": "Grave Robber", "desc": "Walking over a fresh corpse gives 2 coins", "max": 2, "adv": true},
+		{"id": "heavyammo", "name": "Heavy Ammo", "desc": "Ranged shots deal +4 damage but cost 2 more air", "max": 1, "curse": true, "adv": true},
 		{"id": "ember", "name": "Ember Lantern", "desc": "Lanterns hold the dark back 12 steps, but spikes cost 2 more", "max": 1, "curse": true},
 	]
 	synergies = [
@@ -671,8 +684,20 @@ func _wall_tex(ti: int) -> ImageTexture:
 	return spr_gen.wall_tile(ti)
 
 
-func _monster_tex(ti: int, lvl: int, boss: bool, blink := false) -> ImageTexture:
-	return spr_gen.monster(ti, lvl, boss, blink)
+func _monster_tex(ti: int, lvl: int, boss: bool, blink := false, dir := 0) -> ImageTexture:
+	return spr_gen.monster(ti, lvl, boss, blink, dir)
+
+
+func _mon_face(c: Vector2i) -> int:
+	if mode != "adv":
+		return 0
+	var dx := pos.x - c.x
+	var dy := pos.y - c.y
+	if maxi(absi(dx), absi(dy)) > 9:
+		return 0
+	if absi(dx) > absi(dy):
+		return 3 if dx > 0 else 2
+	return 0 if dy >= 0 else 1
 
 
 func _setup_size() -> void:
@@ -1193,6 +1218,8 @@ func _step(nc: Vector2i) -> void:
 
 func _remove_mon(c: Vector2i) -> void:
 	_fx_death(c)
+	if mode == "adv":
+		_sfx("corpse")
 	if mode == "adv" and mons.has(c) and not themes.is_empty():
 		var isb := boss_floor and c == boss_cell
 		corpses[c] = {"ti": tidx(), "lv": int(mons[c]), "boss": isb, "tv": int(tur[c]["v"]) if tur.has(c) else -1, "td": int(tur[c]["d"]) if tur.has(c) else 0, "fl": (c.x * 7 + c.y * 13) % 2}
@@ -1293,6 +1320,8 @@ func _roll_relics(extra: int) -> Array:
 	var normal: Array = []
 	var cursed: Array = []
 	for d in relic_defs:
+		if d.has("adv") and mode != "adv":
+			continue
 		if relic_n(String(d["id"])) < int(d["max"]):
 			if d.has("curse"):
 				cursed.append(d)
@@ -1587,7 +1616,10 @@ func _new_run(start_floor := 1) -> void:
 	for id in cdef()["kit"]:
 		inv.append(String(id))
 	if cls == "gambler":
-		var pool: Array = relic_defs.duplicate()
+		var pool: Array = []
+		for rd in relic_defs:
+			if not rd.has("adv") or mode == "adv":
+				pool.append(rd)
 		pool.shuffle()
 		for i in 2:
 			var d: Dictionary = pool[i]
@@ -1596,6 +1628,8 @@ func _new_run(start_floor := 1) -> void:
 		relics["phoenix"] = 1
 	var safe_pool: Array = []
 	for d2 in relic_defs:
+		if d2.has("adv") and mode != "adv":
+			continue
 		if not d2.has("curse") and relic_n(String(d2["id"])) < int(d2["max"]):
 			safe_pool.append(d2)
 	safe_pool.shuffle()
@@ -2065,7 +2099,7 @@ func _draw_mon_sprite(c: Vector2i, ctr: Vector2, ti: int, base_lv: int, is_boss:
 	var sy := squash * (1.0 + (0.0 if asleep else 0.035 * sin(ph)))
 	var sx := 1.0 + (1.0 - sy) * 0.7
 	var bl := asleep or fmod(t * 0.42 + float(c.x * 37 + c.y * 91) * 0.173, 1.0) > 0.93
-	var tex: ImageTexture = tex_over if tex_over != null else _monster_tex(ti, base_lv, is_boss, bl)
+	var tex: ImageTexture = tex_over if tex_over != null else _monster_tex(ti, base_lv, is_boss, bl, 0 if asleep else _mon_face(c))
 	var at := ctr + Vector2(0, -hop + yoff - (sy - 1.0) * sz * 0.5)
 	_spr_ex(tex, at, sz, mod, 1.0, 0.0, sx, sy)
 	if fl > 0.0:
@@ -2111,6 +2145,8 @@ func _amb_draw(band: Rect2, ti: int) -> void:
 			y = fposmod(float(a[1]) - cy + t * 7.0 * sp, 1280.0)
 		elif ti == 1:
 			y = fposmod(float(a[1]) - cy - t * 15.0 * sp, 1280.0)
+		elif ti == 3:
+			y = fposmod(float(a[1]) - cy - t * 9.0 * sp, 1280.0)
 		else:
 			y = fposmod(float(a[1]) - cy - t * 30.0 * sp, 1280.0)
 		if not band.has_point(Vector2(x, y)):
@@ -2122,6 +2158,12 @@ func _amb_draw(band: Rect2, ti: int) -> void:
 			var col := Color(0.55, 1.0, 0.65) if int(ph * 10.0) % 3 != 0 else Color(1.0, 0.65, 0.85)
 			draw_circle(Vector2(x, y), sz * 2.4, Color(col.r, col.g, col.b, 0.07 + 0.08 * g))
 			draw_circle(Vector2(x, y), sz * 0.55, Color(col.r, col.g, col.b, 0.35 + 0.5 * g))
+		elif ti == 3:
+			var tw2 := pow(maxf(0.0, sin(t * 2.2 * sp + ph * 4.0)), 6.0)
+			var col3 := Color(0.85, 0.6, 1.0) if int(ph * 10.0) % 2 == 0 else Color(0.5, 0.92, 1.0)
+			draw_circle(Vector2(x, y), sz * 1.4, Color(col3.r, col3.g, col3.b, 0.05 + 0.06 * tw2))
+			draw_line(Vector2(x - sz * 1.2 * tw2, y), Vector2(x + sz * 1.2 * tw2, y), Color(col3.r, col3.g, col3.b, 0.2 + 0.7 * tw2), 1.5)
+			draw_line(Vector2(x, y - sz * 1.2 * tw2), Vector2(x, y + sz * 1.2 * tw2), Color(col3.r, col3.g, col3.b, 0.2 + 0.7 * tw2), 1.5)
 		else:
 			var fl := 0.5 + 0.5 * sin(t * 9.0 * sp + ph * 3.0)
 			var col2 := Color(1.0, 0.55 + 0.25 * fl, 0.2)
@@ -2555,13 +2597,13 @@ func _tut_pages(which: int) -> Array:
 		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
 		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\\n\\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
 		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]], "s2": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"]],
-		"x": "Every world has its own floor hazards, shown on the tile.\\nStation: Arc plates shock you only while lit (they flicker each step), Breach vents 8 air.\\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station), Slick patches make you skid one more tile.\\nSmugglers: Mines blow up for big damage (and hurt monsters nearby), Alarm gates wake nearby monsters into hunters.\\nBombs clear hazards."},
+		"x": "Every world has its own floor hazards, shown on the tile.\\nStation: Arc plates shock you only while lit (they flicker each step), Breach vents 8 air.\\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station), Slick patches make you skid one more tile.\\nSmugglers: Mines blow up for big damage (and hurt monsters nearby), Alarm gates wake nearby monsters into hunters.\\nCrystal Deep: Warp pads fling you across the cave, Crystal shards cut you and cost extra air.\\nBombs clear hazards."},
 		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
 		"x": "HP is your health: reach 0 and you die. A medkit heals 40%.\\n\\nArmour reduces every hit you take by its value (always at least 1). Each plate you find adds +1 permanently.\\n\\nShield is a separate bar that soaks damage before your HP does."},
 		{"t": "LEVELS AND XP", "ti": 1, "s": [["item:pot", "Potion"], ["item:big", "Overcharged"], ["use:draught", "Elixir"], ["icon:vault", "Vault"]],
 		"x": "Kills, potions, elixirs and vaults give XP. Each level adds attack and max health, and your level stays with you for the whole run.\\n\\nMonsters grow stronger with depth, so keep levelling and upgrade your gear to keep up."},
 		{"t": "ENEMIES", "ti": 2, "s": [["mon:2:4:hunter:a", "Hunter !"], ["mon:2:3:thief:g", "Thief $"], ["mon:2:5:elite:a", "Elite star"], ["boss:2", "Boss"]],
-		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\\nElites (gold star) give extra XP and may drop gear.\\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
+		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\\nElites (gold star) give extra XP and may drop gear.\\nShooters (gun icon) keep their distance, line up with you and fire down a lane: break the line or rush them.\\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
 		{"t": "GEAR", "ti": 2, "s": [["icon:crate_weapon", "Weapon"], ["icon:crate_helmet", "Helmet"], ["icon:crate_armour", "Armour"], ["icon:crate_boots", "Boots"]], "s2": [["icon:crate_trinket", "Trinket"], ["icon:merchant", "Outfitter"]],
 		"x": "Crates hold gear for five slots. Pick one up to add it to your PACK, then equip it from the BAG for bonuses like attack, armour, crit, sight or extra air.\\n\\nWalk onto the SHOP stall to buy gear with coins or sell what you do not need. The pack holds 12 items."},
 		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"]], "s2": [["use:magnet", "Magnet"], ["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["icon:key", "Key"]],
@@ -3542,6 +3584,8 @@ func _adv_gen() -> void:
 			kinds[mcell] = "hunter"
 		elif floor_n >= 3 and rng.randf() < 0.15:
 			kinds[mcell] = "thief"
+		elif floor_n >= 3 and rng.randf() < 0.14:
+			kinds[mcell] = "shooter"
 		var el := rng.randf() < 0.15
 		if el:
 			elite[mcell] = true
@@ -3669,7 +3713,7 @@ func _adv_spike_hurt(d: int) -> bool:
 	return _adv_env_hurt(d, "Spikes! You lose %d health", "You were impaled on spikes")
 
 
-func _adv_env_hurt(d: int, text: String, why: String) -> bool:
+func _adv_env_hurt(d: int, text: String, why: String, snd := "spike") -> bool:
 	var absorbed := mini(sh, d)
 	sh -= absorbed
 	hp -= d - absorbed
@@ -3681,7 +3725,7 @@ func _adv_env_hurt(d: int, text: String, why: String) -> bool:
 		_fx_burst(vis_pos, Color("ff5d5d"), 10, 3.2, 0.45, 5.0)
 		_shake(4.0, 0.25)
 	msg = text % d
-	_sfx("spike")
+	_sfx(snd)
 	if hp <= 0:
 		hp = 0
 		_die(why)
@@ -3769,6 +3813,21 @@ func _make_gear() -> void:
 		{"id": "arccarbine", "slot": "weapon", "name": "Arc Carbine", "tier": 2, "price": 40, "stats": {"atk": 4, "range": 3}},
 		{"id": "plasmarifle", "slot": "weapon", "name": "Plasma Rifle", "tier": 3, "price": 66, "stats": {"atk": 6, "range": 4, "crit": 10}},
 		{"id": "railsniper", "slot": "weapon", "name": "Rail Sniper", "tier": 4, "price": 98, "stats": {"atk": 9, "range": 5, "crit": 20}},
+		{"id": "prismblade", "slot": "weapon", "name": "Prism Blade", "tier": 3, "price": 66, "stats": {"atk": 6, "crit": 20}},
+		{"id": "shardspear", "slot": "weapon", "name": "Shard Spear", "tier": 3, "price": 62, "stats": {"atk": 5, "leech": 2}},
+		{"id": "scattergun", "slot": "weapon", "name": "Scatter Gun", "tier": 3, "price": 64, "stats": {"atk": 8, "range": 2}},
+		{"id": "gaussrep", "slot": "weapon", "name": "Gauss Repeater", "tier": 2, "price": 42, "stats": {"atk": 4, "range": 4}},
+		{"id": "targetvisor", "slot": "helmet", "name": "Targeting Visor", "tier": 3, "price": 56, "stats": {"rangeb": 1, "sight": 1}},
+		{"id": "crystalhelm", "slot": "helmet", "name": "Crystal Helm", "tier": 3, "price": 58, "stats": {"armor": 3, "hp": 4}},
+		{"id": "hazmask", "slot": "helmet", "name": "Hazmat Mask", "tier": 2, "price": 34, "stats": {"hazres": 40, "air": 10}},
+		{"id": "crystalmail", "slot": "armour", "name": "Crystal Mail", "tier": 4, "price": 94, "stats": {"armor": 5, "hp": 12, "dodge": 4}},
+		{"id": "ghillie", "slot": "armour", "name": "Ghillie Suit", "tier": 2, "price": 36, "stats": {"dodge": 10, "sight": 1}},
+		{"id": "mirrorvest", "slot": "armour", "name": "Mirror Vest", "tier": 3, "price": 60, "stats": {"armor": 2, "rangedef": 2}},
+		{"id": "crystaltreads", "slot": "boots", "name": "Crystal Treads", "tier": 3, "price": 58, "stats": {"airsave": 24, "dodge": 5}},
+		{"id": "hazboots", "slot": "boots", "name": "Hazard Boots", "tier": 2, "price": 34, "stats": {"hazres": 50, "armor": 1}},
+		{"id": "ammorecycler", "slot": "trinket", "name": "Ammo Recycler", "tier": 3, "price": 58, "stats": {"shotsave": 1}},
+		{"id": "scopemod", "slot": "trinket", "name": "Scope Module", "tier": 3, "price": 56, "stats": {"rangeb": 1, "crit": 8}},
+		{"id": "critoptics", "slot": "trinket", "name": "Crit Optics", "tier": 2, "price": 34, "stats": {"crit": 15, "sight": 1}},
 		{"id": "overlord", "slot": "trinket", "name": "Overlord Chip", "tier": 4, "price": 96, "stats": {"atk": 3, "xp": 40}},
 	]
 	gear_defs.clear()
@@ -3796,7 +3855,7 @@ func _gear_desc(d: Dictionary) -> String:
 		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
 		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
 		"xp": "+%d%% XP", "coin": "+%d per coin", "dodge": "%d%% dodge", "thorns": "%d thorns damage", "killheal": "heal %d on kill",
-		"pod": "+%d air per pod", "range": "shoots %d tiles in a line (air per shot = tier)",
+		"pod": "+%d air per pod", "range": "shoots %d tiles in a line (air per shot = tier)", "rangeb": "+%d range for ranged weapons", "shotsave": "shots cost %d less air", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
 	}
 	var parts: Array[String] = []
 	var st: Dictionary = d["stats"]
@@ -4269,7 +4328,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			msg = "Something blocks the way"
 			_sfx("blocked")
 			return
-		if int(gear("range")) > 0:
+		if _shoot_range() > 0:
 			_adv_shoot(nc)
 			return
 		var res := _adv_fight(nc)
@@ -4412,6 +4471,12 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		pos = nc
 	adv_steps += 1
 	oxy -= (1.0 - gear("airsave") / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	if moved and corpses.has(pos) and relic_n("gravedigger") > 0 and not bool(corpses[pos].get("looted", false)):
+		corpses[pos]["looted"] = true
+		var lc := 2 * relic_n("gravedigger") * coin_val()
+		coins += lc
+		_pop(pos, "+%d loot" % lc, Color("ffc93c"))
+		snd = "coin"
 	if moved and stations.has(pos):
 		if oxy < oxy_max - 0.5:
 			msg = "O2 station: air fully restored"
@@ -4425,7 +4490,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		return
 	if poison_n > 0:
 		poison_n -= 1
-		if not _adv_env_hurt(poison_d, "Poison! You lose %d health", "You succumbed to poison"):
+		if not _adv_env_hurt(poison_d, "Poison! You lose %d health", "You succumbed to poison", "poison"):
 			return
 	if moved and haz_hit != "":
 		if not _adv_haz_trigger(haz_hit, nc, nc - from_c):
@@ -4445,6 +4510,9 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	_adv_hunters()
 	if state != PLAY:
 		return
+	_adv_shooters()
+	if state != PLAY:
+		return
 	_adv_turrets()
 	if state != PLAY:
 		return
@@ -4458,6 +4526,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 					msg += " (it hunts you!)"
 				elif tur.has(c):
 					msg += " (it fires down a 5-tile lane!)"
+				elif String(kinds.get(c, "")) == "shooter":
+					msg += " (it shoots from range and keeps its distance!)"
 				break
 	if moved and meds.has(pos) and state == PLAY:
 		walk.clear()
@@ -4524,16 +4594,54 @@ func _adv_hunters() -> void:
 			_adv_move_mon(c, bn)
 
 
+func _weapon_range() -> int:
+	var wid := String(equip.get("weapon", ""))
+	if wid == "" or not gear_defs.has(wid):
+		return 0
+	return int((gear_defs[wid]["stats"] as Dictionary).get("range", 0))
+
+
+func _shoot_range() -> int:
+	var w := _weapon_range()
+	if w <= 0:
+		return 0
+	return w + int(gear("rangeb")) + relic_n("deadeye")
+
+
+func _haz_mult() -> float:
+	return clampf(1.0 - gear("hazres") / 100.0 - (0.5 if relic_n("hazmat") > 0 else 0.0), 0.2, 1.0)
+
+
+func _ranged_dmg(c: Vector2i) -> int:
+	return maxi(1, mon_atk(c) - 2 * relic_n("plating") - int(gear("rangedef")))
+
+
+func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
+	var d := b - a
+	if (d.x != 0 and d.y != 0) or (d.x == 0 and d.y == 0):
+		return false
+	var n := maxi(absi(d.x), absi(d.y))
+	if n > rg:
+		return false
+	var st := Vector2i(signi(d.x), signi(d.y))
+	for i in range(1, n):
+		var m: Vector2i = a + st * i
+		if not _aopen(m) or mons.has(m) or vaults.has(m):
+			return false
+	return true
+
+
 func _shot_cost() -> float:
 	var wid := String(equip.get("weapon", ""))
 	var tier := 1
 	if wid != "" and gear_defs.has(wid):
 		tier = int(gear_defs[wid]["tier"])
-	return float(tier) * (1.0 - gear("airsave") / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0)
+	var cst := float(tier) * (1.0 - gear("airsave") / 100.0) - gear("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo"))
+	return maxf(0.5, cst) + (0.5 if relic_n("glass") > 0 else 0.0)
 
 
 func _adv_draw_shoot_lanes() -> void:
-	var rg := int(gear("range"))
+	var rg := _shoot_range()
 	if rg <= 0 or aim >= 0:
 		return
 	for dv in TDIRS:
@@ -4548,7 +4656,7 @@ func _adv_draw_shoot_lanes() -> void:
 
 
 func _adv_can_shoot(c: Vector2i) -> bool:
-	var rg := int(gear("range"))
+	var rg := _shoot_range()
 	if rg <= 0 or not mons.has(c) or not adv_vis.has(c):
 		return false
 	var d := c - pos
@@ -4571,7 +4679,7 @@ func _adv_shoot(c: Vector2i) -> void:
 	var lv := _mon_level(c)
 	var nm := _adv_mname(c)
 	var is_boss := boss_floor and c == boss_cell
-	var dmg := p_atk()
+	var dmg := p_atk() + 4 * relic_n("heavyammo")
 	var crit := randf() * 100.0 < gear("crit")
 	if crit:
 		dmg *= 2
@@ -4589,12 +4697,13 @@ func _adv_shoot(c: Vector2i) -> void:
 	else:
 		mon_hp[c] = left
 		msg = "You shoot %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(c)]
-	_sfx("step")
+	_sfx("shoot")
 	if mons.has(c) and not tur.has(c) and not is_boss:
 		var kd := String(kinds.get(c, ""))
 		if kd == "" or kd == "sleeper" or kd == "feeder":
 			kinds[c] = "hunter"
 			msg += "  It charges you!"
+			_sfx("aggro")
 	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c):
 		mon_lunge[c] = [t + 0.12, Vector2(pos - c).normalized()]
 		if not _adv_hurt(mon_atk(c), nm, c):
@@ -4606,7 +4715,7 @@ func _adv_shoot(c: Vector2i) -> void:
 	_adv_update_vis()
 	if poison_n > 0:
 		poison_n -= 1
-		if not _adv_env_hurt(poison_d, "Poison! You lose %d health", "You succumbed to poison"):
+		if not _adv_env_hurt(poison_d, "Poison! You lose %d health", "You succumbed to poison", "poison"):
 			return
 	if oxy <= 0.0:
 		oxy = 0.0
@@ -4614,6 +4723,9 @@ func _adv_shoot(c: Vector2i) -> void:
 		return
 	_thief_check()
 	_adv_hunters()
+	if state != PLAY:
+		return
+	_adv_shooters()
 	if state != PLAY:
 		return
 	_adv_turrets()
@@ -4636,6 +4748,56 @@ func _tur_lane(c: Vector2i) -> Array[Vector2i]:
 	return out
 
 
+func _shooter_score(n: Vector2i) -> int:
+	var d := pos - n
+	var man := absi(d.x) + absi(d.y)
+	if _lane_ok(n, pos, TUR_RANGE):
+		return -10 + absi(man - 4)
+	return mini(absi(d.x), absi(d.y)) * 3 + absi(man - 4)
+
+
+func _adv_shooters() -> void:
+	var ss: Array[Vector2i] = []
+	for c in kinds:
+		if String(kinds[c]) == "shooter" and mons.has(c):
+			ss.append(c)
+	if ss.is_empty():
+		return
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for c in ss:
+		if not mons.has(c):
+			continue
+		if maxi(absi(pos.x - c.x), absi(pos.y - c.y)) > 9:
+			continue
+		if _lane_ok(c, pos, TUR_RANGE):
+			if (adv_steps + c.x + c.y) % 2 == 0:
+				var dvv := Vector2(pos - c).normalized()
+				walk.clear()
+				mon_lunge[c] = [t, dvv]
+				_fx_bolt(Vector2(c) + dvv * 0.3, Vector2(pos), TUR_COLS[tidx()][1])
+				_sfx("enemyshot")
+				msg = "%s shoots!" % _adv_mname(c)
+				if not _adv_hurt(_ranged_dmg(c), _adv_mname(c)):
+					return
+			continue
+		if adv_steps % 2 != 1:
+			continue
+		var best := c
+		var bs := _shooter_score(c)
+		for dv in dirs:
+			var n: Vector2i = c + dv
+			if not _aopen(n) or mons.has(n) or vaults.has(n) or n == pos or spikes.has(n) or haz.has(n) or n == stairs or merchants.has(n) or stations.has(n) or meds.has(n):
+				continue
+			if absi(pos.x - n.x) + absi(pos.y - n.y) < 2:
+				continue
+			var sc := _shooter_score(n)
+			if sc < bs:
+				bs = sc
+				best = n
+		if best != c:
+			_adv_move_mon(c, best)
+
+
 func _adv_turrets() -> void:
 	var ts: Array[Vector2i] = []
 	for c in tur:
@@ -4653,33 +4815,35 @@ func _adv_turrets() -> void:
 		mon_lunge[c] = [t, Vector2(-dvv.x, -dvv.y)]
 		_fx_bolt(Vector2(c) + Vector2(dvv) * 0.3, Vector2(pos), col)
 		msg = "%s fires!" % _adv_mname(c)
-		if not _adv_hurt(mon_atk(c), _adv_mname(c)):
+		_sfx("turret")
+		if not _adv_hurt(_ranged_dmg(c), _adv_mname(c)):
 			return
 
 
 func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 	var base := 2 + floor_n / 2 + level / 4
+	var hm := _haz_mult()
 	if id == "arc":
 		if (adv_steps + c.x + c.y) % 2 == 0:
 			_fx_bolt(Vector2(c) + Vector2(0, -0.4), Vector2(c), Color("ffe14f"))
-			return _adv_env_hurt(maxi(1, int(round(base * 1.5))), "Electric arc! You lose %d health", "You were electrocuted")
+			return _adv_env_hurt(maxi(1, int(round(base * 1.5 * hm))), "Electric arc! You lose %d health", "You were electrocuted", "arc")
 		msg = "The arc plate is dead. Lucky timing!"
 	elif id == "breach":
 		oxy = maxf(0.0, oxy - 8.0)
 		msg = "Hull breach! Air vents away (-8)"
 		_pop(c, "-8 AIR", Color("7fd8ff"))
 		_fx_ring(Vector2(c), Color("7fd8ff"), 1.3, 0.5, 4.0)
-		_sfx("spike")
+		_sfx("breach")
 		if oxy <= 0.0:
 			_die("You ran out of air")
 			return false
 	elif id == "toxic":
 		poison_n = 4
-		poison_d = maxi(1, base / 3)
+		poison_d = maxi(1, int(round(float(base) / 3.0 * hm)))
 		msg = "Toxic pool! Poisoned for 4 steps (Nano Injector or a medical station cures it)"
 		_pop(c, "POISON", Color("9dff6a"))
 		_fx_burst(Vector2(c), Color("9dff6a"), 14, 2.5, 0.7, 5.0)
-		_sfx("spike")
+		_sfx("poison")
 	elif id == "slick":
 		var n: Vector2i = c + dv
 		if slide_depth < 3 and dv != Vector2i.ZERO and _aopen(n) and not mons.has(n) and not vaults.has(n) and not items.has(n) and not coin_at.has(n) and not stations.has(n) and not meds.has(n) and not merchants.has(n) and not spikes.has(n) and n != stairs:
@@ -4688,6 +4852,7 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 			_adv_update_vis()
 			msg = "Slippery! You skid one more tile"
 			_pop(c, "SLIDE", Color("6fe0c8"))
+			_sfx("slide")
 			if haz.has(n):
 				slide_depth += 1
 				var ok := _adv_haz_trigger(String(haz[n]), n, dv)
@@ -4708,7 +4873,7 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 			if mons.has(mc):
 				_pop(mc, "BOOM", Color("ff7a45"))
 				_adv_damage_mon(mc, 5 + floor_n)
-		return _adv_env_hurt(base * 2, "Mine! It blows for %d damage", "You stepped on a mine")
+		return _adv_env_hurt(maxi(1, int(round(base * 2.0 * hm))), "Mine! It blows for %d damage", "You stepped on a mine", "boom")
 	elif id == "alarm":
 		haz.erase(c)
 		var woke := 0
@@ -4723,7 +4888,33 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 		_pop(c, "ALARM", Color("ff5d5d"))
 		_fx_ring(Vector2(c), Color("ff5d5d"), 2.4, 0.7, 5.0)
 		walk.clear()
-		_sfx("big")
+		_sfx("alarm")
+	elif id == "warp":
+		var dest := Vector2i(-1, -1)
+		for k in 40:
+			var n2 := Vector2i(c.x + randi_range(-8, 8), c.y + randi_range(-8, 8))
+			if not _ain(n2) or not _aopen(n2) or mons.has(n2) or vaults.has(n2) or haz.has(n2) or spikes.has(n2) or items.has(n2) or coin_at.has(n2) or merchants.has(n2) or stations.has(n2) or meds.has(n2) or n2 == stairs:
+				continue
+			if maxi(absi(n2.x - c.x), absi(n2.y - c.y)) < 3:
+				continue
+			dest = n2
+			break
+		if dest.x >= 0:
+			_fx_ring(Vector2(c), Color("d58cff"), 1.6, 0.5, 4.0)
+			pos = dest
+			walk.clear()
+			_adv_update_vis()
+			_fx_ring(Vector2(dest), Color("7fe8ff"), 1.6, 0.5, 4.0)
+			_fx_burst(Vector2(dest), Color("d58cff"), 16, 3.0, 0.6, 5.0)
+			msg = "Warp pad! You are flung across the cave"
+			_pop(dest, "WARP", Color("d58cff"))
+		else:
+			msg = "The warp pad fizzles"
+		_sfx("warp")
+	elif id == "shard":
+		oxy = maxf(0.0, oxy - 1.0)
+		_fx_burst(Vector2(c), Color("d0a8ff"), 14, 3.2, 0.6, 5.0)
+		return _adv_env_hurt(maxi(1, int(round(float(base) * hm))), "Crystal shards! You lose %d health", "You were skewered by crystal", "shard")
 	return true
 
 
@@ -4898,7 +5089,7 @@ func _adv_use_slot(i: int) -> void:
 		_fx_ring(vis_pos, Color("6dff9a"), 1.1, 0.5, 5.0)
 		msg = "Elixir! +%d XP" % dxp
 		_pop(pos, "+%d XP" % dxp, Color("6dff9a"))
-		_sfx("big")
+		_sfx("boom")
 	elif id == "cloak":
 		if boost > 0:
 			msg = "Cloak already active"
@@ -5078,7 +5269,7 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	draw_rect(Rect2(bx - 1, by - 1, bw + 2, 11), Color(0, 0, 0, 0.75))
 	draw_rect(Rect2(bx, by, bw * clampf(float(hpn) / float(hpm), 0.0, 1.0), 9), Color("e8505b"))
 	_ctext("%d" % hpn, Vector2(ctr.x, by + 4.5), 10, Color.WHITE)
-	var rgw := int(gear("range"))
+	var rgw := _shoot_range()
 	if rgw > 0 and adv_vis.has(c):
 		if _adv_can_shoot(c):
 			var rc := Color(1.0, 0.7, 0.3, 0.55 + 0.3 * sin(t * 7.0))
@@ -5098,6 +5289,11 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 		var rdy := _tur_ready(c, adv_steps + 1)
 		var tcol: Color = TUR_COLS[ti][int(tur[c]["v"])]
 		_ctext("fires" if rdy else "reload", ctr + Vector2(0, -AC * 0.47), 12, tcol if rdy else Color(1, 1, 1, 0.55))
+	elif kind == "shooter":
+		_spr(spr_gen.gear_icon("blaster", "weapon"), ctr + Vector2(AC * 0.3, AC * 0.12), AC * 0.46)
+		var scol: Color = TUR_COLS[ti][1]
+		var srd := _lane_ok(c, pos, TUR_RANGE) and (adv_steps + 1 + c.x + c.y) % 2 == 0
+		_ctext("shoots" if srd else "aims", ctr + Vector2(0, -AC * 0.47), 12, scol if srd else Color(1, 1, 1, 0.6))
 	elif kind == "hunter":
 		draw_circle(mk, AC * 0.13, Color("6a1218"))
 		_ctext("!", mk, int(AC * 0.26), Color("ff7a7a"))
@@ -5117,6 +5313,10 @@ func _draw_corpse(ctr: Vector2, c: Vector2i) -> void:
 
 
 func _adv_draw_lanes(ti: int) -> void:
+	for sc2 in kinds:
+		if String(kinds[sc2]) == "shooter" and mons.has(sc2) and adv_vis.has(sc2) and _lane_ok(sc2, pos, TUR_RANGE):
+			var scc: Color = TUR_COLS[ti][1]
+			draw_line(_actr(sc2), _actr(pos), Color(scc.r, scc.g, scc.b, 0.35 + 0.2 * sin(t * 8.0)), 3.0)
 	for tc in tur:
 		if not mons.has(tc) or not _aseen(tc):
 			continue
@@ -5173,6 +5373,14 @@ func _draw_hazard(ctr: Vector2, c: Vector2i) -> void:
 		if on:
 			draw_circle(ctr + Vector2(0, 2), AC * 0.12, Color(1, 0.3, 0.3, 0.55))
 			draw_circle(ctr + Vector2(0, 2), AC * 0.05, Color(1, 0.85, 0.85, 1))
+	elif id == "warp":
+		draw_circle(ctr, AC * 0.46, Color(0.7, 0.5, 1.0, 0.08 + 0.05 * sin(t * 3.0 + ph)))
+		_spr(tex, ctr, sz)
+		draw_arc(ctr, AC * 0.3, t * 2.5 + ph, t * 2.5 + ph + PI * 1.2, 14, Color(0.9, 0.8, 1.0, 0.8), 2.0)
+		draw_arc(ctr, AC * 0.18, -t * 3.5 + ph, -t * 3.5 + ph + PI * 1.2, 10, Color(0.5, 0.95, 1.0, 0.8), 2.0)
+	elif id == "shard":
+		_spr(tex, ctr, sz)
+		_glint(ctr + Vector2(AC * 0.05, -AC * 0.25), AC * 0.2, ph)
 	else:
 		_spr(tex, ctr, sz)
 		var on2 := fmod(t * 2.0 + ph, 1.0) < 0.5
@@ -5806,13 +6014,41 @@ func _adv_selftest() -> void:
 	if poison_n != 4:
 		print("FAIL poison")
 		bad += 1
-	for hid in ["arc", "breach", "slick", "mine", "alarm"]:
+	for hid in ["arc", "breach", "slick", "mine", "alarm", "warp", "shard"]:
 		hp = hp_cap()
 		oxy = oxy_max
 		_adv_haz_trigger(hid, start, Vector2i(1, 0))
 		state = PLAY
 	haz.clear()
 	poison_n = 0
+	# shooter sim
+	var shc := Vector2i(-1, -1)
+	for dix in 4:
+		if _aopen(pos + TDIRS[dix]) and _aopen(pos + TDIRS[dix] * 2) and _aopen(pos + TDIRS[dix] * 3):
+			shc = pos + TDIRS[dix] * 3
+			mons[shc] = 2
+			kinds[shc] = "shooter"
+			break
+	if shc.x >= 0:
+		hp = hp_cap()
+		sh = 0
+		var hps := hp
+		adv_steps = (shc.x + shc.y) % 2 + 2 * 0
+		adv_steps = adv_steps if (adv_steps + shc.x + shc.y) % 2 == 0 else adv_steps + 1
+		_adv_shooters()
+		if hp >= hps:
+			print("FAIL shooter did not hit")
+			bad += 1
+		_remove_mon(shc)
+	relics["deadeye"] = 2
+	relics["efficient"] = 1
+	relics["heavyammo"] = 1
+	if _shot_cost() < 0.5:
+		print("FAIL shot cost")
+		bad += 1
+	relics.erase("deadeye")
+	relics.erase("efficient")
+	relics.erase("heavyammo")
 	# ranged + corpse sim
 	for dix in 4:
 		var tcell: Vector2i = pos + TDIRS[dix] * 2
@@ -6012,6 +6248,56 @@ func _make_sfx() -> void:
 	_add_note(b, SR_SFX, 0.55, 0.8, 1047.0, 0.18, 0, 3.0)
 	_add_note(b, SR_SFX, 0.55, 0.8, 1319.0, 0.18, 0, 3.0)
 	d["clear"] = _stream(b, SR_SFX)
+	b = _buf(0.22, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.05, 0.5, 40.0, 0.9)
+	_add_sweep(b, SR_SFX, 0.0, 0.16, 1500.0, 260.0, 0.3, 3, 9.0)
+	d["shoot"] = _stream(b, SR_SFX)
+	b = _buf(0.3, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.26, 1000.0, 180.0, 0.28, 1, 6.0)
+	_add_noise(b, SR_SFX, 0.0, 0.06, 0.25, 30.0, 0.8)
+	d["turret"] = _stream(b, SR_SFX)
+	b = _buf(0.26, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.2, 780.0, 140.0, 0.28, 2, 8.0)
+	_add_noise(b, SR_SFX, 0.0, 0.04, 0.2, 40.0, 0.7)
+	d["enemyshot"] = _stream(b, SR_SFX)
+	b = _buf(0.4, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.3, 0.45, 9.0, 0.95)
+	_add_sweep(b, SR_SFX, 0.0, 0.08, 200.0, 2000.0, 0.28, 2, 14.0)
+	_add_sweep(b, SR_SFX, 0.1, 0.14, 1800.0, 300.0, 0.22, 3, 9.0)
+	d["arc"] = _stream(b, SR_SFX)
+	b = _buf(0.7, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.6, 0.5, 4.0, 0.98)
+	_add_sweep(b, SR_SFX, 0.0, 0.5, 600.0, 200.0, 0.1, 0, 4.0)
+	d["breach"] = _stream(b, SR_SFX)
+	b = _buf(0.5, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.25, 260.0, 150.0, 0.3, 3, 5.0)
+	_add_sweep(b, SR_SFX, 0.2, 0.25, 150.0, 240.0, 0.3, 3, 5.0)
+	d["poison"] = _stream(b, SR_SFX)
+	b = _buf(0.4, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.35, 900.0, 420.0, 0.2, 0, 5.0)
+	_add_noise(b, SR_SFX, 0.0, 0.3, 0.2, 6.0, 0.9)
+	d["slide"] = _stream(b, SR_SFX)
+	b = _buf(0.9, SR_SFX)
+	_add_noise(b, SR_SFX, 0.0, 0.8, 0.7, 4.0, 0.35)
+	_add_sweep(b, SR_SFX, 0.0, 0.6, 140.0, 38.0, 0.55, 0, 3.0)
+	d["boom"] = _stream(b, SR_SFX)
+	b = _buf(1.0, SR_SFX)
+	for i in 6:
+		_add_note(b, SR_SFX, i * 0.15, 0.14, 880.0 if i % 2 == 0 else 640.0, 0.28, 2, 8.0)
+	d["alarm"] = _stream(b, SR_SFX)
+	b = _buf(0.6, SR_SFX)
+	for i in 4:
+		_add_note(b, SR_SFX, i * 0.035, 0.3, float([1568.0, 2093.0, 1319.0, 2637.0][i]), 0.2, 1, 9.0)
+	_add_noise(b, SR_SFX, 0.0, 0.1, 0.25, 25.0, 0.7)
+	d["shard"] = _stream(b, SR_SFX)
+	b = _buf(0.5, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.4, 200.0, 110.0, 0.35, 3, 4.0)
+	_add_noise(b, SR_SFX, 0.0, 0.15, 0.2, 14.0, 0.5)
+	d["aggro"] = _stream(b, SR_SFX)
+	b = _buf(0.3, SR_SFX)
+	_add_sweep(b, SR_SFX, 0.0, 0.2, 160.0, 55.0, 0.4, 0, 9.0)
+	_add_noise(b, SR_SFX, 0.0, 0.06, 0.25, 30.0, 0.4)
+	d["corpse"] = _stream(b, SR_SFX)
 
 
 func _play_music(ti: int) -> void:
@@ -6044,6 +6330,8 @@ func _build_music(ti: int) -> AudioStreamWAV:
 			"ch": [[36, [60, 64, 67, 72]], [45, [57, 60, 64, 69]], [41, [60, 65, 69, 72]], [43, [59, 62, 67, 71]]]},
 		{"bpm": 100.0, "kind": 2, "vol": 0.12, "pat": [0, 1, 2, 1, 3, 2, 1, 2],
 			"ch": [[38, [62, 65, 69, 74]], [34, [58, 62, 65, 70]], [36, [60, 64, 67, 72]], [33, [57, 61, 64, 69]]]},
+		{"bpm": 76.0, "kind": 1, "vol": 0.2, "pat": [0, 2, 1, 3, 1, 2, 3, 2],
+			"ch": [[40, [64, 67, 71, 76]], [36, [60, 64, 67, 72]], [43, [62, 67, 71, 74]], [38, [62, 65, 69, 74]]]},
 	]
 	var cfg: Dictionary = cfgs[ti % cfgs.size()]
 	var bpm: float = cfg["bpm"]
@@ -6125,9 +6413,12 @@ func _self_test() -> void:
 		if ring(stairs) != maxd:
 			print("GATE NOT CENTER")
 			bad += 1
-		for ti in 3:
+		for ti in themes.size():
 			for lv in range(1, 10):
 				_monster_tex(ti, lv, lv == 9)
+				_monster_tex(ti, lv, false, false, 1)
+				_monster_tex(ti, lv, false, false, 2)
+				_monster_tex(ti, lv, lv == 9, false, 3)
 			for p in 2:
 				for v in 3:
 					_floor_tex(ti, p, v)

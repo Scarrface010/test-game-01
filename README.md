@@ -117,3 +117,11 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 ## v21 - Gunslinger class
 - New fifth class. Puzzle: two Zap Rods, dark 1 step faster. Adventure: starts with a Blaster Pistol equipped and 2 Zap Rods, but has 4 less max health and 10 less air.
 - Brown hat and bandolier sprites for all four facings; class cards re-laid out to fit five.
+
+## v22 - Crystal Deep, shooters, facings, gear and relics, sounds
+- New world CRYSTAL DEEP (4th; worlds cycle every 3 floors): crystal floor and wall tiles, twinkling ambient, own music, monsters, Crystal Titan boss, turrets (Prism Beam, Shard Launcher) and hazards (Warp pad, Crystal shards).
+- Mobile ranged enemies ("shooters", from floor 3): keep their distance, line up with you and fire down a 5-tile lane every other step.
+- Monsters now have sprites for all four directions and turn to face you.
+- 15 new gear pieces (4 weapons incl. Scatter Gun and Gauss Repeater, helmets, armour, boots, trinkets with new stats: range bonus, shot air saving, ranged damage reduction, hazard resistance).
+- 6 adventure relics: Deadeye Scope, Efficient Barrel, Deflector Plating, Hazmat Suit, Grave Robber, Heavy Ammo (cursed).
+- New sounds: player shot, turret, enemy shot, arc, hull breach, poison, slide, explosion, alarm, crystal shard, enemy aggro, corpse thud.
