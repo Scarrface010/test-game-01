@@ -132,3 +132,4 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 
 ## v24 - Gun air cost up 50% more
 - Air per shot is now 1.5 / 2.25 / 3 / 3.75 for tier 1-4 weapons (before air-saving gear and relics). Each gun's description states its number.
+- v24b: multiplier raised again (x1.5): 2.25 / 3.4 / 4.5 / 5.6 per tier. Tutorial body text shrinks to fit above the PREV/NEXT buttons.

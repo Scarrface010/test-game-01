@@ -2720,7 +2720,11 @@ func _draw_tut(acc: Color) -> void:
 			_tut_icon(String(row[i][0]), Vector2(cx, cy), sz, ti)
 			_ctext(String(row[i][1]), Vector2(cx, cy + sz * 0.5 + 22), 19, Color(1, 1, 1, 0.85))
 	var ty := 420.0 + rows.size() * 205.0 - 20.0
-	_para(String(pg["x"]).replace("\\n", "\n"), Vector2(50, ty), 24 if rows.size() == 1 else 22, Color(1, 1, 1, 0.9), 620.0)
+	var body := String(pg["x"]).replace("\\n", "\n")
+	var fs := 24 if rows.size() == 1 else 22
+	while fs > 14 and font.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, 620.0, fs).y + ty > 1050.0:
+		fs -= 1
+	_para(body, Vector2(50, ty), fs, Color(1, 1, 1, 0.9), 620.0)
 	_button(btn_ipv, "PREV", acc, 24)
 	_button(btn_inx, "NEXT", acc, 24)
 	_ctext("%d / %d" % [tut_page + 1, pages.size()], Vector2(360, 1098), 24, Color(1, 1, 1, 0.7))
@@ -4635,7 +4639,7 @@ func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
 
 
 func _tier_shot_air(tier: int) -> float:
-	return 1.5 * (1.0 + 0.5 * float(tier - 1))
+	return 2.25 * (1.0 + 0.5 * float(tier - 1))
 
 
 func _shot_cost() -> float:
