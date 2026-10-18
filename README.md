@@ -137,3 +137,4 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - v24d: air per shot rounded up to whole numbers: 2 / 3 / 4 / 5 for tiers 1-4.
 - v24e: How to Play PREV/NEXT now level with BACK; page number below BACK.
 - v25: installable offline PWA (service worker caches the game; Add to Home screen/Install in Chrome).
+- v25b: PWA fix: service worker only registers when cross-origin-isolation option is on; manifest hand-patched with a 192px icon, id and scope (re-apply after each export).
