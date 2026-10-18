@@ -155,6 +155,8 @@ var btn_inv := Rect2(596, 20, 104, 46)
 var btn_icl := Rect2(250, 1150, 220, 64)
 var btn_ipv := Rect2(40, 1070, 190, 56)
 var btn_inx := Rect2(490, 1070, 190, 56)
+var btn_tpv := Rect2(40, 1150, 190, 64)
+var btn_tnx := Rect2(490, 1150, 190, 64)
 var hp := 24
 var hp_max := 24
 var armor := 0
@@ -2722,12 +2724,12 @@ func _draw_tut(acc: Color) -> void:
 	var ty := 420.0 + rows.size() * 205.0 - 20.0
 	var body := String(pg["x"]).replace("\\n", "\n")
 	var fs := 24 if rows.size() == 1 else 22
-	while fs > 14 and font.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, 620.0, fs).y + ty > 1050.0:
+	while fs > 14 and font.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, 620.0, fs).y + ty > 1130.0:
 		fs -= 1
 	_para(body, Vector2(50, ty), fs, Color(1, 1, 1, 0.9), 620.0)
-	_button(btn_ipv, "PREV", acc, 24)
-	_button(btn_inx, "NEXT", acc, 24)
-	_ctext("%d / %d" % [tut_page + 1, pages.size()], Vector2(360, 1098), 24, Color(1, 1, 1, 0.7))
+	_button(btn_tpv, "PREV", acc, 24)
+	_button(btn_tnx, "NEXT", acc, 24)
+	_ctext("%d / %d" % [tut_page + 1, pages.size()], Vector2(360, 1244), 24, Color(1, 1, 1, 0.7))
 	_button(btn_icl, "BACK", acc, 28)
 
 
@@ -2743,10 +2745,10 @@ func _tut_input(p: Vector2) -> void:
 			_sfx("ui")
 			return
 	var n := _tut_pages(tut_mode).size()
-	if btn_ipv.has_point(p):
+	if btn_tpv.has_point(p):
 		tut_page = (tut_page + n - 1) % n
 		_sfx("ui")
-	elif btn_inx.has_point(p):
+	elif btn_tnx.has_point(p):
 		tut_page = (tut_page + 1) % n
 		_sfx("ui")
 
