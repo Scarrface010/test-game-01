@@ -3865,7 +3865,7 @@ func _gear_desc(d: Dictionary) -> String:
 	var st: Dictionary = d["stats"]
 	for k in st:
 		if k == "range":
-			parts.append(String(labels[k]) % [int(st[k]), str(snappedf(_tier_shot_air(int(d["tier"])), 0.01))])
+			parts.append(String(labels[k]) % [int(st[k]), str(int(_tier_shot_air(int(d["tier"]))))])
 		else:
 			parts.append(String(labels[k]) % int(st[k]))
 	return ", ".join(parts)
@@ -4639,7 +4639,7 @@ func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
 
 
 func _tier_shot_air(tier: int) -> float:
-	return 1.8 * (1.0 + 0.5 * float(tier - 1))
+	return float(ceili(1.8 * (1.0 + 0.5 * float(tier - 1))))
 
 
 func _shot_cost() -> float:
