@@ -12,9 +12,9 @@ const GW := 640.0
 enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER }
 const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
 const BAG_MAX := 12
-const AC := 90.0
+const AC := 72.0
 const AMX := 360.0
-const AMY := 644.0
+const AMY := 674.0
 
 var themes: Array = []
 var font: Font = ThemeDB.fallback_font
@@ -188,6 +188,18 @@ var lb_rows: Array = []
 var lb_status := ""
 var lb_mode := 0
 var tut_page := 0
+var btn_cont := Rect2(50, 1160, 620, 84)
+var save_info := ""
+var save_last_sig := 0
+var save_t := 0.0
+var save_off := false
+const SAVE_PATH := "user://run.sav"
+const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
+	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
+	"thief_held", "relics", "boost", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
+	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
+	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
+	"market_stock", "relic_choices", "shop_return"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -266,6 +278,11 @@ func _ready() -> void:
 		_save_meta()
 	_make_defs()
 	_make_gear()
+	if OS.get_cmdline_user_args().size() > 0:
+		save_off = true
+	var sd0 := _read_save()
+	if not sd0.is_empty():
+		save_info = _save_label(sd0)
 	var rs := RandomNumberGenerator.new()
 	rs.seed = 4242
 	for i in 60:
@@ -277,6 +294,10 @@ func _ready() -> void:
 			var t0 := Time.get_ticks_msec()
 			_new_run(10)
 			print("gen run %d relics %s tries? ms %d boss %s" % [r, relics, Time.get_ticks_msec() - t0, boss_floor])
+		get_tree().quit()
+		return
+	if "--savetest" in args:
+		_save_selftest()
 		get_tree().quit()
 		return
 	if "--advtest" in args:
@@ -1406,7 +1427,7 @@ func _market_rect(i: int) -> Rect2:
 
 
 func _slot_rect(i: int) -> Rect2:
-	return Rect2(40 + i * 118, 982, 108, 62)
+	return Rect2(40 + i * 118, 1046 if mode == "adv" else 982, 108, 62)
 
 
 func _blocking(c: Vector2i) -> bool:
@@ -1597,7 +1618,117 @@ func _aim_apply(c: Vector2i) -> void:
 
 # ----- run flow -----
 
+func _save_selftest() -> void:
+	save_off = false
+	var bad := 0
+	for m in ["adv", "puzzle"]:
+		mode = m
+		cls = "gunslinger"
+		_new_run(7)
+		coins = 77
+		_save_run()
+		var f0 := floor_n
+		var p0 := pos
+		var m0 := mons.size()
+		var w0 := walls.size()
+		var ao := adv_open.size()
+		var eq0 := equip.duplicate()
+		var inv0 := inv.duplicate()
+		coins = 5
+		floor_n = 1
+		mons.clear()
+		pos = Vector2i(-3, -3)
+		equip.clear()
+		inv.clear()
+		if not _load_run():
+			bad += 1
+			print("LOAD FAILED ", m)
+			continue
+		if coins != 77 or floor_n != f0 or pos != p0 or mons.size() != m0 or walls.size() != w0 or adv_open.size() != ao or equip != eq0 or inv != inv0 or state != PLAY:
+			bad += 1
+			print("MISMATCH ", m, " ", coins, " ", floor_n, " ", pos, " ", mons.size(), "/", m0, " ", equip, " ", inv)
+	print("SAVE TEST DONE bad=", bad, " info=", save_info)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+
+
+func _save_sig() -> int:
+	return [floor_n, moves, adv_steps, coins, hp, int(oxy * 10.0), pos, level, xp, keys, boost, sh, inv.hash(), bag.hash(), equip.hash(), relics.hash(), mons.size(), items.size(), corpses.size(), msg].hash()
+
+
+func _save_run() -> void:
+	if save_off:
+		return
+	var d := {"ver": 1}
+	for k in SAVE_VARS:
+		d[k] = get(k)
+	d["inv"] = Array(inv)
+	d["bag"] = Array(bag)
+	var f := FileAccess.open(SAVE_PATH + ".tmp", FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_var(d, true)
+	f.close()
+	var dir := DirAccess.open("user://")
+	if dir != null:
+		dir.rename("run.sav.tmp", "run.sav")
+	save_info = _save_label(d)
+
+
+func _save_label(d: Dictionary) -> String:
+	var cn := String(d.get("cls", "scout")).capitalize()
+	for cd in class_defs:
+		if cd["id"] == d.get("cls", ""):
+			cn = String(cd["name"])
+	return "%s  -  floor %d, %s, LV %d" % ["Adventure" if d.get("mode", "") == "adv" else "Puzzle", int(d.get("floor_n", 1)), cn, int(d.get("level", 1))]
+
+
+func _read_save() -> Dictionary:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return {}
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return {}
+	var d = f.get_var(true)
+	f.close()
+	if d is Dictionary and int(d.get("ver", 0)) == 1:
+		return d
+	return {}
+
+
+func _load_run() -> bool:
+	var d := _read_save()
+	if d.is_empty():
+		return false
+	for k in SAVE_VARS:
+		if d.has(k):
+			set(k, d[k])
+	inv.assign(d.get("inv", []))
+	bag.assign(d.get("bag", []))
+	walk.clear()
+	pops.clear()
+	fx.clear()
+	mon_slide.clear()
+	mon_hit.clear()
+	mon_lunge.clear()
+	reveal.clear()
+	vfade.clear()
+	aim = -1
+	anim_floor = -1
+	menu_armed = -10.0
+	if mode == "adv":
+		_adv_update_vis()
+		_play_music(tidx())
+	else:
+		_play_music(tidx())
+	state = PLAY
+	save_last_sig = _save_sig()
+	save_t = t
+	return true
+
+
 func _wipe_progress() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	save_info = ""
 	bank = 0
 	best = 0
 	adv_best = 0
@@ -1674,6 +1805,13 @@ func _gui_input(event: InputEvent) -> void:
 			state = TUTORIAL
 			tut_page = 0
 			_sfx("ui")
+			return
+		if save_info != "" and btn_cont.has_point(p):
+			if _load_run():
+				_sfx("big")
+			else:
+				save_info = ""
+				_sfx("blocked")
 			return
 		if btn_mode_p.has_point(p):
 			mode = "puzzle"
@@ -1843,6 +1981,12 @@ func _process(dt: float) -> void:
 				walk.clear()
 			else:
 				_step(nc)
+	if state == PLAY and walk.is_empty() and not save_off and t - save_t > 0.4:
+		var sg := _save_sig()
+		if sg != save_last_sig:
+			save_last_sig = sg
+			save_t = t
+			_save_run()
 	var i := pops.size() - 1
 	while i >= 0:
 		if t - float(pops[i]["t"]) > 0.9:
@@ -1861,7 +2005,7 @@ func _wp(cf: Vector2) -> Vector2:
 
 func _fx_band() -> Rect2:
 	if mode == "adv":
-		return Rect2(0, 318, 720, 652)
+		return Rect2(0, 318, 720, 712)
 	return Rect2(GX, GY, N * cell, N * cell)
 
 
@@ -1975,7 +2119,7 @@ func _fx_pickup(c: Vector2i, kind: String) -> void:
 		tgt = Vector2(70, 266)
 		col = Color("ffd84f")
 	elif kind.begins_with("use_"):
-		tgt = Vector2(90, 1000)
+		tgt = Vector2(90, 1064 if mode == "adv" else 1000)
 		col = use_defs[kind.substr(4)]["col"]
 	elif kind.begins_with("gear_"):
 		tgt = Vector2(648, 43)
@@ -3112,6 +3256,11 @@ func _draw_overlay(acc: Color) -> void:
 		draw_rect(btn_lb, Color(0.4, 0.8, 1.0, 0.12))
 		draw_rect(btn_lb, Color("7fd8ff"), false, 3.0)
 		_txt("LEADERBOARD", Vector2(btn_lb.position.x, btn_lb.position.y + 54), 34, Color("7fd8ff"), btn_lb.size.x)
+		if save_info != "":
+			draw_rect(btn_cont, Color(0.4, 1.0, 0.6, 0.14))
+			draw_rect(btn_cont, Color("6dff9a"), false, 3.0)
+			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 36), 32, Color("6dff9a"), btn_cont.size.x)
+			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 68), 20, Color(1, 1, 1, 0.7), btn_cont.size.x)
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)
 	elif state == DEAD:
 		_txt(over_title, Vector2(0, 540), 64, Color("ff5d5d"))
@@ -5226,7 +5375,7 @@ func _adv_input(p: Vector2) -> void:
 		if _slot_rect(i).has_point(p):
 			_adv_use_slot(i)
 			return
-	if p.y < 318.0 or p.y > 970.0:
+	if p.y < 318.0 or p.y > 1030.0:
 		return
 	var c := Vector2i(int(floor(cam.x + (p.x - AMX) / AC + 0.5)), int(floor(cam.y + (p.y - AMY) / AC + 0.5)))
 	if aim >= 0:
@@ -5446,15 +5595,15 @@ func _adv_draw() -> void:
 	_map_begin()
 	var mlist: Array = []
 	var wall_tex := _wall_tex(ti)
-	var x0 := int(floor(cam.x)) - 5
-	var y0 := int(floor(cam.y)) - 5
-	for cx in range(x0, x0 + 12):
-		for cy in range(y0, y0 + 12):
+	var x0 := int(floor(cam.x)) - 6
+	var y0 := int(floor(cam.y)) - 6
+	for cx in range(x0, x0 + 14):
+		for cy in range(y0, y0 + 14):
 			var c := Vector2i(cx, cy)
 			if not _aseen(c):
 				continue
 			var ctr := _actr(c)
-			if ctr.y < 260.0 or ctr.y > 1030.0 or ctr.x < -60.0 or ctr.x > 780.0:
+			if ctr.y < 260.0 or ctr.y > 1100.0 or ctr.x < -60.0 or ctr.x > 780.0:
 				continue
 			var r := Rect2(ctr - Vector2(AC, AC) * 0.5, Vector2(AC, AC))
 			var vis := adv_vis.has(c)
@@ -5534,7 +5683,7 @@ func _adv_draw() -> void:
 	mlist.sort_custom(func(a, b): return a[1].y < b[1].y)
 	for mm2 in mlist:
 		_adv_draw_mon(mm2[0], mm2[1], ti, names, acc)
-	_amb_draw(Rect2(0, 318, 720, 652), ti)
+	_amb_draw(Rect2(0, 318, 720, 712), ti)
 	if aim >= 0 and aim < inv.size():
 		var aid: String = inv[aim]
 		for dx in range(-8, 9):
@@ -5566,16 +5715,16 @@ func _adv_draw() -> void:
 	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
-	draw_rect(Rect2(0, 970, 720, 310), th["bg"])
+	draw_rect(Rect2(0, 1030, 720, 250), th["bg"])
 	draw_line(Vector2(0, 318), Vector2(720, 318), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
-	draw_line(Vector2(0, 970), Vector2(720, 970), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
+	draw_line(Vector2(0, 1030), Vector2(720, 1030), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
 	for s in stars:
-		if float(s[1]) < 318.0 or float(s[1]) > 970.0:
+		if float(s[1]) < 318.0 or float(s[1]) > 1030.0:
 			var a := 0.12 + 0.28 * (0.5 + 0.5 * sin(t * 1.5 + float(s[2])))
 			var sz: float = s[3]
 			draw_rect(Rect2(float(s[0]), float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	# minimap
-	var mm := Rect2(574, 826, 134, 134)
+	var mm := Rect2(574, 888, 134, 134)
 	draw_rect(mm, Color(0, 0, 0, 0.7))
 	draw_rect(mm, Color(acc.r, acc.g, acc.b, 0.6), false, 2.0)
 	if adv_mini != null:
@@ -5651,9 +5800,9 @@ func _adv_draw() -> void:
 			draw_multiline_string(font, Vector2(sr.position.x + 50, sr.position.y + 26), _use_name(inv[i]), HORIZONTAL_ALIGNMENT_LEFT, 56, 13, 3, Color.WHITE)
 		else:
 			_ctext("empty", sr.get_center(), 14, Color(1, 1, 1, 0.3))
-	_txt("TOOLS: tap one to use it", Vector2(40 + slots_n() * 118 + 8, 1020), 17, Color(1, 1, 1, 0.45), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_txt(msg, Vector2(0, 1084), 26, Color.WHITE, 720.0)
-	_txt("Tap a monster to attack. Badge: green easy, amber costly, red deadly.", Vector2(0, 1122), 21, Color(1, 1, 1, 0.55))
+	_txt("TOOLS: tap one to use it", Vector2(40 + slots_n() * 118 + 8, 1084), 17, Color(1, 1, 1, 0.45), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt(msg, Vector2(0, 1144), 26, Color.WHITE, 720.0)
+	_txt("Tap a monster to attack. Badge: green easy, amber costly, red deadly.", Vector2(0, 1178), 20, Color(1, 1, 1, 0.55))
 	var tips := [
 		"Walking costs air. Air pods (O2) refill it. Don't wander blindly!",
 		"Hunters (red !) chase you at half speed. Beat them or outrun them.",
@@ -5664,14 +5813,14 @@ func _adv_draw() -> void:
 		"Every 5th floor a boss guards the exit.",
 		"Tap a tile to walk there. You stop when something new appears.",
 	]
-	_txt(tips[int(t / 5.0) % tips.size()], Vector2(0, 1166), 20, Color(acc.r, acc.g, acc.b, 0.85))
+	_txt(tips[int(t / 5.0) % tips.size()], Vector2(0, 1210), 19, Color(acc.r, acc.g, acc.b, 0.85))
 	if relics.size() > 0:
 		var parts: Array[String] = []
 		for d in relic_defs:
 			var n := relic_n(String(d["id"]))
 			if n > 0:
 				parts.append(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else ""))
-		_para("RELICS: " + ", ".join(parts), Vector2(20, 1220), 15, Color(1, 1, 1, 0.6), 680.0)
+		_para("RELICS: " + ", ".join(parts), Vector2(20, 1240), 15, Color(1, 1, 1, 0.6), 680.0)
 
 
 func _inv_tab_rect(i: int) -> Rect2:
@@ -5703,6 +5852,7 @@ func _menu_leave() -> void:
 		menu_armed = -10.0
 		walk.clear()
 		aim = -1
+		_save_run()
 		state = MODE
 		_sfx("ui")
 	else:

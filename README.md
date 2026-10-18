@@ -138,3 +138,9 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - v24e: How to Play PREV/NEXT now level with BACK; page number below BACK.
 - v25: installable offline PWA (service worker caches the game; Add to Home screen/Install in Chrome).
 - v25b: PWA fix: service worker only registers when cross-origin-isolation option is on; manifest hand-patched with a 192px icon, id and scope (re-apply after each export).
+
+## v26 - Save/continue and wider Adventure view
+- Runs autosave after every action to user://run.sav (browser storage, works offline). The mode screen shows CONTINUE SAVED RUN when a save exists; MENU also saves. Starting a new run replaces the save. Wiping progress deletes it.
+- Adventure view zoomed out (tile size 90 -> 72) and the map window extended down to y=1030, so about 10x10 tiles are visible. Tool slots, message, tips and relic line moved down. Minimap moved with the window.
+- `--savetest` headless self-test checks save/load round trip for both modes.
+- After every Web export re-apply the manifest patch (192px icon, id, scope).
