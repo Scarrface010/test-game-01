@@ -4639,7 +4639,7 @@ func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
 
 
 func _tier_shot_air(tier: int) -> float:
-	return 2.25 * (1.0 + 0.5 * float(tier - 1))
+	return 1.8 * (1.0 + 0.5 * float(tier - 1))
 
 
 func _shot_cost() -> float:
