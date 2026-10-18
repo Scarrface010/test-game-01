@@ -129,3 +129,6 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 ## v23 - Ranged tuning
 - Monsters you shoot (that were not already hunters/shooters/turrets/bosses) now CHARGE: they move every turn instead of every second turn, so backing away from them no longer works forever.
 - Air per shot is 1 for a tier 1 weapon and rises by 0.5 per tier (1, 1.5, 2, 2.5), still reduced by air-saving gear, Efficient Barrel and Ammo Recycler.
+
+## v24 - Gun air cost up 50% more
+- Air per shot is now 1.5 / 2.25 / 3 / 3.75 for tier 1-4 weapons (before air-saving gear and relics). Each gun's description states its number.

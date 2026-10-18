@@ -2593,7 +2593,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
 		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
-		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it (orange tint and reticle show what you can hit). Each shot costs 1 air for a tier 1 weapon, plus half an air more per tier. Shot monsters charge you at full speed (hunters are normally half speed), and a monster right next to you still hits back."},
+		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it (orange tint and reticle show what you can hit). Each shot costs air (shown in the weapon description, more for better weapons). Shot monsters charge you at full speed (hunters are normally half speed), and a monster right next to you still hits back."},
 		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
 		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\\n\\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
 		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]], "s2": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"]],
@@ -3855,12 +3855,15 @@ func _gear_desc(d: Dictionary) -> String:
 		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
 		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
 		"xp": "+%d%% XP", "coin": "+%d per coin", "dodge": "%d%% dodge", "thorns": "%d thorns damage", "killheal": "heal %d on kill",
-		"pod": "+%d air per pod", "range": "shoots %d tiles in a line (1 air per shot, +50% per tier)", "rangeb": "+%d range for ranged weapons", "shotsave": "shots cost %d less air", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
+		"pod": "+%d air per pod", "range": "shoots %d tiles in a line, %s air per shot", "rangeb": "+%d range for ranged weapons", "shotsave": "shots cost %d less air", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
 	}
 	var parts: Array[String] = []
 	var st: Dictionary = d["stats"]
 	for k in st:
-		parts.append(String(labels[k]) % int(st[k]))
+		if k == "range":
+			parts.append(String(labels[k]) % [int(st[k]), str(snappedf(_tier_shot_air(int(d["tier"])), 0.01))])
+		else:
+			parts.append(String(labels[k]) % int(st[k]))
 	return ", ".join(parts)
 
 
@@ -4631,12 +4634,16 @@ func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
 	return true
 
 
+func _tier_shot_air(tier: int) -> float:
+	return 1.5 * (1.0 + 0.5 * float(tier - 1))
+
+
 func _shot_cost() -> float:
 	var wid := String(equip.get("weapon", ""))
 	var tier := 1
 	if wid != "" and gear_defs.has(wid):
 		tier = int(gear_defs[wid]["tier"])
-	var cst := (1.0 + 0.5 * float(tier - 1)) * (1.0 - gear("airsave") / 100.0) - gear("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo"))
+	var cst := _tier_shot_air(tier) * (1.0 - gear("airsave") / 100.0) - gear("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo"))
 	return maxf(0.5, cst) + (0.5 if relic_n("glass") > 0 else 0.0)
 
 
