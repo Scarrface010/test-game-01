@@ -125,3 +125,7 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - 15 new gear pieces (4 weapons incl. Scatter Gun and Gauss Repeater, helmets, armour, boots, trinkets with new stats: range bonus, shot air saving, ranged damage reduction, hazard resistance).
 - 6 adventure relics: Deadeye Scope, Efficient Barrel, Deflector Plating, Hazmat Suit, Grave Robber, Heavy Ammo (cursed).
 - New sounds: player shot, turret, enemy shot, arc, hull breach, poison, slide, explosion, alarm, crystal shard, enemy aggro, corpse thud.
+
+## v23 - Ranged tuning
+- Monsters you shoot (that were not already hunters/shooters/turrets/bosses) now CHARGE: they move every turn instead of every second turn, so backing away from them no longer works forever.
+- Air per shot is 1 for a tier 1 weapon and rises by 0.5 per tier (1, 1.5, 2, 2.5), still reduced by air-saving gear, Efficient Barrel and Ammo Recycler.

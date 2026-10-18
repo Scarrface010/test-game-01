@@ -2593,7 +2593,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
 		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
-		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it (orange tint and reticle show what you can hit). Each shot costs air equal to the weapon tier, shot monsters start hunting you, and a monster right next to you still hits back."},
+		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it (orange tint and reticle show what you can hit). Each shot costs 1 air for a tier 1 weapon, plus half an air more per tier. Shot monsters charge you at full speed (hunters are normally half speed), and a monster right next to you still hits back."},
 		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
 		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\\n\\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
 		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]], "s2": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"]],
@@ -3855,7 +3855,7 @@ func _gear_desc(d: Dictionary) -> String:
 		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
 		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
 		"xp": "+%d%% XP", "coin": "+%d per coin", "dodge": "%d%% dodge", "thorns": "%d thorns damage", "killheal": "heal %d on kill",
-		"pod": "+%d air per pod", "range": "shoots %d tiles in a line (air per shot = tier)", "rangeb": "+%d range for ranged weapons", "shotsave": "shots cost %d less air", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
+		"pod": "+%d air per pod", "range": "shoots %d tiles in a line (1 air per shot, +50% per tier)", "rangeb": "+%d range for ranged weapons", "shotsave": "shots cost %d less air", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
 	}
 	var parts: Array[String] = []
 	var st: Dictionary = d["stats"]
@@ -4565,7 +4565,7 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 func _adv_hunters() -> void:
 	var hs: Array[Vector2i] = []
 	for c in kinds:
-		if String(kinds[c]) == "hunter" and mons.has(c):
+		if (String(kinds[c]) == "hunter" or String(kinds[c]) == "rager") and mons.has(c):
 			hs.append(c)
 	if hs.is_empty():
 		return
@@ -4582,7 +4582,7 @@ func _adv_hunters() -> void:
 			if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
 				return
 			continue
-		if adv_steps % 2 != 0:
+		if adv_steps % 2 != 0 and String(kinds[c]) != "rager":
 			continue
 		var bn := c
 		for dv in dirs:
@@ -4636,7 +4636,7 @@ func _shot_cost() -> float:
 	var tier := 1
 	if wid != "" and gear_defs.has(wid):
 		tier = int(gear_defs[wid]["tier"])
-	var cst := float(tier) * (1.0 - gear("airsave") / 100.0) - gear("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo"))
+	var cst := (1.0 + 0.5 * float(tier - 1)) * (1.0 - gear("airsave") / 100.0) - gear("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo"))
 	return maxf(0.5, cst) + (0.5 if relic_n("glass") > 0 else 0.0)
 
 
@@ -4701,8 +4701,8 @@ func _adv_shoot(c: Vector2i) -> void:
 	if mons.has(c) and not tur.has(c) and not is_boss:
 		var kd := String(kinds.get(c, ""))
 		if kd == "" or kd == "sleeper" or kd == "feeder":
-			kinds[c] = "hunter"
-			msg += "  It charges you!"
+			kinds[c] = "rager"
+			msg += "  It charges you at full speed!"
 			_sfx("aggro")
 	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c):
 		mon_lunge[c] = [t + 0.12, Vector2(pos - c).normalized()]
@@ -5294,10 +5294,10 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 		var scol: Color = TUR_COLS[ti][1]
 		var srd := _lane_ok(c, pos, TUR_RANGE) and (adv_steps + 1 + c.x + c.y) % 2 == 0
 		_ctext("shoots" if srd else "aims", ctr + Vector2(0, -AC * 0.47), 12, scol if srd else Color(1, 1, 1, 0.6))
-	elif kind == "hunter":
-		draw_circle(mk, AC * 0.13, Color("6a1218"))
-		_ctext("!", mk, int(AC * 0.26), Color("ff7a7a"))
-		_ctext("hunts", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a"))
+	elif kind == "hunter" or kind == "rager":
+		draw_circle(mk, AC * 0.13, Color("6a1218") if kind == "hunter" else Color("a01824"))
+		_ctext("!" if kind == "hunter" else "!!", mk, int(AC * 0.26), Color("ff7a7a"))
+		_ctext("hunts" if kind == "hunter" else "CHARGES", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a") if kind == "hunter" else Color("ff4a4a"))
 	elif kind == "thief":
 		draw_circle(mk, AC * 0.13, Color("5a4500"))
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
