@@ -2403,7 +2403,11 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false, dir: int = 0) -
 	if cache.has(key):
 		return cache[key]
 	var art_idx := 9 if boss else (lvl - 1) % 9
-	var art_t: ImageTexture = _atlas_cell("res://art/mon_atlas.png", dir * 2 + (1 if blink else 0), ti * 10 + art_idx)
+	var art_t: ImageTexture = _atlas_cell("res://art/mon_atlas64.png", dir * 2 + (1 if blink else 0), ti * 10 + art_idx, 64)
+	if art_t != null and art_t.get_image().is_invisible():
+		art_t = null  # empty cell in the 64px atlas: fall back to the old 32px art
+	if art_t == null:
+		art_t = _atlas_cell("res://art/mon_atlas.png", dir * 2 + (1 if blink else 0), ti * 10 + art_idx)
 	if art_t != null:
 		cache[key] = art_t
 		return art_t
