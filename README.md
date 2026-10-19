@@ -147,3 +147,6 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 
 ## v27 - Cross-device save
 - Mode screen has EXPORT SAVE (downloads pocket-station-save.psav: gzip of run + bank/upgrades/bests) and IMPORT SAVE (pick the file on another device; bank/upgrades replace, bests take the max, run becomes Continue).
+
+## v28 - Leaderboard live
+- LB_URL now points at the Cloudflare Worker (cloudflare/leaderboard-worker.js, D1 table `lb`, binding `DB`). Same client as before: name prompt on first submit, best floor per mode, top 12 screen.
