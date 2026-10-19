@@ -137,8 +137,11 @@ class Cv:
 				if r[rx] == "1":
 					px(x + rx, y + ry, c)
 
+	# Procedural art is drawn on 32x32 canvases; every texture is handed out at 2x (nearest) so it lines up with 64px atlas art.
 	func tex() -> ImageTexture:
-		return ImageTexture.create_from_image(img)
+		var im: Image = img.duplicate()
+		im.resize(w * 2, h * 2, Image.INTERPOLATE_NEAREST)
+		return ImageTexture.create_from_image(im)
 
 
 var _atlas_img: Dictionary = {}
@@ -149,14 +152,21 @@ func _init(th: Array) -> void:
 
 
 # Hand-drawn sci-fi atlases (art/*.png). Returns null if missing so the procedural art stays as fallback.
-func _atlas_cell(path: String, col: int, row: int) -> ImageTexture:
+const TEX_PX := 64
+
+
+# cell = pixel size of one cell in the atlas file (32 for the current atlases, 64 for new ones). Output is always TEX_PX.
+func _atlas_cell(path: String, col: int, row: int, cell: int = 32) -> ImageTexture:
 	if not _atlas_img.has(path):
 		var src: Texture2D = load(path) as Texture2D
 		_atlas_img[path] = src.get_image() if src != null else null
 	var im: Image = _atlas_img[path]
-	if im == null or (col + 1) * 32 > im.get_width() or (row + 1) * 32 > im.get_height():
+	if im == null or (col + 1) * cell > im.get_width() or (row + 1) * cell > im.get_height():
 		return null
-	return ImageTexture.create_from_image(im.get_region(Rect2i(col * 32, row * 32, 32, 32)))
+	var out: Image = im.get_region(Rect2i(col * cell, row * cell, cell, cell))
+	if cell != TEX_PX:
+		out.resize(TEX_PX, TEX_PX, Image.INTERPOLATE_NEAREST)
+	return ImageTexture.create_from_image(out)
 
 
 func _text(cv: Cv, s: String, x: int, y: int, c: Color) -> void:
@@ -1161,6 +1171,7 @@ func corpse(ti: int, lvl: int, boss: bool, tv: int, td: int, fl: int) -> ImageTe
 	else:
 		src = monster(ti, lvl, boss, true).get_image().duplicate()
 	src.convert(Image.FORMAT_RGBA8)
+	src.resize(32, 32, Image.INTERPOLATE_NEAREST)  # textures are 64px now; the corpse is composed on a 32 canvas, then upscaled
 	var dim := 0.78 if tv < 0 else 0.5
 	for y in src.get_height():
 		for x in src.get_width():
@@ -1190,6 +1201,7 @@ func corpse(ti: int, lvl: int, boss: bool, tv: int, td: int, fl: int) -> ImageTe
 		out.blend_rect(src, Rect2i(0, 0, 32, 20), Vector2i(0, 9))
 		for sp in [Vector2i(3, 28), Vector2i(28, 22), Vector2i(26, 29)]:
 			out.set_pixel(sp.x, sp.y, pc.darkened(0.1))
+	out.resize(TEX_PX, TEX_PX, Image.INTERPOLATE_NEAREST)
 	var t := ImageTexture.create_from_image(out)
 	cache[key] = t
 	return t
