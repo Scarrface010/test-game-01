@@ -188,7 +188,12 @@ var lb_rows: Array = []
 var lb_status := ""
 var lb_mode := 0
 var tut_page := 0
-var btn_cont := Rect2(50, 1160, 620, 84)
+var btn_cont := Rect2(50, 1146, 620, 72)
+var btn_exp := Rect2(50, 1228, 300, 44)
+var btn_imp := Rect2(370, 1228, 300, 44)
+var imp_wait := false
+var xfer_msg := ""
+var xfer_t := -10.0
 var save_info := ""
 var save_last_sig := 0
 var save_t := 0.0
@@ -1726,6 +1731,68 @@ func _load_run() -> bool:
 	return true
 
 
+func _xfer_export() -> void:
+	if not OS.has_feature("web"):
+		xfer_msg = "Export works in the web build"
+		xfer_t = t
+		return
+	var meta := {"best": best, "adv_best": adv_best, "bank": bank, "ups": ups.duplicate()}
+	var pkg := {"ver": 1, "meta": meta, "run": _read_save()}
+	var raw := var_to_bytes(pkg)
+	var comp := raw.compress(FileAccess.COMPRESSION_GZIP)
+	var out := PackedByteArray("PSAV".to_utf8_buffer())
+	out.append_array(comp)
+	JavaScriptBridge.download_buffer(out, "pocket-station-save.psav", "application/octet-stream")
+	xfer_msg = "Save file exported - send it to your other device"
+	xfer_t = t
+
+
+func _xfer_import_start() -> void:
+	if not OS.has_feature("web"):
+		xfer_msg = "Import works in the web build"
+		xfer_t = t
+		return
+	JavaScriptBridge.eval("window.__psv='';(function(){var i=document.createElement('input');i.type='file';i.onchange=function(){var f=i.files[0];if(!f)return;var r=new FileReader();r.onload=function(){var u=new Uint8Array(r.result);var s='';for(var k=0;k<u.length;k++)s+=String.fromCharCode(u[k]);window.__psv=btoa(s);};r.readAsArrayBuffer(f);};i.click();})()")
+	imp_wait = true
+
+
+func _xfer_import_poll() -> void:
+	var v = JavaScriptBridge.eval("window.__psv||''")
+	var b64 := String(v)
+	if b64 == "":
+		return
+	JavaScriptBridge.eval("window.__psv=''")
+	imp_wait = false
+	xfer_t = t
+	var raw := Marshalls.base64_to_raw(b64)
+	if raw.size() < 8 or raw.slice(0, 4).get_string_from_utf8() != "PSAV":
+		xfer_msg = "That is not a Pocket Station save file"
+		return
+	var un := raw.slice(4).decompress_dynamic(30000000, FileAccess.COMPRESSION_GZIP)
+	var pkg = bytes_to_var(un) if un.size() > 0 else null
+	if not (pkg is Dictionary) or int(pkg.get("ver", 0)) != 1:
+		xfer_msg = "Could not read that save file"
+		return
+	var meta: Dictionary = pkg.get("meta", {})
+	best = maxi(best, int(meta.get("best", 0)))
+	adv_best = maxi(adv_best, int(meta.get("adv_best", 0)))
+	bank = int(meta.get("bank", bank))
+	var iu: Dictionary = meta.get("ups", {})
+	for k in ups:
+		if iu.has(k):
+			ups[k] = int(iu[k])
+	_save_meta()
+	var run = pkg.get("run", {})
+	if run is Dictionary and not run.is_empty():
+		var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+		if f != null:
+			f.store_var(run, true)
+			f.close()
+			save_info = _save_label(run)
+	xfer_msg = "Imported! Tap CONTINUE to resume" if save_info != "" else "Imported progress (no run in file)"
+	_sfx("big")
+
+
 func _wipe_progress() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	save_info = ""
@@ -1804,6 +1871,14 @@ func _gui_input(event: InputEvent) -> void:
 		if btn_tut.has_point(p):
 			state = TUTORIAL
 			tut_page = 0
+			_sfx("ui")
+			return
+		if btn_exp.has_point(p):
+			_xfer_export()
+			_sfx("ui")
+			return
+		if btn_imp.has_point(p):
+			_xfer_import_start()
 			_sfx("ui")
 			return
 		if save_info != "" and btn_cont.has_point(p):
@@ -1981,6 +2056,8 @@ func _process(dt: float) -> void:
 				walk.clear()
 			else:
 				_step(nc)
+	if imp_wait and state == MODE and OS.has_feature("web"):
+		_xfer_import_poll()
 	if state == PLAY and walk.is_empty() and not save_off and t - save_t > 0.4:
 		var sg := _save_sig()
 		if sg != save_last_sig:
@@ -3259,8 +3336,12 @@ func _draw_overlay(acc: Color) -> void:
 		if save_info != "":
 			draw_rect(btn_cont, Color(0.4, 1.0, 0.6, 0.14))
 			draw_rect(btn_cont, Color("6dff9a"), false, 3.0)
-			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 36), 32, Color("6dff9a"), btn_cont.size.x)
-			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 68), 20, Color(1, 1, 1, 0.7), btn_cont.size.x)
+			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
+			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
+		_button(btn_exp, "EXPORT SAVE", Color("c9d3f0"), 20)
+		_button(btn_imp, "IMPORT SAVE", Color("c9d3f0"), 20)
+		if t - xfer_t < 6.0:
+			_txt(xfer_msg, Vector2(0, 252), 24, Color("6dff9a"))
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)
 	elif state == DEAD:
 		_txt(over_title, Vector2(0, 540), 64, Color("ff5d5d"))

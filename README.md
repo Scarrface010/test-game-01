@@ -144,3 +144,6 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 - Adventure view zoomed out (tile size 90 -> 72) and the map window extended down to y=1030, so about 10x10 tiles are visible. Tool slots, message, tips and relic line moved down. Minimap moved with the window.
 - `--savetest` headless self-test checks save/load round trip for both modes.
 - After every Web export re-apply the manifest patch (192px icon, id, scope).
+
+## v27 - Cross-device save
+- Mode screen has EXPORT SAVE (downloads pocket-station-save.psav: gzip of run + bank/upgrades/bests) and IMPORT SAVE (pick the file on another device; bank/upgrades replace, bests take the max, run becomes Continue).
