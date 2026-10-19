@@ -150,3 +150,7 @@ LEADERBOARD button under HOW TO PLAY: per-mode (Puzzle / Adventure) top 12 with 
 
 ## v28 - Leaderboard live
 - LB_URL now points at the Cloudflare Worker (cloudflare/leaderboard-worker.js, D1 table `lb`, binding `DB`). Same client as before: name prompt on first submit, best floor per mode, top 12 screen.
+
+## v29 - Sci-fi art pass
+- New original hand-drawn tile kit (art/tile_atlas.png: 4 worlds x 2 parities x 16 floor variants + 4 walls) and 40 enemy sprites (art/mon_atlas.png: 9 per world + a boss each, 4 facings x blink). Generators live in art-src/ (tiles.py, mons.py).
+- sprites.gd loads the atlases and falls back to the old procedural art if they are missing. Player art is unchanged (procedural, keeps gear overlays, 4 facings, walk frames).

@@ -141,8 +141,22 @@ class Cv:
 		return ImageTexture.create_from_image(img)
 
 
+var _atlas_img: Dictionary = {}
+
+
 func _init(th: Array) -> void:
 	themes = th
+
+
+# Hand-drawn sci-fi atlases (art/*.png). Returns null if missing so the procedural art stays as fallback.
+func _atlas_cell(path: String, col: int, row: int) -> ImageTexture:
+	if not _atlas_img.has(path):
+		var src: Texture2D = load(path) as Texture2D
+		_atlas_img[path] = src.get_image() if src != null else null
+	var im: Image = _atlas_img[path]
+	if im == null or (col + 1) * 32 > im.get_width() or (row + 1) * 32 > im.get_height():
+		return null
+	return ImageTexture.create_from_image(im.get_region(Rect2i(col * 32, row * 32, 32, 32)))
 
 
 func _text(cv: Cv, s: String, x: int, y: int, c: Color) -> void:
@@ -1919,6 +1933,10 @@ func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
 	var key := "floor%d_%d_%d" % [ti, parity, variant]
 	if cache.has(key):
 		return cache[key]
+	var art_f: ImageTexture = _atlas_cell("res://art/tile_atlas.png", variant, ti * 2 + parity)
+	if art_f != null:
+		cache[key] = art_f
+		return art_f
 	var base: Color = themes[ti]["tile"] if parity == 0 else themes[ti]["tile2"]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = ti * 1000 + parity * 100 + variant * 7 + 11
@@ -2258,6 +2276,10 @@ func wall_tile(ti: int) -> ImageTexture:
 	var key := "wall%d" % ti
 	if cache.has(key):
 		return cache[key]
+	var art_w: ImageTexture = _atlas_cell("res://art/tile_atlas.png", ti, 8)
+	if art_w != null:
+		cache[key] = art_w
+		return art_w
 	var base: Color = themes[ti]["wall"]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 555 + ti
@@ -2368,6 +2390,11 @@ func monster(ti: int, lvl: int, boss: bool, blink: bool = false, dir: int = 0) -
 	var key := "m%d_%d_%d_%d_%d" % [ti, lvl, 1 if boss else 0, 1 if blink else 0, dir]
 	if cache.has(key):
 		return cache[key]
+	var art_idx := 9 if boss else (lvl - 1) % 9
+	var art_t: ImageTexture = _atlas_cell("res://art/mon_atlas.png", dir * 2 + (1 if blink else 0), ti * 10 + art_idx)
+	if art_t != null:
+		cache[key] = art_t
+		return art_t
 	var cols: Array = themes[ti]["mcols"]
 	var skin: Color = cols[(lvl - 1) % cols.size()]
 	var rng := RandomNumberGenerator.new()
