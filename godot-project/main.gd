@@ -108,6 +108,7 @@ var cls := "scout"
 var inv: Array[String] = []
 var aim := -1
 var boost := 0
+var cloak_steps := 0
 var act_cd := 0
 var station_uses := 0
 const STATION_USES := 3
@@ -236,7 +237,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 16
+const BUILD := 17
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -247,7 +248,7 @@ var save_off := false
 const SAVE_PATH := "user://run.sav"
 const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
 	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
-	"thief_held", "relics", "boost", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
+	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
 	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d"]
@@ -270,8 +271,8 @@ var adv_text := {
 	"phoenix": "Survive one death: restores full health and air",
 	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters hard. Damage grows with depth and level",
 	"tool_zap": "Zaps a monster within 3 tiles for heavy damage. Damage grows with depth and level",
-	"tool_crystal": "+20 air", "tool_cloak": "+3 attack until your next kill",
-	"tool_draught": "Gives 75% of a level's worth of XP", "tool_magnet": "Pulls in coins within 7 tiles",
+	"tool_crystal": "+20 air", "tool_cloak": "Invisible for 16 steps or until you attack",
+	"tool_draught": "Gives 75% of a level's worth of XP", "tool_magnet": "Pulls in coins within 14 tiles",
 	"tool_blink": "Teleport to a nearby explored tile",
 }
 var reset_armed := -10.0
@@ -535,7 +536,7 @@ func _make_defs() -> void:
 		"bomb": {"name": "Bomb", "desc": "Destroys adjacent walls, spikes and weak monsters", "col": Color("ff7a45")},
 		"crystal": {"name": "Time Crystal", "desc": "Pushes the dark back 6 steps", "col": Color("4fd1ff")},
 		"blink": {"name": "Blink Scroll", "desc": "Teleport to any free tile (costs 1 step)", "col": Color("c07cff")},
-		"cloak": {"name": "Shadow Cloak", "desc": "Your next fight counts as +3 levels", "col": Color("9aa3c7")},
+		"cloak": {"name": "Shadow Cloak", "desc": "Adventure: invisible for 16 steps or until you attack. Puzzle: your next fight counts as +3 levels", "col": Color("9aa3c7")},
 		"draught": {"name": "Elixir", "desc": "+2 levels right now", "col": Color("6dff9a")},
 		"magnet": {"name": "Magnet", "desc": "Pulls in every coin on the board", "col": Color("ff5d5d")},
 		"pick": {"name": "Pickaxe", "desc": "Breaks any one wall", "col": Color("c9a55a")},
@@ -903,6 +904,7 @@ func _begin_floor() -> void:
 	pos = start
 	keys = 0
 	boost = 0
+	cloak_steps = 0
 	aim = -1
 	walk.clear()
 	pops.clear()
@@ -1680,6 +1682,10 @@ const ACTS := {
 func _act_tick() -> void:
 	if act_cd > 0:
 		act_cd -= 1
+	if cloak_steps > 0:
+		cloak_steps -= 1
+		if cloak_steps == 0 and mode == "adv":
+			msg = "Your Shadow Cloak fades"
 
 
 func _act_rect() -> Rect2:
@@ -2075,6 +2081,7 @@ func _aim_apply(c: Vector2i) -> void:
 		msg = "The wall crumbles"
 		_sfx("spike")
 	elif id == "zap":
+		_cloak_break()
 		_pop(c, "ZAP", Color("ffe14f"))
 		_kill_free(c)
 		msg = "Zap!"
@@ -2117,7 +2124,7 @@ func _save_selftest() -> void:
 
 
 func _save_sig() -> int:
-	return [floor_n, moves, adv_steps, coins, hp, int(oxy * 10.0), pos, level, xp, keys, boost, sh, inv.hash(), bag.hash(), equip.hash(), relics.hash(), mons.size(), items.size(), corpses.size(), msg].hash()
+	return [floor_n, moves, adv_steps, coins, hp, int(oxy * 10.0), pos, level, xp, keys, boost, cloak_steps, sh, inv.hash(), bag.hash(), equip.hash(), relics.hash(), mons.size(), items.size(), corpses.size(), msg].hash()
 
 
 func _save_run() -> void:
@@ -2846,7 +2853,7 @@ func _draw_player(prc: Vector2, sz: float) -> void:
 	var feet := -(sy - 1.0) * sz * 0.5
 	var tex := _player_tex(fr)
 	var at := prc + Vector2(0, -hop + feet)
-	_spr_ex(tex, at, sz, Color.WHITE, 1.0, wob + lean, sx, sy)
+	_spr_ex(tex, at, sz, Color(0.7, 0.8, 1.0, 0.45 + 0.1 * sin(t * 4.0)) if cloak_steps > 0 else Color.WHITE, 1.0, wob + lean, sx, sy)
 	var fl := clampf(1.0 - (t - p_hit_t0) / 0.3, 0.0, 1.0)
 	if fl > 0.0:
 		_spr_ex(spr_gen.white(tex), at, sz, Color(1.0, 0.35, 0.35, fl * 0.85), 1.0, wob + lean, sx, sy)
@@ -3558,7 +3565,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
 		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\n\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
 		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]],
-		"x": "Every world has its own floor hazards, shown on the tile.\n\nStation: Arc plates shock you only while lit (they flicker each step). Breach vents cost 8 air.\n\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station). Slick patches make you skid one more tile.\n\nBombs clear hazards."},
+		"x": "Every world has its own floor hazards, shown on the tile.\n\nStation: Arc plates shock you only while lit (they flicker each step). Breach vents cost 8 air.\n\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station). Slick patches send you sliding in a straight line until something blocks you, even into other hazards.\n\nBombs clear hazards."},
 		{"t": "MORE HAZARDS", "ti": 2, "s": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"], ["haz:warp", "Warp pad"], ["haz:shard", "Shard"]],
 		"x": "Smugglers: Mines blow up for big damage (and hurt monsters nearby). Alarm gates wake nearby monsters into hunters.\n\nCrystal Deep: Warp pads fling you across the cave. Crystal shards cut you and cost extra air.\n\nBombs clear hazards, so keep one for a nasty corridor."},
 		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
@@ -3572,19 +3579,19 @@ func _tut_pages(which: int) -> Array:
 		{"t": "ENEMIES", "ti": 2, "s": [["mon:2:4:hunter:a", "Hunter !"], ["mon:2:3:thief:g", "Thief $"], ["mon:2:5:elite:a", "Elite star"], ["boss:2", "Boss"]],
 		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\nElites (gold star) give extra XP and may drop gear.\nShooters (gun icon) keep their distance, line up with you and fire down a lane: break the line or rush them.\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
 		{"t": "AFFIXES", "ti": 2, "s": [["aff:plated", "Plated"], ["aff:regen", "Regenerating"], ["aff:leech", "Leeching"], ["aff:spiny", "Spiny"]],
-		"x": "On deeper floors some monsters carry an AFFIX: a two-letter badge on the sprite. They are tougher but give more XP and may drop gear.\n\nPL Plated: takes 2+ less damage from every hit.\nRG Regenerating: heals 2 health every step.\nLC Leeching: heals itself when it hits you.\nSP Spiny: reflects damage back at you."},
-		{"t": "MORE AFFIXES", "ti": 2, "s": [["aff:frenzy", "Frenzied"], ["aff:volatile", "Unstable"], ["aff:evasive", "Evasive"], ["aff:warded", "Warded"]],
-		"x": "FZ Frenzied: hits much harder below half health. Finish it fast.\n\nUN Unstable: explodes when killed, hurting you if you are beside it. Shoot it from range.\n\nEV Evasive: 20% chance to dodge your attacks.\n\nWD Warded: immune to burn, poison and stun, so trait builds do nothing to it."},
+		"x": "On deeper floors some monsters carry an AFFIX: a name tag on the sprite. They are tougher but give more XP and may drop gear.\n\nPLATED: takes 2+ less damage from every hit.\nREGEN: heals 2 health every step.\nLEECH: heals itself when it hits you.\nSPINY: reflects damage back at you."},
+		{"t": "MORE AFFIXES", "ti": 2, "s": [["aff:frenzy", "Frenzied"], ["aff:volatile", "Bomb"], ["aff:evasive", "Evasive"], ["aff:warded", "Immune"]],
+		"x": "FRENZY: hits much harder below half health and glows red. Finish it fast.\n\nBOMB: explodes when killed, hurting you if you are beside it. Shoot it from range.\n\nEVASIVE: 20% chance to dodge your attacks.\n\nIMMUNE: immune to burn, poison and stun, so trait builds do nothing to it."},
 		{"t": "GEAR", "ti": 2, "s": [["icon:crate_weapon", "Weapon"], ["icon:crate_helmet", "Helmet"], ["icon:crate_armour", "Armour"], ["icon:crate_boots", "Boots"]], "s2": [["icon:crate_trinket", "Trinket"], ["icon:merchant", "Outfitter"]],
 		"x": "Crates hold gear for five slots. Pick one up to add it to your PACK, then equip it from the BAG for bonuses like attack, armour, crit, sight or extra air. What you equip shows on your astronaut.\n\nWalk onto the SHOP stall (the Outfitter) to buy gear and tools with coins or sell what you do not need. The pack holds 12 items.\n\nEnemies with a two-letter badge and elites drop gear more often."},
 		{"t": "WEAPON TRAITS", "ti": 0, "s": [["icon:crate_weapon", "Weapon"], ["use:bomb", "Fire"], ["haz:arc", "Shock"], ["haz:toxic", "Toxic"], ["haz:slick", "Cryo"]],
 		"x": "Weapons can roll random TRAITS: special effects you can read in the BAG under GEAR. One weapon can carry several.\n\nFire: Ignite burns, Volatile makes kills explode.\nShock: Static stuns, Arc Chain jumps to a second enemy.\nCryo: Frostbite freezes, Shatter hits stunned or frozen enemies harder.\nToxic: Toxin stacks poison, Plague spreads it when they die.\n\nBurning, poisoned, stunned and frozen enemies show small marks."},
 		{"t": "MORE TRAITS", "ti": 0, "s": [["icon:crate_weapon", "Weapon"], ["item:hp", "Blood"], ["item:big", "Streaks"]],
-		"x": "Blood: Siphon and Bloodlust heal you, Executioner finishes weak enemies.\nStreaks: Rampage, Rhythm, Marked and Deadly Crits reward hitting without being hurt.\nBasic: Brutal, Ambush, Keen Edge, Cleave, Pierce, Overkill, Bounty, Spiked, Duelist and Efficient Rounds.\n\nThe Basic traits are always open. Fire, Shock, Cryo, Toxic, Blood and Streak traits come from SHOP packs. Warded enemies ignore all status effects."},
+		"x": "Blood: Siphon and Bloodlust heal you, Executioner finishes weak enemies.\nStreaks: Rampage, Rhythm, Marked and Deadly Crits reward hitting without being hurt.\nBasic: Brutal, Ambush, Keen Edge, Cleave, Pierce, Overkill, Bounty, Spiked, Duelist and Efficient Rounds.\n\nThe Basic traits are always open. Fire, Shock, Cryo, Toxic, Blood and Streak traits come from SHOP packs. Immune enemies ignore all status effects."},
 		{"t": "RELICS", "ti": 0, "s": [],
 		"x": "After each floor you pick one of three relics (the Gambler sees four). A relic lasts the whole run, and you can skip a choice for a few coins. Some are cursed: strong, but they cost you.\n\nMany relics belong to a family: fire, shock, cryo, toxic, blood, crit and more. They power up weapon traits of the same family. Pyromaniac makes burns last longer and hurt double. Storm Capacitor lets Arc Chain hit three enemies.\n\nSome pairs give an extra SYNERGY bonus when you own both, like Pyromaniac with Storm Capacitor. The Relic Cache pack adds more relics."},
 		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"], ["use:magnet", "Magnet"]], "s2": [["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["use:nano", "Nano Injector"], ["use:cell", "Shield Cell"], ["use:scan", "Scanner"]],
-		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak adds attack for your next fight, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP, Nano Injector heals fully, Shield Cell refills your shield, Scanner reveals the map.\n\nAlso: Plating Kit (+1 armour) and Ration Pack (heals 40%, +15 air). A key opens a vault. Tools are used up; your class power recharges."},
+		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak makes you invisible for 16 steps or until you attack, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP, Nano Injector heals fully, Shield Cell refills your shield, Scanner reveals the map.\n\nAlso: Plating Kit (+1 armour) and Ration Pack (heals 40%, +15 air). A key opens a vault. Tools are used up; your class power recharges."},
 		{"t": "THE BAG", "ti": 0, "s": [["item:lamp", "Scanner"], ["item:coin", "Coin"]],
 		"x": "Tap BAG (top right) to see everything: STATS, TOOLS, RELICS, GEAR and PACK, each with a description. You can also leave the match from there with BACK TO MENU. The SKILLS button sits beside it.\n\nScanners reveal the map around you. After each floor you pick a relic that lasts the run, and your coins are banked to spend in the SHOP."},
 		_tut_shop_page(),
@@ -3664,13 +3671,8 @@ func _tut_icon(spec: String, ctr: Vector2, s: float, ti: int) -> void:
 		draw_rect(rr, Color(dcol.r, dcol.g, dcol.b, 0.22))
 		draw_rect(rr, dcol, false, 4.0)
 	elif k == "aff":
-		var ad: Dictionary = AFFIX_DEFS[String(p[1])]
-		var ac3: Color = ad["col"]
 		_spr(_monster_tex(ti, 6, false), ctr + Vector2(0, -2), s * 0.82)
-		var ap2 := rr.position + Vector2(s - 20, s - 20)
-		draw_circle(ap2, 17, Color("0a0c14"))
-		draw_circle(ap2, 14.5, Color(ac3.r * 0.55, ac3.g * 0.55, ac3.b * 0.55))
-		_ctext(String(ad["s"]), ap2, 15, ac3)
+		_aff_pill(rr.position + Vector2(s - 4, s - 16), String(p[1]), 15, true)
 	elif k == "skn":
 		var sb := int(p[1])
 		var scl: Color = SK_BR[sb][1]
@@ -5196,11 +5198,35 @@ func p_atk() -> int:
 	return level + boost + int(gear("atk")) + int(sk("atk"))
 
 
+func _is_frenzied(c: Vector2i) -> bool:
+	return String(affix.get(c, "")) == "frenzy" and mon_hp_now(c) * 2 < mon_hp_max(c)
+
+
+func _frenzy_tint(c: Vector2i) -> Color:
+	if not _is_frenzied(c):
+		return Color.WHITE
+	var k := 0.5 + 0.5 * sin(t * 8.0)
+	return Color(1.0, 0.32 + 0.14 * k, 0.28 + 0.1 * k, 1.0)
+
+
+func _aff_pill(p: Vector2, key: String, fs: int, right: bool) -> void:
+	var ad: Dictionary = AFFIX_DEFS[key]
+	var col: Color = ad["col"]
+	var txt := String(ad["s"])
+	var w := font_title.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 10.0
+	var h := float(fs) + 6.0
+	var cx := p.x - w * 0.5 if right else p.x
+	var r := Rect2(cx - w * 0.5, p.y - h * 0.5, w, h)
+	draw_rect(r.grow(1.5), Color("0a0c14"))
+	draw_rect(r, Color(col.r * 0.5, col.g * 0.5, col.b * 0.5))
+	_ctext(txt, Vector2(cx, p.y), fs, col)
+
+
 func mon_atk(c: Vector2i) -> int:
 	var a := maxi(1, _mon_level(c))
 	if mode == "adv":
 		a += armor_total() / 3
-		if String(affix.get(c, "")) == "frenzy" and mon_hp_now(c) * 2 < mon_hp_max(c):
+		if _is_frenzied(c):
 			a += maxi(2, a / 2)
 	return a
 
@@ -5396,14 +5422,14 @@ const TRAIT_DEFS := {
 }
 
 const AFFIX_DEFS := {
-	"plated": {"n": "Plated", "d": "Takes 2+ less damage from every hit", "col": Color("9fb3d9"), "s": "PL"},
-	"regen": {"n": "Regenerating", "d": "Heals 2 health every step", "col": Color("6dff9a"), "s": "RG"},
-	"leech": {"n": "Leeching", "d": "Heals itself when it hits you", "col": Color("ff5d8a"), "s": "LC"},
-	"spiny": {"n": "Spiny", "d": "Reflects damage back at you", "col": Color("ffb347"), "s": "SP"},
-	"frenzy": {"n": "Frenzied", "d": "Hits much harder when below half health", "col": Color("ff4a4a"), "s": "FZ"},
-	"volatile": {"n": "Unstable", "d": "Explodes when killed, hurting you if you are adjacent", "col": Color("ff8a3c"), "s": "UN"},
-	"evasive": {"n": "Evasive", "d": "20% chance to dodge your attacks", "col": Color("9fe8ff"), "s": "EV"},
-	"warded": {"n": "Warded", "d": "Immune to burn, poison and stun", "col": Color("c07cff"), "s": "WD"},
+	"plated": {"n": "Plated", "d": "Takes 2+ less damage from every hit", "col": Color("9fb3d9"), "s": "plated"},
+	"regen": {"n": "Regenerating", "d": "Heals 2 health every step", "col": Color("6dff9a"), "s": "regen"},
+	"leech": {"n": "Leeching", "d": "Heals itself when it hits you", "col": Color("ff5d8a"), "s": "leech"},
+	"spiny": {"n": "Spiny", "d": "Reflects damage back at you", "col": Color("ffb347"), "s": "spiny"},
+	"frenzy": {"n": "Frenzied", "d": "Hits much harder when below half health", "col": Color("ff4a4a"), "s": "frenzy"},
+	"volatile": {"n": "Bomb", "d": "Explodes when killed, hurting you if you are adjacent", "col": Color("ff8a3c"), "s": "bomb"},
+	"evasive": {"n": "Evasive", "d": "20% chance to dodge your attacks", "col": Color("9fe8ff"), "s": "evasive"},
+	"warded": {"n": "Immune", "d": "Immune to burn, poison and stun", "col": Color("c07cff"), "s": "immune"},
 }
 
 
@@ -5474,8 +5500,10 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 		n = 0 if r < 0.25 else (1 if r < 0.8 else 2)
 	elif tier == 3:
 		n = 1 if r < 0.55 else (2 if r < 0.95 else 3)
-	else:
+	elif tier == 4:
 		n = 2 if r < 0.7 else 3
+	else:
+		n = 2 if r < 0.4 else 3
 	if n == 0:
 		return ""
 	var pool: Array = []
@@ -5672,7 +5700,7 @@ func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 					_adv_damage_mon(o, maxi(1, bd), Color("ff7a45"))
 				_fx_burst(Vector2(c), Color("ff7a45"), 14, 3.4, 0.5, 5.0)
 			if String(affix.get(c, "")) == "volatile" and maxi(absi(pos.x - c.x), absi(pos.y - c.y)) <= 1 and mode == "adv":
-				_adv_env_hurt(maxi(1, _mon_level(c) / 2 + 1), "Unstable blast! You lose %d health", "You were caught in an explosion")
+				_adv_env_hurt(maxi(1, _mon_level(c) / 2 + 1), "Bomb blast! You lose %d health", "You were caught in an explosion")
 		if tl.has("plague") and mstat.has(c) and mstat[c].has("psn"):
 			for o in _near_mons(c, 1, []):
 				_st_poison(o, 2)
@@ -6149,6 +6177,16 @@ func _make_gear() -> void:
 		{"id": "scopemod", "slot": "trinket", "name": "Scope Module", "tier": 3, "price": 56, "stats": {"rangeb": 1, "crit": 8}},
 		{"id": "critoptics", "slot": "trinket", "name": "Crit Optics", "tier": 2, "price": 34, "stats": {"crit": 15, "sight": 1}},
 		{"id": "overlord", "slot": "trinket", "name": "Overlord Chip", "tier": 4, "price": 96, "stats": {"atk": 3, "xp": 40}},
+		{"id": "oblivion", "slot": "weapon", "name": "Oblivion Edge", "tier": 5, "price": 150, "stats": {"atk": 13, "crit": 25, "leech": 3}},
+		{"id": "starmaul", "slot": "weapon", "name": "Starforged Maul", "tier": 5, "price": 148, "stats": {"atk": 16, "crit": 10}},
+		{"id": "eventrail", "slot": "weapon", "name": "Event Horizon Rail", "tier": 5, "price": 156, "stats": {"atk": 12, "range": 6, "crit": 25}},
+		{"id": "eclipsecrown", "slot": "helmet", "name": "Eclipse Crown", "tier": 5, "price": 148, "stats": {"armor": 3, "hp": 10, "sight": 2, "xp": 35}},
+		{"id": "horizonplate", "slot": "armour", "name": "Event Horizon Plate", "tier": 5, "price": 160, "stats": {"armor": 7, "hp": 22, "shield": 10, "thorns": 4}},
+		{"id": "starweave", "slot": "armour", "name": "Starweave Shroud", "tier": 5, "price": 150, "stats": {"armor": 4, "hp": 14, "dodge": 14, "shield": 8}},
+		{"id": "wormhole", "slot": "boots", "name": "Wormhole Treads", "tier": 5, "price": 150, "stats": {"airsave": 42, "dodge": 14, "sight": 1, "hazres": 30}},
+		{"id": "voidheart", "slot": "trinket", "name": "Void Heart", "tier": 5, "price": 152, "stats": {"hp": 26, "killheal": 6, "atk": 2}},
+		{"id": "infinitylens", "slot": "trinket", "name": "Infinity Lens", "tier": 5, "price": 150, "stats": {"crit": 20, "xp": 40, "rangeb": 1}},
+		{"id": "midasengine", "slot": "trinket", "name": "Midas Engine", "tier": 5, "price": 148, "stats": {"coin": 4, "xp": 30, "pod": 20}},
 	]
 	gear_defs.clear()
 	for d in gear_list:
@@ -6161,6 +6199,8 @@ func _gear_col(slot: String) -> Color:
 
 
 func _tier_col(t: int) -> Color:
+	if t >= 5:
+		return Color("ff6a4f")
 	if t >= 4:
 		return Color("ffd84f")
 	if t == 3:
@@ -6197,8 +6237,8 @@ func _adv_roll_gear(rng: RandomNumberGenerator, bonus := 0) -> String:
 	elif floor_n <= 12:
 		tier = 2 if r < 0.4 else (3 if r < 0.85 else 4)
 	else:
-		tier = 2 if r < 0.2 else (3 if r < 0.65 else 4)
-	tier = clampi(tier + bonus, 1, 4)
+		tier = 2 if r < 0.1 else (3 if r < 0.4 else (4 if r < 0.8 else 5))
+	tier = clampi(tier + bonus, 1, 5 if floor_n >= 13 else 4)
 	var pool: Array = []
 	for d in gear_list:
 		if int(d["tier"]) == tier:
@@ -6479,6 +6519,7 @@ func _adv_begin() -> void:
 	pos = start
 	keys = 0
 	boost = 0
+	cloak_steps = 0
 	poison_n = 0
 	aim = -1
 	walk.clear()
@@ -6656,6 +6697,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 
 # returns 0 = you died, 1 = monster defeated, 2 = fight goes on
 func _adv_fight(nc: Vector2i) -> int:
+	_cloak_break()
 	var lv: int = _mon_level(nc)
 	var is_boss := boss_floor and nc == boss_cell
 	var nm := _adv_mname(nc)
@@ -6994,7 +7036,15 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 		mstat.erase(a)
 
 
+func _cloak_break() -> void:
+	if cloak_steps > 0 and mode == "adv":
+		cloak_steps = 0
+		_pop(pos, "REVEALED", Color("9aa3c7"))
+
+
 func _adv_hunters() -> void:
+	if cloak_steps > 0:
+		return
 	var hs: Array[Vector2i] = []
 	for c in kinds:
 		if (String(kinds[c]) == "hunter" or String(kinds[c]) == "rager" or String(kinds[c]) == "drone") and mons.has(c):
@@ -7110,6 +7160,7 @@ func _adv_can_shoot(c: Vector2i) -> bool:
 
 
 func _adv_shoot(c: Vector2i) -> void:
+	_cloak_break()
 	walk.clear()
 	aim = -1
 	var lv := _mon_level(c)
@@ -7214,6 +7265,8 @@ func _shooter_score(n: Vector2i) -> int:
 
 
 func _adv_shooters() -> void:
+	if cloak_steps > 0:
+		return
 	var ss: Array[Vector2i] = []
 	for c in kinds:
 		if String(kinds[c]) == "shooter" and mons.has(c):
@@ -7256,6 +7309,8 @@ func _adv_shooters() -> void:
 
 
 func _adv_turrets() -> void:
+	if cloak_steps > 0:
+		return
 	var ts: Array[Vector2i] = []
 	for c in tur:
 		if mons.has(c):
@@ -7277,11 +7332,19 @@ func _adv_turrets() -> void:
 			return
 
 
+func _arc_live(c: Vector2i, steps: int) -> bool:
+	return (steps + c.x + c.y) % 2 == 0
+
+
+func _slick_clear(n: Vector2i) -> bool:
+	return _ain(n) and _aopen(n) and not mons.has(n) and not vaults.has(n) and not items.has(n) and not coin_at.has(n) and not stations.has(n) and not meds.has(n) and not merchants.has(n) and not spikes.has(n) and n != stairs
+
+
 func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 	var base := 2 + floor_n / 2 + level / 4
 	var hm := _haz_mult()
 	if id == "arc":
-		if (adv_steps + c.x + c.y) % 2 == 0:
+		if _arc_live(c, adv_steps):
 			_fx_bolt(Vector2(c) + Vector2(0, -0.4), Vector2(c), Color("ffe14f"))
 			return _adv_env_hurt(maxi(1, int(round(base * 1.5 * hm))), "Electric arc! You lose %d health", "You were electrocuted", "arc")
 		msg = "The arc plate is dead. Lucky timing!"
@@ -7302,19 +7365,22 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 		_fx_burst(Vector2(c), Color("9dff6a"), 14, 2.5, 0.7, 5.0)
 		_sfx("poison")
 	elif id == "slick":
-		var n: Vector2i = c + dv
-		if slide_depth < 3 and dv != Vector2i.ZERO and _aopen(n) and not mons.has(n) and not vaults.has(n) and not items.has(n) and not coin_at.has(n) and not stations.has(n) and not meds.has(n) and not merchants.has(n) and not spikes.has(n) and n != stairs:
-			pos = n
+		var sl_cur := c
+		var sl_n := 0
+		while sl_n < 16 and dv != Vector2i.ZERO and _slick_clear(sl_cur + dv):
+			sl_cur += dv
+			sl_n += 1
+			pos = sl_cur
+			if haz.has(sl_cur) and String(haz[sl_cur]) != "slick":
+				break
+		if sl_n > 0:
 			walk.clear()
 			_adv_update_vis()
-			msg = "Slippery! You skid one more tile"
+			msg = "Slippery! You slide %d tiles" % sl_n
 			_pop(c, "SLIDE", Color("6fe0c8"))
 			_sfx("slide")
-			if haz.has(n):
-				slide_depth += 1
-				var ok := _adv_haz_trigger(String(haz[n]), n, dv)
-				slide_depth -= 1
-				return ok
+			if haz.has(sl_cur) and String(haz[sl_cur]) != "slick":
+				return _adv_haz_trigger(String(haz[sl_cur]), sl_cur, dv)
 		else:
 			msg = "Slick patch, but you keep your footing"
 	elif id == "mine":
@@ -7337,7 +7403,7 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 		for mc in mons.keys():
 			if boss_floor and mc == boss_cell:
 				continue
-			if kinds.has(mc) or maxi(absi(mc.x - c.x), absi(mc.y - c.y)) > 14:
+			if kinds.has(mc) or maxi(absi(mc.x - c.x), absi(mc.y - c.y)) > 28:
 				continue
 			kinds[mc] = "hunter"
 			woke += 1
@@ -7515,6 +7581,7 @@ func _adv_use_slot(i: int) -> void:
 	aim = -1
 	walk.clear()
 	if id == "bomb":
+		_cloak_break()
 		var hit := 0
 		for dx in range(-1, 2):
 			for dy in range(-1, 2):
@@ -7562,17 +7629,18 @@ func _adv_use_slot(i: int) -> void:
 		_pop(pos, "+%d XP" % dxp, Color("6dff9a"))
 		_sfx("boom")
 	elif id == "cloak":
-		if boost > 0:
+		if cloak_steps > 0:
 			msg = "Cloak already active"
 			return
-		boost = 3
+		cloak_steps = 16
+		walk.clear()
 		_fx_burst(vis_pos, Color("9aa3c7"), 16, 2.6, 0.7, 6.0)
-		msg = "Shadow Cloak: +3 attack until your next kill"
+		msg = "Shadow Cloak: monsters cannot see you for 16 steps, or until you attack"
 		_sfx("shield")
 	elif id == "magnet":
 		var n := 0
 		for c in coin_at.keys():
-			if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 7:
+			if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 14:
 				coin_at.erase(c)
 				_fx_pickup(c, "coin")
 				n += 1
@@ -7664,6 +7732,7 @@ func _adv_aim_apply(c: Vector2i) -> void:
 		_fx_burst(Vector2(c), Color("b57cff"), 16, 3.0, 0.5, 5.0)
 		_fx_ring(Vector2(c), Color("e6c8ff"), 1.0, 0.4, 4.0)
 	elif id == "zap":
+		_cloak_break()
 		_pop(c, "ZAP", Color("ffe14f"))
 		_fx_bolt(vis_pos, Vector2(c))
 		_adv_damage_mon(c, zap_dmg())
@@ -7745,15 +7814,11 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	if tur.has(c):
 		_draw_mon_sprite(c, ctr, ti, base_lv, false, sz * 1.08, Color.WHITE, false, -4.0, spr_gen.turret(ti, int(tur[c]["v"]), int(tur[c]["d"])))
 	else:
-		_draw_mon_sprite(c, ctr, ti, base_lv, is_boss, sz, Color.WHITE, false, -4.0)
+		_draw_mon_sprite(c, ctr, ti, base_lv, is_boss, sz, _frenzy_tint(c), false, -4.0)
 	if elite.has(c):
 		_star(ctr + Vector2(-AC * 0.3, -AC * 0.3 + bob), AC * 0.16, Color("ffd84f"))
 	if affix.has(c):
-		var ac2: Color = AFFIX_DEFS[affix[c]]["col"]
-		var ap := ctr + Vector2(AC * 0.3, AC * 0.1)
-		draw_circle(ap, AC * 0.16, Color("0a0c14"))
-		draw_circle(ap, AC * 0.135, Color(ac2.r * 0.55, ac2.g * 0.55, ac2.b * 0.55))
-		_ctext(String(AFFIX_DEFS[affix[c]]["s"]), ap, int(AC * 0.19), ac2)
+		_aff_pill(ctr + Vector2(AC * 0.48, AC * 0.1), String(affix[c]), int(AC * 0.17), true)
 	if mstat.has(c):
 		var sx2 := -AC * 0.12
 		for sk in ["burn", "psn", "stun"]:
@@ -7847,7 +7912,7 @@ func _draw_hazard(ctr: Vector2, c: Vector2i) -> void:
 	var ph := float(c.x * 7 + c.y * 3)
 	var sz := AC * 0.9
 	if id == "arc":
-		var live := (adv_steps + 1 + c.x + c.y) % 2 == 0
+		var live := _arc_live(c, adv_steps + 1)
 		if live:
 			draw_circle(ctr, AC * 0.5, Color(1, 0.88, 0.3, 0.12 + 0.08 * sin(t * 14.0)))
 			_spr(tex, ctr, sz)
@@ -8108,8 +8173,11 @@ func _adv_draw() -> void:
 	sx += 84.0
 	_txt("ARMOUR %d" % armor_total(), Vector2(sx, 272), 18, Color("c9d3f0") if armor_total() > 0 else Color(1, 1, 1, 0.4), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
 	sx += 126.0
+	if cloak_steps > 0:
+		_txt("HIDDEN %d" % cloak_steps, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
+		sx += 110.0
 	if boost > 0:
-		_txt("CLOAK +%d" % boost, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("ATK +%d" % boost, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
 		sx += 110.0
 	if poison_n > 0:
 		_txt("POISON %d" % poison_n, Vector2(sx, 272), 18, Color("9dff6a"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -8859,6 +8927,21 @@ func _adv_selftest() -> void:
 		oxy = oxy_max
 		_adv_haz_trigger(hid, start, Vector2i(1, 0))
 		state = PLAY
+	var as0 := adv_steps
+	for par in 2:
+		adv_steps = 100 + par
+		hp = hp_cap()
+		sh = 0
+		var hp_a := hp
+		_adv_haz_trigger("arc", start, Vector2i(1, 0))
+		if not _arc_live(start, adv_steps) and hp < hp_a:
+			print("FAIL unlit arc plate shocked")
+			bad += 1
+		if _arc_live(start, adv_steps) and hp >= hp_a:
+			print("FAIL lit arc plate did not shock")
+			bad += 1
+		state = PLAY
+	adv_steps = as0
 	haz.clear()
 	poison_n = 0
 	# shooter sim
