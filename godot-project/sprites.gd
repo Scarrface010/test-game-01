@@ -860,9 +860,120 @@ func player(accent: Color, cls: String, frame: int = 0, dir: int = 0, eq: Dictio
 		img.flip_x()
 		t = ImageTexture.create_from_image(img)
 	else:
-		t = _build_player(accent, cls, frame, dir, eq).tex()
+		var ai: ImageTexture = _player_ai(accent, frame, dir, eq)
+		t = ai if ai != null else _build_player(accent, cls, frame, dir, eq).tex()
 	cache[key] = t
 	return t
+
+
+# ---- AI base body (art/player_base64.png: cols front, back, side) + procedural gear overlays
+const PBASE := "res://art/player_base64.png"
+const PCOL := {0: 0, 1: 1, 3: 2}
+# Fit of the 32px gear art (already 2x'd to 64px) onto the chibi body: [pivot_x, pivot_y, scale_x, scale_y, shift_x, shift_y]
+const GFIT := {
+	"helmet": {0: [32, 17, 1.15, 1.0, 0, 8], 1: [32, 17, 1.15, 1.0, 0, 8], 3: [33, 17, 1.15, 1.0, -1, 8]},
+	"armour": {0: [32, 36, 0.85, 0.7, 0, 12], 1: [32, 36, 0.85, 0.7, 0, 12], 3: [32, 36, 0.85, 0.7, 0, 12]},
+	"boots": {0: [32, 57, 0.95, 0.7, 0, 1], 1: [32, 57, 0.95, 0.7, 0, 1], 3: [32, 57, 0.95, 0.7, 0, 1]},
+	"trinket": {0: [20, 44, 1.0, 1.0, 0, 3], 1: [40, 44, 1.0, 1.0, 0, 3], 3: [22, 44, 1.0, 1.0, 0, 3]},
+}
+# weapon grip (32px space), direction and scale per facing
+const WGRIP := {0: [Vector2(9.0, 23.0), Vector2(-0.22, -0.97), 1.35], 1: [Vector2(23.0, 23.0), Vector2(0.22, -0.97), 1.35], 3: [Vector2(19.0, 23.0), Vector2(0.8, -0.6), 1.35]}
+
+
+func _player_ai(accent: Color, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
+	if not PCOL.has(dir):
+		return null
+	var bt: ImageTexture = _atlas_cell(PBASE, PCOL[dir], 0, 64)
+	if bt == null or bt.get_image().is_invisible():
+		return null
+	var base: Image = bt.get_image()
+	if dir != 1:
+		_tint_visor(base, accent)
+	for slot in ["armour", "boots", "trinket", "helmet"]:
+		var art := _art(eq, slot)
+		if art.is_empty():
+			continue
+		var cv := Cv.new(32, 32)
+		_draw_gear(cv, slot, art, dir)
+		cv.outline(Color("0a0d1a"))
+		var g: Image = cv.img.duplicate()
+		g.resize(64, 64, Image.INTERPOLATE_NEAREST)
+		_blit_fit(base, g, GFIT[slot][dir])
+	base = _walk_frame(base, frame)
+	var wa := _art(eq, "weapon")
+	if not wa.is_empty():
+		var wc := Cv.new(32, 32)
+		var wg: Array = WGRIP[dir]
+		_weapon(wc, wa, wg[0], wg[1], wg[2])
+		wc.outline(Color("0a0d1a"))
+		var wi: Image = wc.img.duplicate()
+		wi.resize(64, 64, Image.INTERPOLATE_NEAREST)
+		base.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+	return ImageTexture.create_from_image(base)
+
+
+func _draw_gear(cv: Cv, slot: String, art: Dictionary, dir: int) -> void:
+	if slot == "armour":
+		if dir == 3:
+			_armor_side(cv, art, 0)
+		else:
+			_armor_fb(cv, dir, art)
+	elif slot == "boots":
+		if dir == 3:
+			_boot(cv, 12, 26, 8, art, true)
+			_boot(cv, 15, 26, 8, art, true)
+		else:
+			_boot(cv, 9, 26, 7, art, false)
+			_boot(cv, 16, 26, 7, art, false)
+	elif slot == "trinket":
+		_trinket(cv, art, (10 if dir == 0 else (20 if dir == 1 else 11)), 22, 0.9)
+	elif slot == "helmet":
+		_helm(cv, dir, art)
+
+
+func _blit_fit(dst: Image, src: Image, f: Array) -> void:
+	var px: float = f[0]
+	var py: float = f[1]
+	var sx: float = f[2]
+	var sy: float = f[3]
+	for y in 64:
+		for x in 64:
+			var u := int(floor((x - f[4] - px) / sx + px))
+			var v := int(floor((y - f[5] - py) / sy + py))
+			if u < 0 or v < 0 or u >= 64 or v >= 64:
+				continue
+			var c := src.get_pixel(u, v)
+			if c.a >= 0.5:
+				dst.set_pixel(x, y, c)
+
+
+# recolour the cyan visor of the base body to the class accent colour, keeping its shading
+func _tint_visor(im: Image, accent: Color) -> void:
+	var sat := maxf(accent.s, 0.45)
+	for y in 64:
+		for x in 64:
+			var c := im.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			if c.h > 0.45 and c.h < 0.62 and c.s > 0.22 and c.v > 0.3:
+				im.set_pixel(x, y, Color.from_hsv(accent.h, minf(1.0, c.s * sat / 0.55), c.v))
+
+
+# walk cycle: lift the left (frame 1) or right (frame 2) half of the legs
+func _walk_frame(im: Image, frame: int) -> Image:
+	if frame == 0:
+		return im
+	var x0 := 0 if frame == 1 else 32
+	var out := im.duplicate() as Image
+	for y in range(53, 64):
+		for x in range(x0, x0 + 32):
+			out.set_pixel(x, y, Color(0, 0, 0, 0))
+	for y in range(53, 64):
+		for x in range(x0, x0 + 32):
+			var c := im.get_pixel(x, y)
+			if c.a > 0.5 and y - 2 >= 0:
+				out.set_pixel(x, y - 2, c)
+	return out
 
 
 func _build_player(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary) -> Cv:
