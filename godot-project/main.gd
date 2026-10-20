@@ -206,7 +206,7 @@ var tut_page := 0
 var btn_cont := Rect2(50, 1146, 620, 72)
 var btn_exp := Rect2(50, 1228, 300, 44)
 var btn_imp := Rect2(370, 1228, 300, 44)
-const BUILD := 7
+const BUILD := 8
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3804,7 +3804,7 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_lb(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
-		_txt("Choose a mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
+		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
 		_txt("Puzzle best: %d floors     Adventure best: %d floors     Bank: %d" % [best, adv_best, bank], Vector2(0, 296), 20, Color(1, 1, 1, 0.55))
 		var mp := Color("9fb3d9")
 		draw_rect(btn_mode_p, Color(mp.r, mp.g, mp.b, 0.12))
