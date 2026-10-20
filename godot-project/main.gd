@@ -237,7 +237,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 17
+const BUILD := 18
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -339,7 +339,7 @@ func _ready() -> void:
 		_apply_font()
 		set_res = clampi(int(cfg.get_value("ui", "res", 0)), 0, 1)
 		set_fit = clampi(int(cfg.get_value("ui", "fit", 0)), 0, 1)
-		set_fps = 30 if int(cfg.get_value("ui", "fps", 60)) == 30 else 60
+		set_fps = int(cfg.get_value("ui", "fps", 60)) if int(cfg.get_value("ui", "fps", 60)) in [30, 60, 120] else 60
 		set_filt = clampi(int(cfg.get_value("ui", "smooth", 1)), 0, 1)
 		set_shake = clampi(int(cfg.get_value("ui", "shake", 1)), 0, 1)
 		_apply_display()
@@ -3254,7 +3254,7 @@ func _settings_input(p: Vector2) -> void:
 			elif i == 3:
 				set_filt = 1 - set_filt
 			elif i == 4:
-				set_fps = 30 if set_fps == 60 else 60
+				set_fps = 60 if set_fps == 30 else (120 if set_fps == 60 else 30)
 			else:
 				set_shake = 1 - set_shake
 			_apply_display()
