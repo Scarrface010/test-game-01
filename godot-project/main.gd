@@ -234,7 +234,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 14
+const BUILD := 15
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1708,8 +1708,7 @@ func _act_draw() -> void:
 	var rdy := act_cd <= 0
 	var live := act_free > 0 or act_stance > 0 or act_rico
 	var bc := col if (rdy or live) else Color(1, 1, 1, 0.3)
-	draw_rect(r, Color(bc.r, bc.g, bc.b, 0.2 if rdy else 0.07))
-	draw_rect(r, bc, false, 3.0 if rdy else 2.0)
+	_panel(r, bc, 0.22 if rdy else 0.07, false)
 	if act_cd > 0:
 		var frac := float(act_cd) / float(ACTS[cls]["cd"])
 		draw_rect(Rect2(r.position.x, r.end.y - 5.0, r.size.x * (1.0 - frac), 5.0), Color(col.r, col.g, col.b, 0.8))
@@ -3202,6 +3201,19 @@ func _draw_saves(acc: Color) -> void:
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
 
 
+func _hud_panels(acc: Color, right_h: float) -> void:
+	_panel(Rect2(24, 146, 336, 134), acc, 0.08, false)
+	_panel(Rect2(366, 156, 330, right_h), acc, 0.08, false)
+	_panel(Rect2(40, 284, 640, 34), acc, 0.06, false)
+
+
+func _edge_glow(col: Color, k: float) -> void:
+	var pulse := 0.5 + 0.5 * sin(t * (4.0 + 5.0 * k))
+	for i in 7:
+		var a := (0.30 + 0.25 * pulse) * (1.0 - float(i) / 7.0) * (0.5 + 0.5 * k)
+		draw_rect(Rect2(i * 7 + 3, i * 7 + 3, 720 - i * 14 - 6, 1280 - i * 14 - 6), Color(col.r, col.g, col.b, a), false, 7.0)
+
+
 func _apply_display() -> void:
 	var w := get_window()
 	if w != null:
@@ -3940,6 +3952,7 @@ func _draw() -> void:
 	if state == PLAY:
 		var marm := t - menu_armed < 3.0
 		_button(btn_menu, "SURE?" if marm else "MENU", Color("ff8a8a") if marm else acc)
+	_hud_panels(acc, 84.0)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("FLOOR %d    BEST %d%s" % [floor_n, best, _mod_label()], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -4132,8 +4145,7 @@ func _draw() -> void:
 			scol = use_defs[inv[i]]["col"]
 		if aim == i:
 			scol = Color("ffe14f")
-		draw_rect(sr, Color(scol.r, scol.g, scol.b, 0.12))
-		draw_rect(sr, scol, false, 2.0)
+		_panel(sr, scol, 0.16, false)
 		if has:
 			_use_icon(inv[i], Vector2(sr.position.x + 25, sr.position.y + 31), 38)
 			draw_multiline_string(font, Vector2(sr.position.x + 50, sr.position.y + 26), _use_name(inv[i]), HORIZONTAL_ALIGNMENT_LEFT, 56, 13, 3, Color.WHITE)
@@ -7695,6 +7707,7 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(40, 245, 240, 11), Color(1, 1, 1, 0.14))
 	draw_rect(Rect2(40, 245, 240.0 * xpf, 11), Color("ffd84f"))
 	_txt("XP %d/%d" % [xp, xp_need()], Vector2(288, 256), 14, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_hud_panels(acc, 124.0)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("ADVENTURE   FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -7714,7 +7727,7 @@ func _adv_draw() -> void:
 		_draw_key(Vector2(sx + 14, 266), 26)
 		_txt("x%d" % keys, Vector2(sx + 32, 272), 18, Color("ffd84f"), 60.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var low := oxy < oxy_max * 0.25
-	var acol := Color("ff5d5d") if low else Color("7fd8ff")
+	var acol := Color("3d9bff") if low else Color("7fd8ff")
 	_txt("AIR %d" % int(ceil(oxy)), Vector2(360, 192), 38, acol, 320.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	draw_rect(Rect2(380, 200, 300, 12), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(380, 200, 300.0 * clampf(oxy / oxy_max, 0.0, 1.0), 12), acol)
@@ -7742,8 +7755,7 @@ func _adv_draw() -> void:
 			scol = use_defs[inv[i]]["col"]
 		if aim == i:
 			scol = Color("ffe14f")
-		draw_rect(sr, Color(scol.r, scol.g, scol.b, 0.12))
-		draw_rect(sr, scol, false, 2.0)
+		_panel(sr, scol, 0.16, false)
 		if has:
 			_use_icon(inv[i], Vector2(sr.position.x + 25, sr.position.y + 31), 38)
 			draw_multiline_string(font, Vector2(sr.position.x + 50, sr.position.y + 26), _use_name(inv[i]), HORIZONTAL_ALIGNMENT_LEFT, 56, 13, 3, Color.WHITE)
@@ -7758,6 +7770,11 @@ func _adv_draw() -> void:
 			if n > 0:
 				parts.append(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else ""))
 		_para("RELICS: " + ", ".join(parts), Vector2(20, 1240), 15, Color(1, 1, 1, 0.6), 680.0)
+	if state == PLAY and hp > 0:
+		if low:
+			_edge_glow(Color("3d9bff"), clampf(1.0 - oxy / (oxy_max * 0.25), 0.0, 1.0))
+		if hpf <= 0.3:
+			_edge_glow(Color("ff2b3d"), clampf(1.0 - hpf / 0.3, 0.0, 1.0))
 
 
 func _inv_tab_rect(i: int) -> Rect2:
