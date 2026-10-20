@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS }
 const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
 const BAG_MAX := 12
 const AC := 72.0
@@ -204,7 +204,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -283,6 +283,7 @@ func _ready() -> void:
 		_save_meta()
 	_make_defs()
 	_make_gear()
+	_make_skills()
 	if OS.get_cmdline_user_args().size() > 0:
 		save_off = true
 	var sd0 := _read_save()
@@ -307,6 +308,11 @@ func _ready() -> void:
 		return
 	if "--advtest" in args:
 		_adv_selftest()
+		get_tree().quit()
+		return
+	if "--drawtest" in args:
+		_setup_audio()
+		await _draw_selftest()
 		get_tree().quit()
 		return
 	if "--test" in args:
@@ -546,7 +552,7 @@ func lamp_amt() -> int:
 		base = 12
 	elif relic_n("lantern") > 0:
 		base = 8
-	return base + 2 * up("oil")
+	return base + 2 * up("oil") + int(sk("lamp"))
 
 
 func spike_x() -> int:
@@ -560,7 +566,7 @@ func start_shield() -> bool:
 
 
 func slots_n() -> int:
-	return 2 + (1 if cls == "mystic" else 0) + relic_n("bandolier") + up("pockets")
+	return 2 + (1 if cls == "mystic" else 0) + relic_n("bandolier") + up("pockets") + int(sk("slots"))
 
 
 func kill_gain(c: Vector2i) -> int:
@@ -568,7 +574,7 @@ func kill_gain(c: Vector2i) -> int:
 
 
 func coin_val() -> int:
-	var v := 1 + up("treasure") + int(gear("coin"))
+	var v := 1 + up("treasure") + int(gear("coin")) + int(sk("coin"))
 	if relic_n("midas") > 0:
 		v *= 2
 	if relic_n("greedy") > 0:
@@ -1930,6 +1936,9 @@ func _gui_input(event: InputEvent) -> void:
 	if state == INV:
 		_inv_input(p)
 		return
+	if state == SKILLS:
+		_skill_input(p)
+		return
 	if state == TRADE:
 		_trade_input(p)
 		return
@@ -3075,7 +3084,11 @@ func _mod_label() -> String:
 	return ""
 
 
+var draw_count := 0
+
+
 func _draw() -> void:
+	draw_count += 1
 	if themes.is_empty():
 		return
 	var ti := tidx()
@@ -3338,6 +3351,8 @@ func _draw_overlay(acc: Color) -> void:
 	draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
 	if state == INV:
 		_draw_inv(acc)
+	elif state == SKILLS:
+		_draw_skills(acc)
 	elif state == TRADE:
 		_draw_trade(acc)
 	elif state == TUTORIAL:
@@ -3499,15 +3514,15 @@ func _draw_overlay(acc: Color) -> void:
 # ---------- ADVENTURE MODE (sprawling map, fog of war, points gate, air) ----------
 
 func adv_vis_r() -> int:
-	return 4 + relic_n("lantern") + relic_n("ember") + up("oil") / 2 + (1 if cls == "scout" else 0) + int(gear("sight"))
+	return 4 + relic_n("lantern") + relic_n("ember") + up("oil") / 2 + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight"))
 
 
 func adv_oxy_max() -> float:
-	return 90.0 + 10.0 * int(cdef()["per"]) + 8.0 * up("iron") + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air")
+	return 90.0 + 10.0 * int(cdef()["per"]) + 8.0 * up("iron") + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air")
 
 
 func adv_pod_amt() -> float:
-	return 30.0 + 5.0 * up("oil") + gear("pod")
+	return (30.0 + 5.0 * up("oil") + gear("pod")) * (1.0 + sk("pod") / 100.0)
 
 
 func _ai(c: Vector2i) -> int:
@@ -3876,19 +3891,19 @@ func gear(stat: String) -> float:
 
 
 func hp_cap() -> int:
-	return hp_max + int(gear("hp")) + 4 * (relic_n("pyro") + relic_n("storm") + relic_n("frost") + relic_n("toxi") + relic_n("bloodpact") + relic_n("hood"))
+	return hp_max + int(gear("hp")) + int(sk("hp")) + 4 * (relic_n("pyro") + relic_n("storm") + relic_n("frost") + relic_n("toxi") + relic_n("bloodpact") + relic_n("hood"))
 
 
 func sh_cap() -> int:
-	return sh_max + int(gear("shield"))
+	return sh_max + int(gear("shield")) + int(sk("shield"))
 
 
 func armor_total() -> int:
-	return armor + int(gear("armor"))
+	return armor + int(gear("armor")) + int(sk("armor"))
 
 
 func p_atk() -> int:
-	return level + boost + int(gear("atk"))
+	return level + boost + int(gear("atk")) + int(sk("atk"))
 
 
 func mon_atk(c: Vector2i) -> int:
@@ -3916,7 +3931,10 @@ func mon_hp_now(c: Vector2i) -> int:
 
 
 func dmg_taken(a: int) -> int:
-	return maxi(1, a - armor_total())
+	var d := maxi(1, a - armor_total())
+	if mode == "adv" and sk("laststand") > 0.0 and hp * 100 < hp_cap() * 30:
+		d = maxi(1, int(round(float(d) * (1.0 - sk("laststand") / 100.0))))
+	return d
 
 
 func _adv_cost(c: Vector2i) -> int:
@@ -3947,9 +3965,17 @@ func _adv_mname(c: Vector2i) -> String:
 
 
 func _adv_level_up(n: int) -> void:
+	var old := level
 	level += n
 	hp_max += 3 * n
 	hp += 3 * n
+	var got := 0
+	for l in range(old + 1, level + 1):
+		if l % 3 == 0:
+			got += 1
+	if got > 0:
+		skill_pts += got
+		_pop(pos, "+%d SKILL POINT" % got, Color("ffd84f"))
 
 
 func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
@@ -4166,11 +4192,11 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 
 
 func crit_chance() -> float:
-	return gear("crit") + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
+	return gear("crit") + sk("crit") + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
 
 
 func dodge_chance() -> float:
-	return gear("dodge") + (10.0 if has_tr("duelist") else 0.0)
+	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0)
 
 
 func thorns_dmg() -> int:
@@ -4260,6 +4286,8 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		if tl.has("rhythm") and (tr_hits + 1) % 4 == 0:
 			mul += 1.0
 	add += mini(4, tag_kinds()) * relic_n("prism")
+	if sk("finish") > 0.0 and mon_hp_now(c) * 2 <= mon_hp_max(c):
+		mul += sk("finish") / 100.0
 	var d := maxi(1, int(round(float(dmg + add) * mul)))
 	if String(affix.get(c, "")) == "plated":
 		d = maxi(1, d - 2 - floor_n / 8)
@@ -4357,6 +4385,9 @@ func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 		var cn := (1 + floor_n / 5) * echo * coin_val()
 		coins += cn
 		_pop(c, "+%d coins" % cn, Color("ffc93c"))
+	if sk("kcoin") > 0.0:
+		coins += int(sk("kcoin"))
+		_pop(c, "+%d coin" % int(sk("kcoin")), Color("ffc93c"))
 	if relic_n("scrapper") > 0 and randf() < 0.35:
 		coins += coin_val()
 		_pop(c, "+%d coin" % coin_val(), Color("ffc93c"))
@@ -4428,7 +4459,299 @@ func _affix_name(c: Vector2i, nm: String) -> String:
 
 # how strong the player's gear/relic build is; monsters grow tougher with it
 func threat() -> int:
-	return int(gear("atk")) + 2 * armor_total() + 2 * wtr().size() + relic_n("prism") + relic_n("pyro") + relic_n("storm") + relic_n("toxi") + relic_n("frost") + relic_n("bloodpact") + relic_n("hood") + relic_n("echo") + relic_n("overclock")
+	return int(gear("atk")) + 2 * armor_total() + 2 * wtr().size() + skill_spent() / 2 + relic_n("prism") + relic_n("pyro") + relic_n("storm") + relic_n("toxi") + relic_n("frost") + relic_n("bloodpact") + relic_n("hood") + relic_n("echo") + relic_n("overclock")
+
+
+# ---------------------------------------------------------------- skill web (Adventure): a point every 3 levels, per run
+var skills: Dictionary = {}    # node id -> rank (0-2)
+var skill_pts := 0
+var sk_sel := ""
+var sk_wind := false           # Second Wind used this floor
+var sk_armed := -10.0
+var sk_defs: Dictionary = {}
+var sk_adj: Dictionary = {}
+var sk_edges: Array = []
+var btn_skill := Rect2(486, 20, 100, 46)
+var btn_sk_buy := Rect2(500, 972, 180, 64)
+var btn_sk_respec := Rect2(40, 1150, 310, 64)
+var btn_sk_close := Rect2(380, 1150, 300, 64)
+const SK_C := Vector2(360, 640)
+const SK_BR := [
+	["VITALITY", Color("ff6a5c"), [
+		["Sturdy Frame", "+%s max health", "hp", [5, 10]],
+		["Plating", "+%s armour", "armor", [1, 2]],
+		["Field Generator", "+%s starting shield", "shield", [4, 8]],
+		["Trauma Kit", "Medkits heal %s%% more", "medk", [25, 50]],
+		["Deflector", "Enemy shots deal %s less damage", "rdef", [1, 2]],
+		["Last Stand", "Below 30%% health you take %s%% less damage", "laststand", [30, 50]]]],
+	["OXYGEN", Color("7fd8ff"), [
+		["Deep Lungs", "+%s max air", "air", [12, 24]],
+		["Easy Breathing", "%s%% less air used per step", "airsave", [6, 12]],
+		["Pod Boost", "Air pods give %s%% more air", "pod", [25, 50]],
+		["Clean Shots", "Ranged shots cost %s less air", "shotsave", [0.5, 1.0]],
+		["Recycler", "O2 stations also heal %s%% of max health", "stationheal", [15, 30]],
+		["Second Wind", "Once per floor, running out of air gives %s air instead", "wind", [15, 30]]]],
+	["OFFENSE", Color("ffb347"), [
+		["Edge", "+%s attack", "atk", [1, 2]],
+		["Precision", "+%s%% crit chance", "crit", [5, 10]],
+		["Siphon Core", "Heal %s on every hit", "leech", [1, 2]],
+		["Finisher", "+%s%% damage to enemies under half health", "finish", [25, 50]],
+		["Marksman", "+%s damage with ranged weapons", "rdmg", [1, 2]],
+		["Overdrive", "Crits deal %s%% more damage", "critmult", [50, 100]]]],
+	["TECH", Color("c07cff"), [
+		["Utility Belt", "+%s tool slot(s)", "slots", [1, 2]],
+		["Sensors", "+%s sight range", "sight", [1, 2]],
+		["Quick Study", "+%s%% XP from everything", "xp", [10, 20]],
+		["Evasion Matrix", "+%s%% dodge chance", "dodge", [4, 8]],
+		["Scanner Boost", "Scanner pulses reveal more (power +%s)", "lamp", [4, 8]],
+		["Quartermaster", "Every new floor starts with %s free random tool(s)", "quarter", [1, 2]]]],
+	["FORTUNE", Color("ffd84f"), [
+		["Prospector", "Coins are worth +%s each", "coin", [1, 2]],
+		["Salvager", "+%s%% gear drop chance from elites and affixed enemies", "drop", [10, 20]],
+		["Haggler", "Shops charge %s%% less", "haggle", [10, 20]],
+		["Bounty Hunter", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
+		["Alchemy", "XP potions give %s%% more XP", "pot", [25, 50]],
+		["Lucky Day", "%s%% chance for a kill to give double XP", "lucky", [8, 16]]]],
+]
+
+
+func _make_skills() -> void:
+	sk_defs.clear()
+	sk_adj.clear()
+	sk_edges.clear()
+	var rr := [85.0, 160.0, 160.0, 235.0, 235.0, 305.0]
+	var ph := [0.0, -13.0, 13.0, -9.0, 9.0, 0.0]
+	for b in 5:
+		var th := deg_to_rad(-90.0 + 72.0 * b)
+		var nodes: Array = SK_BR[b][2]
+		for n in 6:
+			var a := th + deg_to_rad(float(ph[n]))
+			var nd: Array = nodes[n]
+			var id := "b%dn%d" % [b, n]
+			sk_defs[id] = {"b": b, "n": n, "name": nd[0], "d": nd[1], "stat": nd[2], "v": nd[3], "key": n == 5, "ring": 1 if n == 0 else (2 if n < 3 else (3 if n < 5 else 4)),
+				"pos": SK_C + Vector2(cos(a), sin(a)) * float(rr[n]), "col": SK_BR[b][1]}
+			sk_adj[id] = []
+	for b in 5:
+		var b2 := (b + 1) % 5
+		for e in [[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 5]]:
+			_sk_link("b%dn%d" % [b, e[0]], "b%dn%d" % [b, e[1]])
+		_sk_link("b%dn2" % b, "b%dn1" % b2)
+		_sk_link("b%dn4" % b, "b%dn3" % b2)
+
+
+func _sk_link(a: String, b: String) -> void:
+	sk_edges.append([a, b])
+	sk_adj[a].append(b)
+	sk_adj[b].append(a)
+
+
+func sk(stat: String) -> float:
+	if mode != "adv" or skills.is_empty():
+		return 0.0
+	var tot := 0.0
+	for id in skills:
+		var r := int(skills[id])
+		if r > 0 and sk_defs.has(id) and String(sk_defs[id]["stat"]) == stat:
+			tot += float((sk_defs[id]["v"] as Array)[r - 1])
+	return tot
+
+
+func sk_rank(id: String) -> int:
+	return int(skills.get(id, 0))
+
+
+func sk_cost(id: String) -> int:
+	return 2 if bool(sk_defs[id]["key"]) else 1
+
+
+func skill_spent() -> int:
+	var tot := 0
+	for id in skills:
+		if sk_defs.has(id):
+			tot += int(skills[id]) * sk_cost(String(id))
+	return tot
+
+
+func sk_unlocked(id: String) -> bool:
+	var d: Dictionary = sk_defs[id]
+	if int(d["n"]) == 0:
+		return true
+	for o in sk_adj[id]:
+		if bool(d["key"]):
+			if int(sk_defs[o]["ring"]) == 3 and sk_rank(String(o)) >= 2:
+				return true
+		elif sk_rank(String(o)) >= 1:
+			return true
+	return false
+
+
+func sk_can_buy(id: String) -> bool:
+	return sk_rank(id) < 2 and sk_unlocked(id) and skill_pts >= sk_cost(id)
+
+
+func sk_buy(id: String) -> bool:
+	if not sk_defs.has(id) or not sk_can_buy(id):
+		return false
+	var oh := hp_cap()
+	var oo := oxy_max
+	skill_pts -= sk_cost(id)
+	skills[id] = sk_rank(id) + 1
+	_adv_apply_change(oh, oo)
+	return true
+
+
+func sk_respec_cost() -> int:
+	return 100 + 20 * skill_spent()
+
+
+func sk_respec() -> bool:
+	var sp := skill_spent()
+	if sp <= 0 or coins < sk_respec_cost():
+		return false
+	var oh := hp_cap()
+	var oo := oxy_max
+	coins -= sk_respec_cost()
+	skill_pts += sp
+	skills.clear()
+	_adv_apply_change(oh, oo)
+	return true
+
+
+func _nfmt(v: float) -> String:
+	return str(int(v)) if v == floorf(v) else str(v)
+
+
+func sk_text(id: String, rank: int) -> String:
+	var d: Dictionary = sk_defs[id]
+	return String(d["d"]) % _nfmt(float((d["v"] as Array)[rank - 1]))
+
+
+func crit_mult() -> float:
+	return (3.0 if has_tr("deadly") else 2.0) + sk("critmult") / 100.0
+
+
+func _oxy_dead() -> bool:
+	if oxy > 0.0:
+		return false
+	if sk("wind") > 0.0 and not sk_wind:
+		sk_wind = true
+		oxy = sk("wind")
+		_pop(pos, "SECOND WIND", Color("7fd8ff"))
+		return false
+	oxy = 0.0
+	_die("You ran out of air")
+	return true
+
+
+func _eff_price(o: Dictionary) -> int:
+	return maxi(1, int(round(float(o["price"]) * (1.0 - sk("haggle") / 100.0))))
+
+
+func _skill_input(p: Vector2) -> void:
+	if btn_sk_close.has_point(p):
+		state = PLAY
+		_sfx("ui")
+		return
+	if btn_sk_respec.has_point(p):
+		if skill_spent() <= 0:
+			_sfx("blocked")
+		elif t - sk_armed < 3.0:
+			if sk_respec():
+				_sfx("big")
+			else:
+				_sfx("blocked")
+			sk_armed = -10.0
+		else:
+			sk_armed = t
+			_sfx("ui")
+		return
+	if sk_sel != "" and btn_sk_buy.has_point(p):
+		if sk_buy(sk_sel):
+			_sfx("shield")
+		else:
+			_sfx("blocked")
+		return
+	var best := ""
+	var bd := 40.0
+	for id in sk_defs:
+		var dd: float = (sk_defs[id]["pos"] as Vector2).distance_to(p)
+		if dd < bd:
+			bd = dd
+			best = String(id)
+	if best != "":
+		sk_sel = best
+		_sfx("ui")
+
+
+func _draw_skills(acc: Color) -> void:
+	_txt("SKILL WEB", Vector2(0, 130), 52, acc)
+	var nxt := (level / 3 + 1) * 3
+	_txt("Points: %d      next at level %d" % [skill_pts, nxt], Vector2(0, 178), 26, Color("ffd84f") if skill_pts > 0 else Color(1, 1, 1, 0.7))
+	for e in sk_edges:
+		var pa: Vector2 = sk_defs[e[0]]["pos"]
+		var pb: Vector2 = sk_defs[e[1]]["pos"]
+		var on := sk_rank(String(e[0])) > 0 and sk_rank(String(e[1])) > 0
+		var ec: Color = sk_defs[e[0]]["col"]
+		draw_line(pa, pb, Color(ec.r, ec.g, ec.b, 0.8) if on else Color(1, 1, 1, 0.13), 3.0 if on else 2.0)
+	for b in 5:
+		var p0: Vector2 = sk_defs["b%dn0" % b]["pos"]
+		var bc: Color = SK_BR[b][1]
+		draw_line(SK_C, p0, Color(bc.r, bc.g, bc.b, 0.8) if sk_rank("b%dn0" % b) > 0 else Color(1, 1, 1, 0.13), 3.0)
+		var th := deg_to_rad(-90.0 + 72.0 * b)
+		_ctext(String(SK_BR[b][0]), SK_C + Vector2(cos(th), sin(th)) * 352.0, 18, bc)
+	draw_circle(SK_C, 24.0, Color("0a0c14"))
+	draw_arc(SK_C, 24.0, 0.0, TAU, 24, Color(1, 1, 1, 0.5), 2.0)
+	_ctext("YOU", SK_C, 15, Color(1, 1, 1, 0.75))
+	for id in sk_defs:
+		var d: Dictionary = sk_defs[id]
+		var c: Vector2 = d["pos"]
+		var col: Color = d["col"]
+		var rk := sk_rank(String(id))
+		var can := sk_can_buy(String(id))
+		var unl := sk_unlocked(String(id))
+		var rad := 31.0 if bool(d["key"]) else 24.0
+		var fill := Color(col.r, col.g, col.b, 0.9 if rk >= 2 else (0.5 if rk == 1 else 0.07))
+		if bool(d["key"]):
+			var dp := PackedVector2Array([c + Vector2(0, -rad), c + Vector2(rad, 0), c + Vector2(0, rad), c + Vector2(-rad, 0)])
+			draw_colored_polygon(dp, Color("0a0c14"))
+			draw_colored_polygon(dp, fill)
+			dp.append(dp[0])
+			draw_polyline(dp, col if unl else Color(col.r, col.g, col.b, 0.35), 3.0)
+		else:
+			draw_circle(c, rad, Color("0a0c14"))
+			draw_circle(c, rad, fill)
+			draw_arc(c, rad, 0.0, TAU, 28, col if unl else Color(col.r, col.g, col.b, 0.35), 3.0)
+		if can:
+			draw_arc(c, rad + 6.0 + 2.0 * sin(t * 5.0), 0.0, TAU, 28, Color(1, 1, 1, 0.55), 2.0)
+		if String(id) == sk_sel:
+			draw_arc(c, rad + 10.0, 0.0, TAU, 28, Color.WHITE, 3.0)
+		for k in 2:
+			var pc := c + Vector2(-6.0 + 12.0 * k, rad + 11.0)
+			draw_circle(pc, 3.5, col if rk > k else Color(1, 1, 1, 0.2))
+	# detail panel
+	draw_rect(Rect2(30, 960, 660, 100), Color(1, 1, 1, 0.05))
+	if sk_sel == "":
+		_txt("Tap a node to inspect it. Paths grow outward from the centre; the diamonds at the ends are the strongest.", Vector2(46, 1000), 20, Color(1, 1, 1, 0.6), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+	else:
+		var sd: Dictionary = sk_defs[sk_sel]
+		var sc: Color = sd["col"]
+		var srk := sk_rank(sk_sel)
+		_txt(String(sd["name"]) + ("   KEYSTONE" if bool(sd["key"]) else "") + "   %d/2" % srk, Vector2(46, 992), 26, sc, 450.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Rank 1: " + sk_text(sk_sel, 1), Vector2(46, 1022), 17, Color.WHITE if srk >= 1 else Color(1, 1, 1, 0.7), 450.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Rank 2: " + sk_text(sk_sel, 2), Vector2(46, 1046), 17, Color.WHITE if srk >= 2 else Color(1, 1, 1, 0.7), 450.0, HORIZONTAL_ALIGNMENT_LEFT)
+		if srk >= 2:
+			_txt("MAXED", Vector2(500, 1004), 28, sc, 180.0, HORIZONTAL_ALIGNMENT_CENTER)
+		else:
+			_button(btn_sk_buy, ("UPGRADE  (%d pt)" % sk_cost(sk_sel)) if sk_can_buy(sk_sel) else "LOCKED", sc if sk_can_buy(sk_sel) else Color(1, 1, 1, 0.35), 20)
+			if not sk_unlocked(sk_sel):
+				_txt("Needs a connected node first" if not bool(sd["key"]) else "Needs an outer node at rank 2", Vector2(46, 1078), 16, Color("ff9a8a"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+			elif skill_pts < sk_cost(sk_sel):
+				_txt("Not enough skill points", Vector2(46, 1078), 16, Color("ff9a8a"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var armed := t - sk_armed < 3.0
+	var rc := sk_respec_cost()
+	_button(btn_sk_respec, "TAP AGAIN: -%d" % rc if armed else "RESPEC (%d coins)" % rc, Color("ff8a8a") if armed else (Color("ffc93c") if coins >= rc and skill_spent() > 0 else Color(1, 1, 1, 0.35)), 20)
+	_button(btn_sk_close, "CLOSE", acc, 24)
+	_txt("Coins: %d" % coins, Vector2(0, 1118), 22, Color("ffc93c"))
 
 
 func _make_gear() -> void:
@@ -4654,7 +4977,7 @@ func _trade_input(p: Vector2) -> void:
 	for i in offers.size():
 		if _trade_rect(i).has_point(p):
 			var o: Dictionary = offers[i]
-			if bool(o["sold"]) or coins < int(o["price"]):
+			if bool(o["sold"]) or coins < _eff_price(o):
 				_sfx("blocked")
 				return
 			if String(o["kind"]) == "gear":
@@ -4667,7 +4990,7 @@ func _trade_input(p: Vector2) -> void:
 					msg = "Tool slots are full!"
 					_sfx("blocked")
 					return
-			coins -= int(o["price"])
+			coins -= _eff_price(o)
 			o["sold"] = true
 			_sfx("coin")
 			return
@@ -4684,7 +5007,7 @@ func _draw_trade(acc: Color) -> void:
 		var o: Dictionary = offers[i]
 		var rr := _trade_rect(i)
 		var sold := bool(o["sold"])
-		var can := coins >= int(o["price"]) and not sold
+		var can := coins >= _eff_price(o) and not sold
 		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
 		draw_rect(rr, Color(col.r, col.g, col.b, 0.1))
 		draw_rect(rr, col, false, 2.0)
@@ -4703,7 +5026,7 @@ func _draw_trade(acc: Color) -> void:
 			_use_icon(uid, Vector2(rr.position.x + 56, rr.position.y + 67), 70)
 			_txt(_use_name(uid), Vector2(rr.position.x + 110, rr.position.y + 50), 30, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(_atext("tool_" + uid, String(use_defs[uid]["desc"])), Vector2(rr.position.x + 110, rr.position.y + 84), 19, Color(1, 1, 1, 0.75), 340.0)
-		_txt("SOLD" if sold else "%d coins" % int(o["price"]), Vector2(rr.end.x - 170, rr.position.y + 76), 28, col, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		_txt("SOLD" if sold else "%d coins" % _eff_price(o), Vector2(rr.end.x - 170, rr.position.y + 76), 28, col, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	_button(btn_back, "LEAVE", acc, 28)
 
 
@@ -4723,7 +5046,7 @@ func _adv_snapshot() -> void:
 		"coin_at": coin_at.duplicate(), "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
 		"vaults": vaults.duplicate(), "inv": inv.duplicate(), "coins": coins,
 		"level": level, "xp": xp, "hp_max": hp_max, "armor": armor, "sh": sh,
-		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(),
+		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(), "skills": skills.duplicate(), "skill_pts": skill_pts,
 	}
 
 
@@ -4766,10 +5089,15 @@ func _adv_reset() -> void:
 		bag.append(String(g))
 	merchants = saved["merchants"].duplicate(true)
 	affix = saved.get("affix", {}).duplicate()
+	skills = saved.get("skills", {}).duplicate()
+	skill_pts = int(saved.get("skill_pts", 0))
 	_adv_begin()
 
 
 func _adv_init_run() -> void:
+	skills.clear()
+	skill_pts = 0
+	sk_sel = ""
 	level = start_lvl()
 	xp = 0
 	hp_max = 24 + 3 * (level - START_LEVEL) - (4 if cls == "gunslinger" else 0)
@@ -4792,7 +5120,7 @@ func xp_need() -> int:
 
 
 func _adv_gain_xp(n: int) -> void:
-	xp += int(round(n * (1.0 + gear("xp") / 100.0)))
+	xp += int(round(n * (1.0 + (gear("xp") + sk("xp")) / 100.0)))
 	var gained := 0
 	while xp >= xp_need():
 		xp -= xp_need()
@@ -4824,7 +5152,8 @@ func _adv_scaled(raw: int) -> int:
 
 func _adv_begin() -> void:
 	hp = hp_cap()
-	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")))
+	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")) + int(sk("shield")))
+	sk_wind = false
 	shield = false
 	mon_hp.clear()
 	mstat.clear()
@@ -4857,6 +5186,8 @@ func _adv_begin() -> void:
 func _adv_next() -> void:
 	floor_n += 1
 	_adv_new_floor()
+	for qi in int(sk("quarter")):
+		_give_use(_random_use())
 
 
 func _adv_update_vis() -> void:
@@ -4965,6 +5296,9 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		mult += 0.4
 	if has_tr("harvest"):
 		mult += 0.3
+	if randf() * 100.0 < sk("lucky"):
+		mult += 1.0
+		_pop(nc, "LUCKY!", Color("ffd84f"))
 	var xg := int(round((3 + lv) * mult))
 	_tr_on_kill(nc, mon_hp_max(nc))
 	_remove_mon(nc)
@@ -4979,7 +5313,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	if kh > 0:
 		hp = mini(hp_cap(), hp + kh)
 	if was_elite or is_boss or was_affix:
-		if randf() < (1.0 if is_boss else (0.3 if was_elite else 0.12)):
+		if randf() < (1.0 if is_boss else ((0.3 if was_elite else 0.12) + sk("drop") / 100.0)):
 			var gid := _adv_roll_gear(null, 1 if is_boss else 0)
 			if _adv_give_gear(gid):
 				msg += "  Dropped: " + gname(gid) + (" [" + gtrait_line(gid) + "]" if gtr(gid).size() > 0 else "")
@@ -5001,7 +5335,7 @@ func _adv_fight(nc: Vector2i) -> int:
 	var dmg := _tr_hit_mod(nc, p_atk())
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
-		dmg *= 3 if has_tr("deadly") else 2
+		dmg = int(round(float(dmg) * crit_mult()))
 	var missed := String(affix.get(nc, "")) == "evasive" and randf() < 0.2
 	if missed:
 		dmg = 0
@@ -5011,7 +5345,7 @@ func _adv_fight(nc: Vector2i) -> int:
 		_fx_hit(nc, crit)
 	var left := mon_hp_now(nc) - dmg
 	if not missed:
-		var lk := int(gear("leech"))
+		var lk := int(gear("leech") + sk("leech"))
 		if lk > 0 and hp < hp_cap():
 			hp = mini(hp_cap(), hp + lk)
 		left = _tr_on_hit(nc, dmg, crit, false, left)
@@ -5120,7 +5454,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				items[nc] = kind
 				msg = "Health is full - the medkit stays for later"
 			else:
-				var heal := int(hp_cap() * 0.4)
+				var heal := int(hp_cap() * 0.4 * (1.0 + sk("medk") / 100.0))
 				hp = mini(hp_cap(), hp + heal)
 				adv_pts += 1
 				msg = "Medkit! +%d HP" % heal
@@ -5148,14 +5482,14 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				msg = "Pack is full! Sell or drop something in the BAG"
 				snd = "blocked"
 		elif kind == "pot":
-			var pxp := maxi(2, int(round(xp_need() * 0.2 * pot_g())))
+			var pxp := maxi(2, int(round(xp_need() * 0.2 * pot_g() * (1.0 + sk("pot") / 100.0))))
 			adv_pts += 2
 			msg = "%s! +%d XP" % [th["pot"], pxp]
 			_pop(nc, "+%d XP" % pxp, Color("ffd84f"))
 			_adv_gain_xp(pxp)
 			snd = "pot"
 		elif kind == "big":
-			var bxp := maxi(3, int(round(xp_need() * 0.25 * big_g())))
+			var bxp := maxi(3, int(round(xp_need() * 0.25 * big_g() * (1.0 + sk("pot") / 100.0))))
 			adv_pts += 4
 			msg = "Overcharged %s! +%d XP" % [th["pot"], bxp]
 			_pop(nc, "+%d XP" % bxp, Color("4fd1ff"))
@@ -5197,7 +5531,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if moved:
 		pos = nc
 	adv_steps += 1
-	oxy -= (1.0 - gear("airsave") / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	oxy -= (1.0 - (gear("airsave") + sk("airsave")) / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
 	if moved and corpses.has(pos) and relic_n("gravedigger") > 0 and not bool(corpses[pos].get("looted", false)):
 		corpses[pos]["looted"] = true
 		var lc := 2 * relic_n("gravedigger") * coin_val()
@@ -5205,6 +5539,10 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		_pop(pos, "+%d loot" % lc, Color("ffc93c"))
 		snd = "coin"
 	if moved and stations.has(pos):
+		if sk("stationheal") > 0.0 and hp < hp_cap():
+			var sh2 := maxi(1, int(hp_cap() * sk("stationheal") / 100.0))
+			hp = mini(hp_cap(), hp + sh2)
+			_pop(pos, "+%d HP" % sh2, Color("ff8a9a"))
 		if oxy < oxy_max - 0.5:
 			msg = "O2 station: air fully restored"
 			_pop(pos, "AIR FULL", Color("7fd8ff"))
@@ -5222,9 +5560,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if moved and haz_hit != "":
 		if not _adv_haz_trigger(haz_hit, nc, nc - from_c):
 			return
-	if oxy <= 0.0:
-		oxy = 0.0
-		_die("You ran out of air")
+	if _oxy_dead():
 		return
 	if moved and pos == stairs and not mons.has(stairs):
 		if adv_pts >= adv_req:
@@ -5351,7 +5687,7 @@ func _haz_mult() -> float:
 
 
 func _ranged_dmg(c: Vector2i) -> int:
-	return maxi(1, mon_atk(c) - 2 * relic_n("plating") - int(gear("rangedef")))
+	return maxi(1, mon_atk(c) - 2 * relic_n("plating") - int(gear("rangedef")) - int(sk("rdef")))
 
 
 func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
@@ -5378,7 +5714,7 @@ func _shot_cost() -> float:
 	var tier := 1
 	if wid != "" and gear_defs.has(gb(wid)):
 		tier = int(gear_defs[gb(wid)]["tier"])
-	var cst := _tier_shot_air(tier) * (1.0 - gear("airsave") / 100.0) - gear("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo")) - (1.0 if has_tr("tireless") else 0.0)
+	var cst := _tier_shot_air(tier) * (1.0 - (gear("airsave") + sk("airsave")) / 100.0) - gear("shotsave") - sk("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo")) - (1.0 if has_tr("tireless") else 0.0)
 	return maxf(0.5, cst) + (0.5 if relic_n("glass") > 0 else 0.0)
 
 
@@ -5421,10 +5757,10 @@ func _adv_shoot(c: Vector2i) -> void:
 	var lv := _mon_level(c)
 	var nm := _adv_mname(c)
 	var is_boss := boss_floor and c == boss_cell
-	var dmg := _tr_hit_mod(c, p_atk() + 4 * relic_n("heavyammo"))
+	var dmg := _tr_hit_mod(c, p_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg")))
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
-		dmg *= 3 if has_tr("deadly") else 2
+		dmg = int(round(float(dmg) * crit_mult()))
 	var missed := String(affix.get(c, "")) == "evasive" and randf() < 0.2
 	if missed:
 		dmg = 0
@@ -5436,7 +5772,7 @@ func _adv_shoot(c: Vector2i) -> void:
 	else:
 		_pop(c, ("CRIT -%d" % dmg) if crit else ("-%d" % dmg), Color("ffd84f") if crit else Color.WHITE)
 		_fx_hit(c, crit)
-		var lk := int(gear("leech"))
+		var lk := int(gear("leech") + sk("leech"))
 		if lk > 0 and hp < hp_cap():
 			hp = mini(hp_cap(), hp + lk)
 	var left := mon_hp_now(c) - dmg
@@ -5469,9 +5805,7 @@ func _adv_shoot(c: Vector2i) -> void:
 		poison_n -= 1
 		if not _adv_env_hurt(poison_d, "Poison! You lose %d health", "You succumbed to poison", "poison"):
 			return
-	if oxy <= 0.0:
-		oxy = 0.0
-		_die("You ran out of air")
+	if _oxy_dead():
 		return
 	_thief_check()
 	_adv_hunters()
@@ -5955,6 +6289,14 @@ func _adv_aim_apply(c: Vector2i) -> void:
 
 
 func _adv_input(p: Vector2) -> void:
+	if btn_skill.has_point(p):
+		state = SKILLS
+		walk.clear()
+		aim = -1
+		sk_sel = ""
+		sk_armed = -10.0
+		_sfx("ui")
+		return
 	if btn_inv.has_point(p):
 		state = INV
 		walk.clear()
@@ -6349,6 +6691,10 @@ func _adv_draw() -> void:
 	# HUD
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 	_button(btn_inv, "BAG", acc)
+	_button(btn_skill, "SKILLS", Color("ffd84f") if skill_pts > 0 else acc, 19)
+	if skill_pts > 0:
+		draw_circle(btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 13.0, Color("ff5d5d"))
+		_ctext(str(skill_pts), btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 16, Color.WHITE)
 	var xpf := clampf(float(xp) / float(xp_need()), 0.0, 1.0)
 	draw_rect(Rect2(40, 245, 240, 11), Color(1, 1, 1, 0.14))
 	draw_rect(Rect2(40, 245, 240.0 * xpf, 11), Color("ffd84f"))
@@ -6760,6 +7106,126 @@ func _trait_selftest() -> int:
 	return bad
 
 
+func _skill_selftest() -> int:
+	var bad := 0
+	mode = "adv"
+	skills.clear()
+	skill_pts = 0
+	level = 3
+	_adv_level_up(6)
+	if skill_pts != 2:
+		print("FAIL skill points ", skill_pts)
+		bad += 1
+	if sk_buy("b0n3"):
+		print("FAIL locked node bought")
+		bad += 1
+	if not sk_buy("b0n0") or not sk_buy("b0n0") or sk_rank("b0n0") != 2:
+		print("FAIL buy ranks")
+		bad += 1
+	if sk_buy("b0n0"):
+		print("FAIL bought past max")
+		bad += 1
+	if int(sk("hp")) != 10:
+		print("FAIL hp stat ", sk("hp"))
+		bad += 1
+	skill_pts = 30
+	if sk_buy("b0n5"):
+		print("FAIL keystone without path")
+		bad += 1
+	for id in ["b0n1", "b0n1", "b0n3", "b0n3", "b0n5", "b0n5"]:
+		if not sk_buy(id):
+			print("FAIL path buy ", id)
+			bad += 1
+	if skill_pts != 30 - 8:
+		print("FAIL point accounting ", skill_pts)
+		bad += 1
+	if int(sk("laststand")) != 50 or int(sk("armor")) != 2:
+		print("FAIL stats after path")
+		bad += 1
+	hp_max = 100
+	hp = 20
+	if dmg_taken(10) >= maxi(1, 10 - armor_total()):
+		print("FAIL last stand")
+		bad += 1
+	coins = 0
+	if sk_respec():
+		print("FAIL respec without coins")
+		bad += 1
+	coins = 99999
+	var spent := skill_spent()
+	var pts := skill_pts
+	if not sk_respec() or not skills.is_empty() or skill_pts != pts + spent:
+		print("FAIL respec")
+		bad += 1
+	# every node must be reachable from the centre
+	var seen := {}
+	var queue: Array = []
+	for b in 5:
+		queue.append("b%dn0" % b)
+		seen["b%dn0" % b] = true
+	while queue.size() > 0:
+		var cur: String = queue.pop_front()
+		for o in sk_adj[cur]:
+			if not seen.has(o):
+				seen[o] = true
+				queue.append(o)
+	if seen.size() != 30 or sk_defs.size() != 30:
+		print("FAIL web connectivity ", seen.size())
+		bad += 1
+	skills.clear()
+	skill_pts = 0
+	print("skill sim done bad=%d" % bad)
+	return bad
+
+
+func _draw_selftest() -> void:
+	mode = "adv"
+	cls = "brute"
+	floor_n = 8
+	adv_seed = 777
+	_adv_init_run()
+	level = 12
+	_adv_gen()
+	_adv_snapshot()
+	_adv_begin()
+	coins = 300
+	equip["weapon"] = "novacleaver@ignite,static,toxin"
+	equip["armour"] = "titan"
+	bag.append("katana@siphon,rampage")
+	bag.append("plasmarifle@pierce,execute")
+	skill_pts = 3
+	skills["b0n0"] = 2
+	skills["b0n1"] = 1
+	skills["b2n5"] = 1
+	sk_sel = "b0n1"
+	var mc: Vector2i = mons.keys()[0]
+	affix[mc] = "warded"
+	mstat[mc] = {"burn": [2, 2], "psn": [2, 3], "stun": 1}
+	pos = mc + Vector2i(1, 0)
+	_adv_update_vis()
+	var offers: Array = []
+	for k in 3:
+		var tg := _adv_roll_gear(null, 2)
+		offers.append({"kind": "gear", "id": tg, "price": gprice(tg), "sold": false})
+	offers.append({"kind": "tool", "id": "blink", "price": 6, "sold": false})
+	merchants[start + Vector2i(1, 0)] = offers
+	var plan: Array = [[PLAY, 0], [SKILLS, 0], [INV, 0], [INV, 1], [INV, 2], [INV, 3], [INV, 4], [TRADE, 0], [RELIC, 0]]
+	for step in plan:
+		state = int(step[0])
+		inv_tab = int(step[1])
+		if state == TRADE:
+			trade_cell = start + Vector2i(1, 0)
+			trade_med = false
+		if state == RELIC:
+			relic_choices = _roll_relics(0)
+		var before := draw_count
+		queue_redraw()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		print("draw state %d tab %d drawn %d" % [state, inv_tab, draw_count - before])
+	print("DRAW TEST DONE")
+
+
 func _adv_selftest() -> void:
 	var bad := 0
 	mode = "adv"
@@ -6963,6 +7429,7 @@ func _adv_selftest() -> void:
 			mons[tcell + TDIRS[dix]] = 1
 			break
 	bad += _trait_selftest()
+	bad += _skill_selftest()
 	print("ADV TEST DONE bad=%d" % bad)
 
 
