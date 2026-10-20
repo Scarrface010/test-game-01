@@ -1870,21 +1870,25 @@ func _act_selftest() -> void:
 	else:
 		stations[sa] = true
 		stations[sb] = true
+		skills["b1n4"] = 1
 		station_uses = 0
 		for i in 5:
 			oxy = oxy_max - 20.0
+			hp = hp_cap() - 10
+			var h0 := hp
 			_adv_step(sb if i % 2 == 0 else sa, true)
-			var full := oxy >= oxy_max - 0.01
-			var want := i < 3
-			if full != want or station_uses != mini(i + 1, 3):
+			var healed := hp > h0
+			if oxy < oxy_max - 0.01 or healed != (i < 3) or station_uses != mini(i + 1, 3):
 				bad += 1
-				print("STATION FAIL step ", i, " full=", full, " uses=", station_uses)
+				print("STATION FAIL step ", i, " oxy=", oxy, " healed=", healed, " uses=", station_uses)
 		station_uses = 0
-		oxy = oxy_max
+		hp = hp_cap()
+		oxy = oxy_max - 20.0
 		_adv_step(sb, true)
-		if station_uses != 0:
+		if station_uses != 0 or oxy < oxy_max - 0.01:
 			bad += 1
-			print("STATION FAIL: use spent with full air")
+			print("STATION FAIL: heal spent at full health or air not refilled")
+		skills.clear()
 	print("ACT TEST DONE bad=", bad)
 
 
@@ -3238,7 +3242,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "CLASS POWERS", "ti": 0, "s": [["pcls:scout", "Deep Breath"], ["pcls:brute", "Iron Stance"], ["pcls:mystic", "Hex Pulse"], ["pcls:gambler", "Reshuffle"], ["pcls:gunslinger", "Ricochet"]],
 		"x": "Every class has one ACTIVE power: the coloured button right of your tool bar. It shows READY or the steps left to recharge.\n\nScout, Deep Breath: +10 air, next 8 steps cost no air.\nBrute, Iron Stance: blocks the next 2 hits, +3 attack until your next kill.\nMystic, Hex Pulse: stuns enemies within 3 tiles for 3 steps (not bosses or turrets).\nGambler, Reshuffle: rerolls all your tools.\nGunslinger, Ricochet: your next shot bounces to a second enemy within 3 tiles (needs a ranged weapon).\n\nRecharge: 40 / 30 / 35 / 50 / 25 steps, in that order."},
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\n\nO2 stations refill you completely, but only 3 times per floor and only when you are missing air (or health, with the Recycler skill). A spent station goes dark. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\n\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
+		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\n\nO2 stations refill you completely, as often as you like. (The Recycler skill's healing there works 3 times per floor, and only when you are hurt.) They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\n\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
 		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\n\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage.\n\nA killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind."},
 		{"t": "RANGED WEAPONS", "ti": 1, "s": [["icon:crate_weapon", "Blaster"], ["mon:1:3:none:g", "Target"]],
@@ -4944,7 +4948,7 @@ const SK_BR := [
 		["Easy Breathing", "%s%% less air used per step", "airsave", [6, 12]],
 		["Pod Boost", "Air pods give %s%% more air", "pod", [25, 50]],
 		["Clean Shots", "Ranged shots cost %s less air", "shotsave", [0.5, 1.0]],
-		["Recycler", "O2 stations also heal %s%% of max health", "stationheal", [15, 30]],
+		["Recycler", "O2 stations also heal %s%% of max health (3 times per floor)", "stationheal", [15, 30]],
 		["Second Wind", "Once per floor, running out of air gives %s air instead", "wind", [15, 30]]]],
 	["OFFENSE", Color("ffb347"), [
 		["Edge", "+%s attack", "atk", [1, 2]],
@@ -6006,25 +6010,27 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		_pop(pos, "+%d loot" % lc, Color("ffc93c"))
 		snd = "coin"
 	if moved and stations.has(pos):
-		var need_air := oxy < oxy_max - 1.5
-		var need_hp := sk("stationheal") > 0.0 and hp < hp_cap()
-		if need_air or need_hp:
-			if station_uses >= STATION_USES:
-				msg = "O2 station is spent: it only works %d times per floor" % STATION_USES
-				snd = "blocked"
-			else:
+		var healed := 0
+		var heal_spent := false
+		if sk("stationheal") > 0.0 and hp < hp_cap():
+			if station_uses < STATION_USES:
 				station_uses += 1
-				var uses_left := STATION_USES - station_uses
-				if need_hp:
-					var sh2 := maxi(1, int(hp_cap() * sk("stationheal") / 100.0))
-					hp = mini(hp_cap(), hp + sh2)
-					_pop(pos, "+%d HP" % sh2, Color("ff8a9a"))
-					msg = "O2 station: health restored (%d uses left)" % uses_left
-				if need_air:
-					oxy = oxy_max
-					msg = "O2 station: air fully restored (%d uses left)" % uses_left
-					_pop(pos, "AIR FULL", Color("7fd8ff"))
-				snd = "lamp"
+				healed = maxi(1, int(hp_cap() * sk("stationheal") / 100.0))
+				hp = mini(hp_cap(), hp + healed)
+				_pop(pos, "+%d HP" % healed, Color("ff8a9a"))
+			else:
+				heal_spent = true
+		if oxy < oxy_max - 0.5:
+			msg = "O2 station: air fully restored"
+			_pop(pos, "AIR FULL", Color("7fd8ff"))
+			snd = "lamp"
+		if healed > 0:
+			msg = ("O2 station: air restored, +%d HP" if oxy < oxy_max - 0.5 else "Recycler: +%d HP") % healed
+			msg += " (%d heals left on this floor)" % (STATION_USES - station_uses)
+			snd = "lamp"
+		elif heal_spent:
+			msg += "   Recycler is spent: %d heals per floor" % STATION_USES
+		oxy = oxy_max
 	if scan_steps > 0:
 		scan_steps -= 1
 	_adv_update_vis()
@@ -7000,12 +7006,6 @@ func _draw_med(ctr: Vector2) -> void:
 
 
 func _draw_station(ctr: Vector2) -> void:
-	_draw_station_base(ctr)
-	if station_uses >= STATION_USES:
-		draw_circle(ctr, AC * 0.38, Color(0.03, 0.04, 0.08, 0.55))
-
-
-func _draw_station_base(ctr: Vector2) -> void:
 	var pc := Color("7fd8ff")
 	var fl := 0.5 + 0.5 * sin(t * 3.0)
 	var flick := 0.85 + 0.15 * sin(t * 17.0) * sin(t * 5.3)
