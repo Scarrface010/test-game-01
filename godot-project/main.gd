@@ -211,6 +211,10 @@ var btn_sv_fexp := Rect2(110, 680, 500, 84)
 var btn_sv_fimp := Rect2(110, 790, 500, 84)
 var btn_sv_back := Rect2(110, 1100, 500, 80)
 var name_edit: LineEdit = null
+var inv_scroll := 0.0
+var inv_scroll_max := 0.0
+var tut_back := MODE
+var btn_inhelp := Rect2(510, 76, 190, 46)
 var font_pix: Font = null
 var font_clear: Font = null
 var font_title: Font = ThemeDB.fallback_font
@@ -221,7 +225,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 11
+const BUILD := 12
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -253,8 +257,8 @@ var adv_text := {
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
 	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
 	"phoenix": "Survive one death: restores full health and air",
-	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters for 10",
-	"tool_zap": "Zaps a monster within 3 tiles for 12 damage",
+	"tool_bomb": "Blasts adjacent walls and spikes and hits adjacent monsters hard. Damage grows with depth and level",
+	"tool_zap": "Zaps a monster within 3 tiles for heavy damage. Damage grows with depth and level",
 	"tool_crystal": "+20 air", "tool_cloak": "+3 attack until your next kill",
 	"tool_draught": "Gives 75% of a level's worth of XP", "tool_magnet": "Pulls in coins within 7 tiles",
 	"tool_blink": "Teleport to a nearby explored tile",
@@ -1540,7 +1544,25 @@ func _shop_pages() -> int:
 
 
 func _class_rect(i: int) -> Rect2:
-	return Rect2(50, 262 + i * 152, 620, 140)
+	return Rect2(50, 252 + i * 164, 620, 156)
+
+
+func _act_desc(cid: String) -> String:
+	if mode == "adv":
+		return {
+			"scout": "Deep Breath: +10 air and your next 8 steps cost no air. Recharges in 40 steps.",
+			"brute": "Iron Stance: blocks the next 2 hits and gives +3 attack until your next kill. Recharges in 30 steps.",
+			"mystic": "Hex Pulse: stuns enemies within 3 tiles for 3 steps (not bosses or turrets). Recharges in 35 steps.",
+			"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
+			"gunslinger": "Ricochet: your next shot bounces to a second enemy within 3 tiles. Recharges in 25 steps.",
+		}.get(cid, "")
+	return {
+		"scout": "Deep Breath: pushes the dark back 3 steps. Recharges in 40 steps.",
+		"brute": "Iron Stance: your next fight counts as +3 levels. Recharges in 30 steps.",
+		"mystic": "Hex Pulse: monsters within 3 tiles lose a level. Recharges in 35 steps.",
+		"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
+		"gunslinger": "Ricochet: zaps a monster within 2 tiles, then another beside it. Recharges in 25 steps.",
+	}.get(cid, "")
 
 
 func _door_rect(i: int) -> Rect2:
@@ -2298,6 +2320,13 @@ func _new_run(start_floor := 1) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if state == INV and inv_tab == 0:
+		if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+			inv_scroll = clampf(inv_scroll - event.relative.y, 0.0, inv_scroll_max)
+			return
+		if event is InputEventMouseButton and event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			inv_scroll = clampf(inv_scroll + (60.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -60.0), 0.0, inv_scroll_max)
+			return
 	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		return
 	var p: Vector2 = event.position
@@ -3584,7 +3613,8 @@ func _draw_tut(acc: Color) -> void:
 
 func _tut_input(p: Vector2) -> void:
 	if btn_icl.has_point(p):
-		state = MODE
+		state = tut_back
+		tut_back = MODE
 		_sfx("ui")
 		return
 	for i in 2:
@@ -4256,7 +4286,9 @@ func _draw_overlay(acc: Color) -> void:
 			if not copen:
 				_para("Unlock this class in the SHOP.", Vector2(cr.position.x + 24, cr.position.y + 72), 21, Color(1, 1, 1, 0.5), 570.0)
 				continue
-			_para(_atext("cls_" + String(cd["id"]), String(cd["desc"])), Vector2(cr.position.x + 24, cr.position.y + 72), 21, Color.WHITE, 570.0)
+			_para(_atext("cls_" + String(cd["id"]), String(cd["desc"])), Vector2(cr.position.x + 24, cr.position.y + 66), 19, Color.WHITE, 570.0)
+			_txt("POWER", Vector2(cr.position.x + 24, cr.position.y + 118), 17, ccol, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_act_desc(String(cd["id"])), Vector2(cr.position.x + 24, cr.position.y + 136), 17, Color(1, 1, 1, 0.8), 572.0)
 			var kx := cr.end.x - 40.0
 			for kid in cd["kit"]:
 				_use_icon(String(kid), Vector2(kx, cr.position.y + 34), 40)
@@ -4600,10 +4632,31 @@ func _adv_gen() -> void:
 				gain += 1
 	if floor_n >= 2 and adv_rooms.size() > 2:
 		var hids: Array = HAZ_IDS[tidx()]
+		var corr: Array[Vector2i] = []
+		for cy in range(1, AH - 1):
+			for cx in range(1, AW - 1):
+				var cc := Vector2i(cx, cy)
+				if not _aopen(cc) or taken.has(cc) or cc == start or cc == stairs:
+					continue
+				var in_room := false
+				for rm in adv_rooms:
+					if (rm as Rect2i).grow(1).has_point(cc):
+						in_room = true
+						break
+				if in_room:
+					continue
+				var oh := _aopen(cc + Vector2i(1, 0)) and _aopen(cc + Vector2i(-1, 0)) and not _aopen(cc + Vector2i(0, 1)) and not _aopen(cc + Vector2i(0, -1))
+				var ov := _aopen(cc + Vector2i(0, 1)) and _aopen(cc + Vector2i(0, -1)) and not _aopen(cc + Vector2i(1, 0)) and not _aopen(cc + Vector2i(-1, 0))
+				if oh or ov:
+					corr.append(cc)
 		for k in clampi(2 + floor_n / 3, 2, 8):
-			var hcell := _adv_pick(rng, adv_rooms[rng.randi_range(1, adv_rooms.size() - 1)], false, taken)
-			if hcell.x >= 0:
-				haz[hcell] = String(hids[rng.randi() % hids.size()])
+			if corr.is_empty():
+				break
+			var hi := rng.randi_range(0, corr.size() - 1)
+			var hcell: Vector2i = corr[hi]
+			corr.remove_at(hi)
+			taken[hcell] = true
+			haz[hcell] = String(hids[rng.randi() % hids.size()])
 		var tn := clampi(1 + floor_n / 4 + rng.randi_range(0, 1), 1, 5)
 		var ttries := 0
 		while tn > 0 and ttries < 40:
@@ -5758,7 +5811,7 @@ func _adv_open_trade(c: Vector2i) -> void:
 
 
 func _trade_rect(i: int) -> Rect2:
-	return Rect2(50, 300 + i * 150, 620, 134)
+	return Rect2(50, 296 + i * 154, 620, 146)
 
 
 func _trade_input(p: Vector2) -> void:
@@ -5812,11 +5865,13 @@ func _draw_trade(acc: Color) -> void:
 			var gc := _gear_col(String(gd["slot"]))
 			_spr(_gear_tex(String(o["id"])), Vector2(rr.position.x + 56, rr.position.y + 67), 78.0)
 			_txt(String(gd["name"]), Vector2(rr.position.x + 108, rr.position.y + 40), 28, _tier_col(int(gd["tier"])), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(gd["slot"]).to_upper() + "  T" + str(gd["tier"]), Vector2(rr.position.x + 108, rr.position.y + 68), 18, gc, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_para(_gear_desc(gd), Vector2(rr.position.x + 108, rr.position.y + 94), 18, Color(1, 1, 1, 0.8), 340.0)
+			_txt(String(gd["slot"]).to_upper() + "  T" + str(gd["tier"]), Vector2(rr.position.x + 108, rr.position.y + 62), 18, gc, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 			var otr := gtrait_line(String(o["id"]))
+			var dy := 86.0
 			if otr != "":
-				_txt(otr, Vector2(rr.position.x + 108, rr.position.y + 122), 17, Color("ffd84f"), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+				_txt(otr, Vector2(rr.position.x + 108, rr.position.y + 84), 17, Color("ffd84f"), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+				dy = 108.0
+			_para(_gear_desc(gd), Vector2(rr.position.x + 108, rr.position.y + dy), 17, Color(1, 1, 1, 0.8), 340.0)
 		else:
 			var uid := String(o["id"])
 			_use_icon(uid, Vector2(rr.position.x + 56, rr.position.y + 67), 70)
@@ -6156,6 +6211,7 @@ func _adv_fight(nc: Vector2i) -> int:
 	_sfx("step")
 	mon_lunge[nc] = [t + 0.12, Vector2(pos - nc).normalized()]
 	if tur.has(nc):
+		_sfx("spike")
 		return 2
 	if not missed and String(affix.get(nc, "")) == "spiny":
 		if not _adv_env_hurt(1 + floor_n / 4, "Spiny! You lose %d health", "You were skewered by a spiny enemy"):
@@ -6301,7 +6357,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		else:
 			adv_pts += 2
 			scan_r = 5 + lamp_amt() / 4
-			scan_steps = 8
+			scan_steps = 16
 			msg = "Scanner pulse! Nearby rooms revealed"
 			_pop(nc, "SCAN", Color("ffe9a0"))
 			snd = "lamp"
@@ -6939,6 +6995,14 @@ func _draw_med_menu(acc: Color) -> void:
 	_button(btn_back, "LEAVE", acc, 28)
 
 
+func bomb_dmg() -> int:
+	return 14 + 3 * floor_n + level
+
+
+func zap_dmg() -> int:
+	return 16 + 2 * floor_n + level
+
+
 func _adv_use_slot(i: int) -> void:
 	if state != PLAY or i >= inv.size():
 		return
@@ -6967,7 +7031,7 @@ func _adv_use_slot(i: int) -> void:
 					hit += 1
 				if mons.has(c):
 					_pop(c, "BOOM", Color("ff7a45"))
-					_adv_damage_mon(c, 10)
+					_adv_damage_mon(c, bomb_dmg())
 					hit += 1
 		if hit == 0:
 			msg = "Nothing nearby to blast"
@@ -7101,8 +7165,8 @@ func _adv_aim_apply(c: Vector2i) -> void:
 	elif id == "zap":
 		_pop(c, "ZAP", Color("ffe14f"))
 		_fx_bolt(vis_pos, Vector2(c))
-		_adv_damage_mon(c, 12)
-		msg = "Zap! 12 damage"
+		_adv_damage_mon(c, zap_dmg())
+		msg = "Zap! %d damage" % zap_dmg()
 		_sfx("elite")
 
 
@@ -7121,6 +7185,7 @@ func _adv_input(p: Vector2) -> void:
 		aim = -1
 		inv_tab = 0
 		inv_page = 0
+		inv_scroll = 0.0
 		_sfx("ui")
 		return
 	if _act_rect().has_point(p):
@@ -7638,6 +7703,13 @@ func _inv_input(p: Vector2) -> void:
 	if btn_invmenu.has_point(p):
 		_menu_leave()
 		return
+	if btn_inhelp.has_point(p):
+		tut_back = INV
+		tut_mode = 1
+		tut_page = 0
+		state = TUTORIAL
+		_sfx("ui")
+		return
 	if btn_icl.has_point(p) or btn_inv.has_point(p):
 		state = PLAY
 		_sfx("ui")
@@ -7647,6 +7719,7 @@ func _inv_input(p: Vector2) -> void:
 			inv_tab = i
 			inv_page = 0
 			pack_page = 0
+			inv_scroll = 0.0
 			_sfx("ui")
 			return
 	if inv_tab == 1:
@@ -7697,9 +7770,54 @@ func _inv_input(p: Vector2) -> void:
 				return
 
 
+func _inv_extra_rows() -> Array:
+	var leech := int(gear("leech") + sk("leech"))
+	var rng_t := _shoot_range()
+	var hz := int(round((1.0 - _haz_mult()) * 100.0))
+	var sdef := int(gear("rangedef") + sk("rdef")) + 2 * relic_n("plating")
+	var sc := gear("shotsave") + sk("shotsave") + float(relic_n("efficient"))
+	return [
+		["#OFFENSE"],
+		["CRIT CHANCE", "%d%%" % int(round(crit_chance())), "Chance for a hit to crit."],
+		["CRIT DAMAGE", "x%.1f" % crit_mult(), "Damage multiplier when you crit."],
+		["LIFESTEAL", "%d per hit" % leech, "Health restored on every hit."],
+		["KILL HEAL", "%d" % int(gear("killheal")), "Health restored when you kill."],
+		["FINISHER", "+%d%%" % int(sk("finish")), "Bonus damage to enemies under half health."],
+		["RANGE", ("%d tiles" % rng_t) if rng_t > 0 else "none", "How far your ranged weapon shoots."],
+		["RANGED BONUS", "+%d" % (4 * relic_n("heavyammo") + int(sk("rdmg"))), "Extra damage on ranged shots."],
+		["THORNS", "%d" % thorns_dmg(), "Damage reflected when you are hit."],
+		["#DEFENCE"],
+		["DODGE", "%d%%" % int(round(dodge_chance())), "Chance to avoid a hit completely."],
+		["SHOT DEFENCE", "-%d" % sdef, "Damage removed from enemy ranged shots."],
+		["HAZARD RESIST", "%d%%" % hz, "Less damage from floor hazards."],
+		["LAST STAND", "%d%%" % int(sk("laststand")), "Less damage taken below 30% health."],
+		["MEDKIT BONUS", "+%d%%" % int(sk("medk")), "Medkits heal this much more."],
+		["STATION HEAL", "%d%%" % int(sk("stationheal")), "Health O2 stations restore (3 times per floor)."],
+		["#AIR"],
+		["AIR SAVING", "%d%%" % int(gear("airsave") + sk("airsave")), "Less air used per step."],
+		["SHOT AIR SAVING", "%.1f" % sc, "Air saved on every ranged shot."],
+		["POD AIR", "%d" % int(adv_pod_amt()), "Air restored by each air pod."],
+		["SECOND WIND", "%d" % int(sk("wind")), "Air you get once per floor when you run out."],
+		["#EXPLORING"],
+		["SIGHT", "%d" % adv_vis_r(), "How far you see around you."],
+		["SCANNER POWER", "%d" % (5 + lamp_amt() / 4), "Reach of a scanner pulse."],
+		["TOOL SLOTS", "%d" % slots_n(), "How many tools you can carry."],
+		["FREE TOOLS", "%d" % int(sk("quarter")), "Random tools you start every floor with."],
+		["#FORTUNE"],
+		["XP BONUS", "+%d%%" % int(gear("xp") + sk("xp")), "Extra XP from everything."],
+		["LUCKY XP", "%d%%" % int(sk("lucky")), "Chance for a kill to give double XP."],
+		["POTION BONUS", "+%d%%" % int(sk("pot")), "Extra XP from potions."],
+		["COIN VALUE", "%d" % coin_val(), "Coins you get per coin pickup."],
+		["KILL COINS", "+%d" % int(sk("kcoin")), "Extra coins dropped by every kill."],
+		["GEAR DROPS", "+%d%%" % int(sk("drop")), "Extra gear drop chance from elites."],
+		["SHOP DISCOUNT", "%d%%" % int(sk("haggle")), "Cheaper prices at shops."],
+	]
+
+
 func _draw_inv(acc: Color) -> void:
 	var armed := t - menu_armed < 3.0
 	_button(btn_invmenu, "TAP AGAIN: LEAVE" if armed else "BACK TO MENU", Color("ff8a8a") if armed else acc, 17)
+	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 17)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
 	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR", "PACK"]
 	for i in 5:
@@ -7719,12 +7837,32 @@ func _draw_inv(acc: Color) -> void:
 			["AIR", "%d / %d" % [int(ceil(oxy)), int(oxy_max)], "Walking costs air. O2 stations refill it."],
 			["POINTS", "%d / %d" % [adv_pts, adv_req], "Reach the total to unlock the exit. Coins: %d" % coins],
 		]
-		for i in rows.size():
-			var y := 290.0 + i * 94.0
-			draw_rect(Rect2(40, y, 640, 84), Color(1, 1, 1, 0.05))
-			_txt(String(rows[i][0]), Vector2(60, y + 34), 24, Color(1, 1, 1, 0.65), 260.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(rows[i][1]), Vector2(380, y + 34), 30, Color.WHITE, 280.0, HORIZONTAL_ALIGNMENT_RIGHT)
-			_txt(String(rows[i][2]), Vector2(60, y + 66), 19, Color(1, 1, 1, 0.55), 620.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var allrows: Array = [["#CORE"]] + rows + _inv_extra_rows()
+		var vt := 276.0
+		var vb := 1100.0
+		var yy := vt - inv_scroll
+		var total := 0.0
+		for r in allrows:
+			var hdr := String(r[0]).begins_with("#")
+			var hh := 48.0 if hdr else 80.0
+			if yy >= vt - 2.0 and yy + hh <= vb + 2.0:
+				if hdr:
+					_txt(String(r[0]).substr(1), Vector2(50, yy + 34), 24, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+					draw_line(Vector2(40, yy + 42), Vector2(680, yy + 42), Color(1, 0.85, 0.3, 0.35), 2.0)
+				else:
+					draw_rect(Rect2(40, yy, 640, 72), Color(1, 1, 1, 0.05))
+					_txt(String(r[0]), Vector2(60, yy + 30), 22, Color(1, 1, 1, 0.65), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+					_txt(String(r[1]), Vector2(360, yy + 32), 28, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_RIGHT)
+					_txt(String(r[2]), Vector2(60, yy + 60), 18, Color(1, 1, 1, 0.55), 610.0, HORIZONTAL_ALIGNMENT_LEFT)
+			yy += hh
+			total += hh
+		inv_scroll_max = maxf(0.0, total - (vb - vt))
+		inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
+		if inv_scroll_max > 0.0:
+			var bh := (vb - vt) * (vb - vt) / total
+			var by := vt + (vb - vt - bh) * inv_scroll / inv_scroll_max
+			draw_rect(Rect2(690, by, 6, bh), Color(1, 1, 1, 0.35))
+			_txt("drag to scroll", Vector2(0, 1128), 16, Color(1, 1, 1, 0.4))
 	elif inv_tab == 1:
 		_txt("Tools also sit on the bar at the bottom of the screen.", Vector2(0, 268), 20, Color(1, 1, 1, 0.55))
 		if inv.is_empty():
