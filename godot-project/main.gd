@@ -108,6 +108,10 @@ var cls := "scout"
 var inv: Array[String] = []
 var aim := -1
 var boost := 0
+var act_cd := 0
+var act_free := 0
+var act_stance := 0
+var act_rico := false
 var keys := 0
 var vaults: Dictionary = {}
 var boss_floor := false
@@ -213,7 +217,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -323,6 +327,10 @@ func _ready() -> void:
 		return
 	if "--savetest" in args:
 		_save_selftest()
+		get_tree().quit()
+		return
+	if "--acttest" in args:
+		_act_selftest()
 		get_tree().quit()
 		return
 	if "--advtest" in args:
@@ -1296,6 +1304,7 @@ func _step(nc: Vector2i) -> void:
 	pos = landing
 	var before := depth_for(moves)
 	moves = mini(moves + 1 + extra, maxd * period)
+	_act_tick()
 	if depth_for(moves) > before:
 		msg = "The dark swallows the edge!"
 		snd = "swallow"
@@ -1582,6 +1591,263 @@ func _plan(target: Vector2i) -> void:
 		path.append(target)
 	walk = path
 	walk_t = 0.1
+
+
+# ----- class actives -----
+
+const ACTS := {
+	"scout": {"n": "Deep Breath", "cd": 40},
+	"brute": {"n": "Iron Stance", "cd": 30},
+	"gambler": {"n": "Reshuffle", "cd": 50},
+	"gunslinger": {"n": "Ricochet", "cd": 25},
+	"mystic": {"n": "Hex Pulse", "cd": 35},
+}
+
+
+func _act_tick() -> void:
+	if act_cd > 0:
+		act_cd -= 1
+
+
+func _act_rect() -> Rect2:
+	var sy := 1046.0 if mode == "adv" else 982.0
+	var x0 := 40.0 + slots_n() * 118.0
+	if 680.0 - x0 >= 110.0:
+		return Rect2(x0, sy, 680.0 - x0, 62.0)
+	return Rect2(40.0, sy + 64.0, 640.0, 30.0)
+
+
+func _act_status() -> String:
+	if act_cd > 0:
+		return "%d steps" % act_cd
+	if cls == "scout" and act_free > 0:
+		return "%d free" % act_free
+	if cls == "brute" and act_stance > 0:
+		return "%d blocks" % act_stance
+	if cls == "gunslinger" and act_rico:
+		return "LOADED"
+	return "READY"
+
+
+func _act_draw() -> void:
+	if not ACTS.has(cls):
+		return
+	var r := _act_rect()
+	var col: Color = cdef()["col"]
+	var rdy := act_cd <= 0
+	var live := act_free > 0 or act_stance > 0 or act_rico
+	var bc := col if (rdy or live) else Color(1, 1, 1, 0.3)
+	draw_rect(r, Color(bc.r, bc.g, bc.b, 0.2 if rdy else 0.07))
+	draw_rect(r, bc, false, 3.0 if rdy else 2.0)
+	if act_cd > 0:
+		var frac := float(act_cd) / float(ACTS[cls]["cd"])
+		draw_rect(Rect2(r.position.x, r.end.y - 5.0, r.size.x * (1.0 - frac), 5.0), Color(col.r, col.g, col.b, 0.8))
+	var tc := Color.WHITE if (rdy or live) else Color(1, 1, 1, 0.5)
+	if r.size.y >= 50.0:
+		_ctext(String(ACTS[cls]["n"]), r.get_center() + Vector2(0, -11), 20, tc)
+		_ctext(_act_status(), r.get_center() + Vector2(0, 14), 17, Color(bc.r, bc.g, bc.b, 1.0))
+	else:
+		_ctext("%s: %s" % [ACTS[cls]["n"], _act_status()], r.get_center(), 18, tc)
+
+
+func _act_fx(col: Color) -> void:
+	var vp := vis_pos if mode == "adv" else _pvf()
+	_fx_ring(vp, col, 1.4, 0.5, 5.0)
+	_fx_burst(vp, col, 14, 3.0, 0.5, 5.0)
+
+
+func _act_fail(m: String) -> bool:
+	msg = m
+	_sfx("blocked")
+	return false
+
+
+func _act_use() -> void:
+	if state != PLAY or not ACTS.has(cls):
+		return
+	if act_cd > 0:
+		msg = "%s recharging: %d steps" % [ACTS[cls]["n"], act_cd]
+		_sfx("blocked")
+		return
+	walk.clear()
+	aim = -1
+	var ok := false
+	match cls:
+		"scout":
+			ok = _act_scout()
+		"brute":
+			ok = _act_brute()
+		"gambler":
+			ok = _act_gambler()
+		"gunslinger":
+			ok = _act_gunslinger()
+		"mystic":
+			ok = _act_mystic()
+	if ok:
+		act_cd = int(ACTS[cls]["cd"])
+
+
+func _act_scout() -> bool:
+	if mode == "adv":
+		oxy = minf(oxy_max, oxy + 10.0)
+		act_free = 8
+		msg = "Deep Breath: +10 air, your next 8 steps cost no air"
+		_pop(pos, "+10 AIR", Color("7fd8ff"))
+	else:
+		if moves <= depth_for(moves) * period:
+			return _act_fail("The dark is not close yet")
+		moves = maxi(moves - 3, depth_for(moves) * period)
+		msg = "Deep Breath: the dark is pushed back"
+		_pop(pos, "BREATH", Color("7fd8ff"))
+	_act_fx(Color("7fd8ff"))
+	_sfx("lamp")
+	return true
+
+
+func _act_brute() -> bool:
+	if mode == "adv":
+		act_stance = 2
+		boost = maxi(boost, 3)
+		msg = "Iron Stance: blocks the next 2 hits, +3 attack until your next kill"
+	else:
+		boost = maxi(boost, 3)
+		msg = "Iron Stance: your next fight counts +3 levels"
+	_pop(pos, "STANCE", Color("ff6a5c"))
+	_act_fx(Color("ff6a5c"))
+	_sfx("shield")
+	return true
+
+
+func _act_gambler() -> bool:
+	if inv.is_empty():
+		return _act_fail("No tools to reshuffle")
+	for i in inv.size():
+		inv[i] = _random_use()
+	msg = "Reshuffle! Every tool was rerolled"
+	_pop(pos, "RESHUFFLE", Color("ffd84f"))
+	_act_fx(Color("ffd84f"))
+	_sfx("big")
+	return true
+
+
+func _act_gunslinger() -> bool:
+	if mode == "adv":
+		if _shoot_range() <= 0:
+			return _act_fail("Ricochet needs a ranged weapon")
+		if act_rico:
+			return _act_fail("Ricochet is already loaded")
+		act_rico = true
+		msg = "Ricochet loaded: your next shot bounces to a second target"
+		_pop(pos, "LOADED", Color("ff9a4f"))
+		_act_fx(Color("ff9a4f"))
+		_sfx("ui")
+		return true
+	var best := Vector2i(-1, -1)
+	var bd := 99
+	for c in mons.keys():
+		if is_dark(c) or _mon_level(c) > level + 1:
+			continue
+		var d: int = absi(c.x - pos.x) + absi(c.y - pos.y)
+		if d <= 2 and d < bd:
+			best = c
+			bd = d
+	if bd == 99:
+		return _act_fail("No target within 2 tiles")
+	var second := Vector2i(-1, -1)
+	var sd := 99
+	for c in mons.keys():
+		if c == best or is_dark(c) or _mon_level(c) > level + 1:
+			continue
+		var d2: int = absi(c.x - best.x) + absi(c.y - best.y)
+		if d2 <= 3 and d2 < sd:
+			second = c
+			sd = d2
+	_fx_bolt(Vector2(pos), Vector2(best), Color("ff9a4f"))
+	_pop(best, "RICOCHET", Color("ff9a4f"))
+	_kill_free(best)
+	if sd != 99:
+		_fx_bolt(Vector2(best), Vector2(second), Color("ffd84f"))
+		_pop(second, "RICOCHET", Color("ffd84f"))
+		_kill_free(second)
+		msg = "Ricochet! Two monsters down"
+	else:
+		msg = "Ricochet! One monster down"
+	_sfx("elite")
+	return true
+
+
+func _act_ricochet(from: Vector2i, dmg: int) -> void:
+	var best := Vector2i(-1, -1)
+	var bd := 99
+	for m in mons.keys():
+		if m == from or not adv_vis.has(m):
+			continue
+		var d: int = absi(m.x - from.x) + absi(m.y - from.y)
+		if d <= 3 and d < bd:
+			best = m
+			bd = d
+	if bd == 99:
+		msg += "  (no second target for the ricochet)"
+		return
+	_fx_bolt(Vector2(from), Vector2(best), Color("ffd84f"))
+	_pop(best, "RICOCHET", Color("ffd84f"))
+	_adv_damage_mon(best, dmg, Color("ffd84f"))
+	msg += "  It ricochets for %d!" % dmg
+
+
+func _act_mystic() -> bool:
+	var n := 0
+	for c in mons.keys():
+		if absi(c.x - pos.x) + absi(c.y - pos.y) > 3:
+			continue
+		if mode == "adv":
+			if not adv_vis.has(c) or not _st_ok(c) or _boss_cell(c) or tur.has(c):
+				continue
+			_st_stun(c, 3)
+			n += 1
+		else:
+			if is_dark(c) or int(mons[c]) <= 1:
+				continue
+			mons[c] = int(mons[c]) - 1
+			_pop(c, "HEX -1", Color("c07cff"))
+			n += 1
+	if n == 0:
+		return _act_fail("No monsters in reach of the pulse")
+	msg = ("Hex Pulse: %d monsters stunned for 3 steps" % n) if mode == "adv" else ("Hex Pulse: %d monsters weakened by a level" % n)
+	_act_fx(Color("c07cff"))
+	_sfx("shield")
+	return true
+
+
+func _act_selftest() -> void:
+	var bad := 0
+	for m in ["adv", "puzzle"]:
+		for cid in ["scout", "brute", "gambler", "gunslinger", "mystic"]:
+			mode = m
+			cls = cid
+			_new_run(7)
+			state = PLAY
+			if cid == "gambler" and inv.is_empty():
+				inv.append("bomb")
+			_act_use()
+			var cd1 := act_cd
+			_act_use()
+			_act_tick()
+			print("ACT ", m, " ", cid, " cd=", cd1, " msg=", msg)
+			if cd1 != 0 and cd1 != int(ACTS[cid]["cd"]):
+				bad += 1
+	act_stance = 2
+	mode = "adv"
+	cls = "brute"
+	_new_run(7)
+	state = PLAY
+	act_stance = 2
+	hp = hp_max
+	_adv_hurt(5, "Test")
+	if act_stance != 1 or hp != hp_max:
+		bad += 1
+		print("STANCE FAIL ", act_stance, " ", hp)
+	print("ACT TEST DONE bad=", bad)
 
 
 # ----- usable tools -----
@@ -1897,6 +2163,10 @@ func _new_run(start_floor := 1) -> void:
 	run_banked = 0
 	relics.clear()
 	inv.clear()
+	act_cd = 0
+	act_free = 0
+	act_stance = 0
+	act_rico = false
 	fmod = "standard"
 	for id in cdef()["kit"]:
 		inv.append(String(id))
@@ -2110,6 +2380,9 @@ func _gui_input(event: InputEvent) -> void:
 	# playing
 	if mode == "adv":
 		_adv_input(p)
+		return
+	if _act_rect().has_point(p):
+		_act_use()
 		return
 	for i in slots_n():
 		if _slot_rect(i).has_point(p):
@@ -3372,7 +3645,7 @@ func _draw() -> void:
 			draw_multiline_string(font, Vector2(sr.position.x + 50, sr.position.y + 26), _use_name(inv[i]), HORIZONTAL_ALIGNMENT_LEFT, 56, 13, 3, Color.WHITE)
 		else:
 			_ctext("empty", sr.get_center(), 14, Color(1, 1, 1, 0.3))
-	_txt("TOOLS: tap one to use it", Vector2(40 + slots_n() * 118 + 8, 1020), 17, Color(1, 1, 1, 0.45), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_act_draw()
 	# footer
 	_txt(msg, Vector2(0, 1084), 26, Color.WHITE, 720.0)
 	_txt("Green badge = you win the fight. Red = you die. Equal loses!", Vector2(0, 1122), 22, Color(1, 1, 1, 0.55))
@@ -4046,6 +4319,12 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 		_pop(pos, "DODGE", Color("9fe8ff"))
 		_fx_ring(vis_pos, Color("9fe8ff"), 1.1, 0.35, 3.0)
 		msg += "   You dodge %s!" % who
+		return true
+	if act_stance > 0:
+		act_stance -= 1
+		_pop(pos, "BLOCKED", Color("7db2ff"))
+		msg += "   Iron Stance blocks %s!" % who
+		_sfx("shield")
 		return true
 	var d := dmg_taken(a)
 	var absorbed := mini(sh, d)
@@ -5596,7 +5875,12 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if moved:
 		pos = nc
 	adv_steps += 1
-	oxy -= (1.0 - (gear("airsave") + sk("airsave")) / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	_act_tick()
+	if act_free > 0:
+		act_free -= 1
+		oxy -= extra
+	else:
+		oxy -= (1.0 - (gear("airsave") + sk("airsave")) / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
 	if moved and corpses.has(pos) and relic_n("gravedigger") > 0 and not bool(corpses[pos].get("looted", false)):
 		corpses[pos]["looted"] = true
 		var lc := 2 * relic_n("gravedigger") * coin_val()
@@ -5851,6 +6135,9 @@ func _adv_shoot(c: Vector2i) -> void:
 		mon_hp[c] = left
 		msg = ("%s dodges the shot!" % nm) if missed else ("You shoot %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(c)])
 	_sfx("shoot")
+	if act_rico and dmg > 0:
+		act_rico = false
+		_act_ricochet(c, dmg)
 	if mons.has(c) and not tur.has(c) and not is_boss:
 		var kd := String(kinds.get(c, ""))
 		if kd == "" or kd == "sleeper" or kd == "feeder":
@@ -5862,6 +6149,7 @@ func _adv_shoot(c: Vector2i) -> void:
 		if not _adv_hurt(mon_atk(c), nm, c):
 			return
 	adv_steps += 1
+	_act_tick()
 	oxy -= _shot_cost()
 	if scan_steps > 0:
 		scan_steps -= 1
@@ -6370,6 +6658,9 @@ func _adv_input(p: Vector2) -> void:
 		inv_page = 0
 		_sfx("ui")
 		return
+	if _act_rect().has_point(p):
+		_act_use()
+		return
 	for i in slots_n():
 		if _slot_rect(i).has_point(p):
 			_adv_use_slot(i)
@@ -6818,7 +7109,7 @@ func _adv_draw() -> void:
 			draw_multiline_string(font, Vector2(sr.position.x + 50, sr.position.y + 26), _use_name(inv[i]), HORIZONTAL_ALIGNMENT_LEFT, 56, 13, 3, Color.WHITE)
 		else:
 			_ctext("empty", sr.get_center(), 14, Color(1, 1, 1, 0.3))
-	_txt("TOOLS: tap one to use it", Vector2(40 + slots_n() * 118 + 8, 1084), 17, Color(1, 1, 1, 0.45), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_act_draw()
 	_txt(msg, Vector2(0, 1144), 26, Color.WHITE, 720.0)
 	_txt("Tap a monster to attack. Badge: green easy, amber costly, red deadly.", Vector2(0, 1178), 20, Color(1, 1, 1, 0.55))
 	var tips := [
