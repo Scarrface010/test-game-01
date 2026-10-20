@@ -206,7 +206,7 @@ var tut_page := 0
 var btn_cont := Rect2(50, 1146, 620, 72)
 var btn_exp := Rect2(50, 1228, 300, 44)
 var btn_imp := Rect2(370, 1228, 300, 44)
-const BUILD := 5
+const BUILD := 6
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3828,7 +3828,8 @@ func _draw_overlay(acc: Color) -> void:
 			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
 		_button(btn_exp, "EXPORT SAVE", Color("c9d3f0"), 20)
 		_button(btn_imp, "IMPORT SAVE", Color("c9d3f0"), 20)
-		_txt("build %d" % BUILD, Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
+		var bt := get_node_or_null("/root/Boot")
+		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
 			_txt(xfer_msg, Vector2(0, 252), 24, Color("6dff9a"))
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)

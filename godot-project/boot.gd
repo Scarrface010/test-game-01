@@ -15,10 +15,15 @@ TNHj9ucxUjXGFV6tZ6tl8E8doR5DLL61BscvKSpA3q4rm8GN5Os0It9TNgYZr639
 bwIDAQAB
 -----END PUBLIC KEY-----"""
 
+var status := "idle"
+
 func _ready() -> void:
 	var android := OS.has_feature("android")
 	if android and FileAccess.file_exists(PACK) and _stored_ver() > BASE_VERSION:
-		if not ProjectSettings.load_resource_pack(PACK, true):
+		if ProjectSettings.load_resource_pack(PACK, true):
+			status = "loaded v%d" % _stored_ver()
+		else:
+			status = "load failed"
 			DirAccess.remove_absolute(PACK)
 	if android:
 		_check.call_deferred()
@@ -45,12 +50,14 @@ func _check() -> void:
 	r.request(BASE_URL + "version.json?t=" + str(Time.get_unix_time_from_system()))
 	var res = await r.request_completed
 	if res[0] != HTTPRequest.RESULT_SUCCESS or res[1] != 200:
+		status = "check fail r%d h%d" % [res[0], res[1]]
 		return
 	var j = JSON.parse_string(res[3].get_string_from_utf8())
 	if typeof(j) != TYPE_DICTIONARY:
 		return
 	var v := int(j.get("version", 0))
 	if v <= maxi(_stored_ver(), BASE_VERSION):
+		status += " up-to-date"
 		return
 	var d := HTTPRequest.new()
 	d.timeout = 120
@@ -60,9 +67,11 @@ func _check() -> void:
 	var dr = await d.request_completed
 	if dr[0] != HTTPRequest.RESULT_SUCCESS or dr[1] != 200 \
 			or not _signature_ok("user://update.tmp", str(j.get("sig", ""))):
+		status = "dl/sig fail r%d h%d" % [dr[0], dr[1]]
 		DirAccess.remove_absolute("user://update.tmp")
 		return
 	DirAccess.rename_absolute("user://update.tmp", PACK)
 	var f := FileAccess.open(VER_FILE, FileAccess.WRITE)
 	f.store_string(str(v))
 	f.close()
+	status += " | got v%d, restart" % v
