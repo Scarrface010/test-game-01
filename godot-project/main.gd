@@ -119,6 +119,8 @@ var vaults: Dictionary = {}
 var boss_floor := false
 var boss_kind := "warden"
 var boss_base := 5
+var arena := false
+var arena_d: Dictionary = {}
 var fmod := "standard"
 var door_choices: Array = []
 var market_stock: Array = []
@@ -234,7 +236,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 15
+const BUILD := 16
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -248,7 +250,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -2587,7 +2589,7 @@ func _process(dt: float) -> void:
 		else:
 			inv_vel = 0.0
 	if state == PLAY and mode == "adv":
-		cam = cam.lerp(vis_pos, minf(1.0, dt * 12.0))
+		cam = cam.lerp(Vector2(6, 6) if arena else vis_pos, minf(1.0, dt * 12.0))
 		if walk.size() > 0:
 			walk_t += dt
 			if walk_t >= 0.11:
@@ -4534,9 +4536,340 @@ func _adv_pick(rng: RandomNumberGenerator, r: Rect2i, inner: bool, taken: Dictio
 	return Vector2i(-1, -1)
 
 
+func _titan_immune(c: Vector2i) -> bool:
+	return arena and boss_floor and String(arena_d.get("kind", "")) == "titan" and c == boss_cell and bool(arena_d.get("shield", false))
+
+
+func _arena_hint() -> String:
+	var k := String(arena_d.get("kind", ""))
+	if k == "core":
+		return "Orange tiles blast on the next step: move off them"
+	if k == "queen":
+		return "Drones heal her through the green links: kill them first"
+	if k == "lord":
+		return "Lure the Crime Lord onto his mines"
+	return "Break the pulsing crystals to expose the Titan"
+
+
+func _arena_free(c: Vector2i) -> bool:
+	return _aopen(c) and c.x >= 2 and c.x <= 10 and c.y >= 2 and c.y <= 10 and not mons.has(c) and c != pos and c != stairs and not items.has(c) and not haz.has(c) and not stations.has(c) and not coin_at.has(c)
+
+
+func _arena_shard_count() -> int:
+	var n := 0
+	for c in kinds:
+		if String(kinds[c]) == "shard" and mons.has(c):
+			n += 1
+	return n
+
+
+func _arena_spawn_shards(n: int) -> void:
+	var cand: Array[Vector2i] = []
+	for x in range(3, 10):
+		for y in range(3, 9):
+			var c := Vector2i(x, y)
+			if _arena_free(c) and absi(c.x - boss_cell.x) + absi(c.y - boss_cell.y) >= 2 and absi(c.x - pos.x) + absi(c.y - pos.y) >= 2:
+				cand.append(c)
+	cand.shuffle()
+	for i in mini(n, cand.size()):
+		var sc: Vector2i = cand[i]
+		mons[sc] = 1
+		kinds[sc] = "shard"
+		mon_hp[sc] = 1
+		_fx_ring(Vector2(sc), Color("b48cff"), 1.6, 0.5, 4.0)
+
+
+func _adv_gen_arena() -> void:
+	AW = 13
+	AH = 13
+	adv_open.resize(AW * AH)
+	adv_open.fill(0)
+	adv_seen.resize(AW * AH)
+	adv_seen.fill(0)
+	adv_rooms.clear()
+	mons.clear()
+	elite.clear()
+	items.clear()
+	spikes.clear()
+	haz.clear()
+	tur.clear()
+	corpses.clear()
+	coin_at.clear()
+	walls.clear()
+	portals.clear()
+	kinds.clear()
+	thief_held.clear()
+	vaults.clear()
+	stations.clear()
+	meds.clear()
+	merchants.clear()
+	mon_hp.clear()
+	affix.clear()
+	mstat.clear()
+	adv_rooms.append(Rect2i(2, 2, 9, 9))
+	for x in range(2, 11):
+		for y in range(2, 11):
+			adv_open[_ai(Vector2i(x, y))] = 1
+	start = Vector2i(6, 10)
+	pos = start
+	stairs = Vector2i(6, 2)
+	boss_floor = true
+	boss_cell = stairs
+	adv_pts_total = 0
+	adv_req = 0
+	var kind_ids := ["core", "queen", "lord", "titan"]
+	var k: String = kind_ids[tidx() % 4]
+	arena_d = {"kind": k, "mark": [], "n": 0, "shield": false, "resh": 0, "intro": false}
+	mons[stairs] = _adv_scaled(3 + floor_n / 2) + 2
+	stations[Vector2i(2, 10)] = true
+	stations[Vector2i(10, 10)] = true
+	items[Vector2i(2, 6)] = "hp"
+	items[Vector2i(10, 6)] = "hp"
+	items[Vector2i(4, 10)] = "pod"
+	items[Vector2i(8, 10)] = "pod"
+	items[Vector2i(6, 8)] = "shield"
+	for cc in [Vector2i(3, 8), Vector2i(9, 8), Vector2i(2, 4), Vector2i(10, 4)]:
+		coin_at[cc] = true
+	if k == "lord":
+		for mc in [Vector2i(6, 3), Vector2i(6, 5), Vector2i(4, 6), Vector2i(8, 6), Vector2i(3, 4), Vector2i(9, 4)]:
+			haz[mc] = "mine"
+	elif k == "titan":
+		arena_d["shield"] = true
+		_arena_spawn_shards(3)
+
+
+func _arena_pick_marks(cnt: int) -> Array:
+	var out: Array = [pos]
+	var pool: Array[Vector2i] = []
+	for dx in range(-3, 4):
+		for dy in range(-3, 4):
+			var c := pos + Vector2i(dx, dy)
+			if c != pos and _aopen(c) and c != boss_cell and c != stairs and c.x >= 2 and c.x <= 10 and c.y >= 2 and c.y <= 10:
+				pool.append(c)
+	pool.shuffle()
+	for i in mini(cnt, pool.size()):
+		out.append(pool[i])
+	var dirs4: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	var free := false
+	for dv in dirs4:
+		var nb: Vector2i = pos + dv
+		if _aopen(nb) and not mons.has(nb) and not out.has(nb):
+			free = true
+	if not free:
+		for dv in dirs4:
+			out.erase(pos + dv)
+	return out
+
+
+func _arena_boss_move(a: Vector2i, b: Vector2i) -> void:
+	_adv_move_mon(a, b)
+	if String(haz.get(b, "")) == "mine" and mons.has(b):
+		haz.erase(b)
+		_fx_ring(Vector2(b), Color("ff9a3c"), 2.0, 0.5, 8.0)
+		_fx_burst(Vector2(b), Color("ff7a45"), 30, 5.0, 0.6, 7.0)
+		_shake(7.0, 0.35)
+		var md := maxi(1, mini(mon_hp_now(b) - 1, int(mon_hp_max(b) * 0.3)))
+		_pop(b, "BOOM -%d" % md, Color("ff7a45"))
+		mon_hp[b] = mon_hp_now(b) - md
+		_sfx("boom")
+		msg = "The Crime Lord stepped on a mine! -%d HP" % md
+
+
+func _arena_tick(fought: bool) -> void:
+	if not arena or not boss_floor:
+		return
+	var k := String(arena_d.get("kind", ""))
+	var n := int(arena_d.get("n", 0)) + 1
+	arena_d["n"] = n
+	var bc := boss_cell
+	if not mons.has(bc):
+		arena_d["mark"] = []
+		for c in kinds.keys():
+			if (String(kinds[c]) == "drone" or String(kinds[c]) == "shard") and mons.has(c):
+				_remove_mon(c)
+		return
+	var dirs4: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	if k == "core" or k == "titan":
+		var marks: Array = arena_d.get("mark", [])
+		if marks.size() > 0:
+			var hit := false
+			for mcell in marks:
+				_fx_burst(Vector2(mcell), Color("ff9a3c"), 14, 3.5, 0.5, 6.0)
+				if mcell == pos:
+					hit = true
+			_shake(5.0, 0.3)
+			_sfx("boom")
+			arena_d["mark"] = []
+			if hit:
+				var bd := maxi(2, int(round(float(2 + floor_n / 2 + level / 4) * 1.5)))
+				if not _adv_env_hurt(bd, "Blast! You lose %d health", "You were caught in the %s's blast" % String(cur_theme()["boss"]), "boom"):
+					return
+		elif n % (2 if k == "core" else 3) == 0:
+			arena_d["mark"] = _arena_pick_marks((4 + floor_n / 8) if k == "core" else 3)
+			msg = "Orange tiles blast on the next step!"
+			_sfx("alarm")
+	if k == "queen":
+		var dr: Array[Vector2i] = []
+		for c in kinds:
+			if String(kinds[c]) == "drone" and mons.has(c):
+				dr.append(c)
+		if n % 2 == 0 and dr.size() > 0 and mon_hp_now(bc) < mon_hp_max(bc):
+			var heal := dr.size() * (1 + floor_n / 6)
+			mon_hp[bc] = mini(mon_hp_max(bc), mon_hp_now(bc) + heal)
+			_pop(bc, "+%d" % heal, Color("6dff9a"))
+		if n % 8 == 0 and dr.size() < 2:
+			var spots: Array[Vector2i] = []
+			for dv in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(-1, 1)]:
+				var sp: Vector2i = bc + dv
+				if _arena_free(sp):
+					spots.append(sp)
+			if spots.size() > 0:
+				var dc: Vector2i = spots[randi() % spots.size()]
+				mons[dc] = maxi(1, _adv_scaled(2) - 1)
+				kinds[dc] = "drone"
+				_fx_ring(Vector2(dc), Color("6dff9a"), 1.4, 0.5, 4.0)
+				_fx_burst(Vector2(dc), Color("6dff9a"), 10, 2.5, 0.5, 5.0)
+				msg = "The Hive Queen spawns a drone! It heals her while it lives"
+				_sfx("aggro")
+	elif k == "lord":
+		if not bool(arena_d.get("intro", false)):
+			arena_d["intro"] = true
+			var fwd := bc + Vector2i(0, 1)
+			if _aopen(fwd) and not mons.has(fwd) and fwd != pos:
+				_arena_boss_move(bc, fwd)
+				msg = "The Crime Lord charges in... and steps on his own mine!"
+			return
+		if n % 2 == 0:
+			var dd := absi(bc.x - pos.x) + absi(bc.y - pos.y)
+			if dd == 1:
+				if not fought:
+					mon_lunge[bc] = [t, Vector2(pos - bc).normalized()]
+					msg = "The Crime Lord strikes!"
+					if not _adv_hurt(mon_atk(bc), String(cur_theme()["boss"]), bc):
+						return
+			else:
+				var dist := _adv_bfs(pos, 30)
+				var best := bc
+				var bdv := int(dist.get(bc, 9999))
+				for dv in dirs4:
+					var nb: Vector2i = bc + dv
+					if dist.has(nb) and int(dist[nb]) < bdv and not mons.has(nb) and nb != pos:
+						bdv = int(dist[nb])
+						best = nb
+				if best != bc:
+					_arena_boss_move(bc, best)
+	elif k == "titan":
+		var shield_up := bool(arena_d.get("shield", false))
+		if shield_up and _arena_shard_count() == 0:
+			arena_d["shield"] = false
+			_fx_ring(Vector2(bc), Color("7fe8ff"), 2.4, 0.7, 6.0)
+			_shake(6.0, 0.3)
+			msg = "The crystals shatter! The Titan is exposed"
+			_sfx("big")
+		elif not shield_up:
+			var rs := int(arena_d.get("resh", 0))
+			var frac := float(mon_hp_now(bc)) / float(maxi(1, mon_hp_max(bc)))
+			if rs < 2 and frac <= (0.66 if rs == 0 else 0.33):
+				arena_d["resh"] = rs + 1
+				arena_d["shield"] = true
+				_arena_spawn_shards(3 + rs)
+				msg = "The Titan re-forms its crystals!"
+				_sfx("alarm")
+
+
+func _draw_shard(ctr: Vector2) -> void:
+	var p := 0.5 + 0.5 * sin(t * 4.0 + ctr.x * 0.05)
+	var s := AC * (0.30 + 0.04 * p)
+	draw_circle(ctr, AC * (0.62 + 0.12 * p), Color(0.55, 0.85, 1.0, 0.08 + 0.10 * p))
+	draw_circle(ctr, AC * (0.44 + 0.06 * p), Color(0.7, 0.6, 1.0, 0.12 + 0.12 * p))
+	draw_circle(ctr + Vector2(0, AC * 0.34), AC * 0.2, Color(0, 0, 0, 0.3))
+	var top := ctr + Vector2(0, -s * 1.6)
+	var bot := ctr + Vector2(0, s * 1.3)
+	var lft := ctr + Vector2(-s * 0.85, -s * 0.1)
+	var rgt := ctr + Vector2(s * 0.85, -s * 0.1)
+	draw_colored_polygon(PackedVector2Array([top, lft, bot]), Color(0.72, 0.92, 1.0, 0.96))
+	draw_colored_polygon(PackedVector2Array([top, rgt, bot]), Color(0.42, 0.55, 0.95, 0.96))
+	draw_polyline(PackedVector2Array([top, rgt, bot, lft, top]), Color(1, 1, 1, 0.55 + 0.4 * p), 2.0)
+	draw_line(top, bot, Color(1, 1, 1, 0.35), 1.5)
+	for i in 3:
+		var a := t * 1.6 + float(i) * TAU / 3.0
+		draw_circle(ctr + Vector2.from_angle(a) * AC * 0.5, 2.5, Color(0.85, 0.8, 1.0, 0.4 + 0.5 * p))
+
+
+func _arena_draw_under() -> void:
+	if not arena:
+		return
+	var marks: Array = arena_d.get("mark", [])
+	for mc in marks:
+		var r := Rect2(_actr(mc) - Vector2(AC, AC) * 0.5, Vector2(AC, AC)).grow(-3)
+		var pl := 0.5 + 0.5 * sin(t * 10.0)
+		draw_rect(r, Color(1, 0.5, 0.1, 0.22 + 0.2 * pl))
+		draw_rect(r, Color(1, 0.65, 0.2, 0.9), false, 3.0)
+		_ctext("!", _actr(mc), int(AC * 0.5), Color(1, 0.85, 0.4, 0.9))
+	var k := String(arena_d.get("kind", ""))
+	if not mons.has(boss_cell):
+		return
+	var qp := _actr(boss_cell) + _mon_off(boss_cell)
+	var lc := Color(0.3, 1.0, 0.5)
+	var lc2 := Color(0.6, 1.0, 0.7)
+	var srcs: Array[Vector2i] = []
+	if k == "queen":
+		for c in kinds:
+			if String(kinds[c]) == "drone" and mons.has(c):
+				srcs.append(c)
+	elif k == "titan" and bool(arena_d.get("shield", false)):
+		lc = Color(0.55, 0.6, 1.0)
+		lc2 = Color(0.8, 0.9, 1.0)
+		for c in kinds:
+			if String(kinds[c]) == "shard" and mons.has(c):
+				srcs.append(c)
+	for c in srcs:
+		var dp := _actr(c) + _mon_off(c)
+		draw_line(qp, dp, Color(lc.r, lc.g, lc.b, 0.22), 9.0)
+		draw_line(qp, dp, Color(lc2.r, lc2.g, lc2.b, 0.85), 3.0)
+		for i in 3:
+			var ph := fmod(t * 1.2 + float(i) / 3.0, 1.0)
+			draw_circle(dp.lerp(qp, ph), 5.0, Color(lc2.r, lc2.g, lc2.b, sin(ph * PI)))
+
+
+func _arena_selftest() -> int:
+	var bad := 0
+	var saved_floor := floor_n
+	for i in 4:
+		floor_n = 3 + 3 * i
+		arena = true
+		level = 6
+		_adv_gen()
+		_adv_begin()
+		if not mons.has(boss_cell) or not _aopen(start) or not _aopen(stairs):
+			print("FAIL arena setup %d" % i)
+			bad += 1
+		var dirs4: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+		for s in 40:
+			var dv: Vector2i = dirs4[randi() % 4]
+			var nb: Vector2i = pos + dv
+			if _aopen(nb):
+				_adv_step(nb, true)
+			if state != PLAY:
+				state = PLAY
+				hp = hp_cap()
+			if i == 3 and s == 10:
+				for c in kinds.keys():
+					if String(kinds[c]) == "shard":
+						_adv_damage_mon(c, 5)
+		print("arena %d kind %s steps %d drones/shards ok boss %s" % [i, String(arena_d.get("kind", "")), int(arena_d.get("n", 0)), mons.has(boss_cell)])
+	arena = false
+	arena_d = {}
+	floor_n = saved_floor
+	return bad
+
+
 func _adv_gen() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = adv_seed
+	if arena:
+		_adv_gen_arena()
+		return
 	AW = mini(34 + floor_n * 2, 56)
 	AH = AW
 	adv_open.resize(AW * AH)
@@ -4916,6 +5249,10 @@ func _adv_mname(c: Vector2i) -> String:
 	var names: Array = th["mons"]
 	if boss_floor and c == boss_cell:
 		return String(th["boss"])
+	if String(kinds.get(c, "")) == "shard":
+		return "Crystal Shard"
+	if String(kinds.get(c, "")) == "drone":
+		return "Hive Drone"
 	if tur.has(c):
 		return String(TUR_NAMES[tidx()][int(tur[c]["v"])])
 	return _affix_name(c, String(names[(int(mons[c]) - 1) % names.size()]))
@@ -5002,6 +5339,9 @@ func _adv_env_hurt(d: int, text: String, why: String, snd := "spike") -> bool:
 
 func _adv_damage_mon(c: Vector2i, dmg: int, col := Color("ff9a3c")) -> void:
 	if not mons.has(c):
+		return
+	if _titan_immune(c):
+		_pop(c, "SHIELDED", Color("7fe8ff"))
 		return
 	var left := mon_hp_now(c) - dmg
 	_pop(c, "-%d" % dmg, col)
@@ -6068,6 +6408,8 @@ func _adv_reset() -> void:
 
 
 func _adv_init_run() -> void:
+	arena = false
+	arena_d = {}
 	skills.clear()
 	skill_pts = 0
 	sk_sel = ""
@@ -6151,14 +6493,21 @@ func _adv_begin() -> void:
 	cam = Vector2(pos)
 	_adv_update_vis()
 	state = PLAY
-	if boss_floor:
+	if arena:
+		cam = Vector2(6, 6)
+		msg = "BOSS ARENA: the %s. %s" % [cur_theme()["boss"], _arena_hint()]
+	elif boss_floor:
 		msg = "BOSS FLOOR: the %s guards the exit" % cur_theme()["boss"]
 	else:
 		msg = "Explore! Collect %d points to unlock the %s" % [adv_req, cur_theme()["gate"]]
 
 
 func _adv_next() -> void:
-	floor_n += 1
+	if not arena and floor_n % 3 == 0:
+		arena = true
+	else:
+		arena = false
+		floor_n += 1
 	_adv_new_floor()
 	for qi in int(sk("quarter")):
 		_give_use(_random_use())
@@ -6196,6 +6545,10 @@ func _adv_update_vis() -> void:
 				var sc := pos + Vector2i(dx, dy)
 				if _ain(sc):
 					adv_vis[sc] = true
+	if arena:
+		for ax in range(1, 12):
+			for ay in range(1, 12):
+				adv_vis[Vector2i(ax, ay)] = true
 	for c in adv_vis:
 		adv_seen[_ai(c)] = 1
 	_adv_mini_update()
@@ -6306,6 +6659,14 @@ func _adv_fight(nc: Vector2i) -> int:
 	var lv: int = _mon_level(nc)
 	var is_boss := boss_floor and nc == boss_cell
 	var nm := _adv_mname(nc)
+	if _titan_immune(nc):
+		_pop(nc, "SHIELDED", Color("7fe8ff"))
+		_fx_ring(Vector2(nc), Color("7fe8ff"), 1.4, 0.4, 4.0)
+		msg = "The crystals shield the Titan! Break them first"
+		_sfx("blocked")
+		if not _adv_hurt(mon_atk(nc), nm, nc):
+			return 0
+		return 2
 	var dmg := _tr_hit_mod(nc, p_atk())
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
@@ -6555,10 +6916,10 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if _oxy_dead():
 		return
 	if moved and pos == stairs and not mons.has(stairs):
-		if adv_pts >= adv_req:
+		if adv_pts >= adv_req and (not arena or not mons.has(boss_cell)):
 			_adv_clear()
 			return
-		msg = "Exit sealed: %d / %d points" % [adv_pts, adv_req]
+		msg = "Defeat the boss first!" if arena else "Exit sealed: %d / %d points" % [adv_pts, adv_req]
 		walk.clear()
 		snd = "blocked"
 	_thief_check()
@@ -6569,6 +6930,9 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if state != PLAY:
 		return
 	_adv_turrets()
+	if state != PLAY:
+		return
+	_arena_tick(fought)
 	if state != PLAY:
 		return
 	_tr_tick()
@@ -6602,6 +6966,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 
 
 func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
+	if mode == "adv" and boss_floor and a == boss_cell:
+		boss_cell = b
 	mon_slide[b] = [Vector2(a - b), t]
 	if mon_hit.has(a):
 		mon_hit[b] = mon_hit[a]
@@ -6631,7 +6997,7 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 func _adv_hunters() -> void:
 	var hs: Array[Vector2i] = []
 	for c in kinds:
-		if (String(kinds[c]) == "hunter" or String(kinds[c]) == "rager") and mons.has(c):
+		if (String(kinds[c]) == "hunter" or String(kinds[c]) == "rager" or String(kinds[c]) == "drone") and mons.has(c):
 			hs.append(c)
 	if hs.is_empty():
 		return
@@ -6748,6 +7114,11 @@ func _adv_shoot(c: Vector2i) -> void:
 	aim = -1
 	var lv := _mon_level(c)
 	var nm := _adv_mname(c)
+	if _titan_immune(c):
+		_pop(c, "SHIELDED", Color("7fe8ff"))
+		msg = "The crystals shield the Titan! Shoot the crystals"
+		_sfx("blocked")
+		return
 	var is_boss := boss_floor and c == boss_cell
 	var dmg := _tr_hit_mod(c, p_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg")))
 	var crit := randf() * 100.0 < crit_chance()
@@ -6811,6 +7182,8 @@ func _adv_shoot(c: Vector2i) -> void:
 	if state != PLAY:
 		return
 	_adv_turrets()
+	if state == PLAY:
+		_arena_tick(false)
 	if state == PLAY:
 		_tr_tick()
 
@@ -7010,7 +7383,13 @@ func _adv_clear() -> void:
 	var bonus := int(oxy / 20.0)
 	coins += bonus
 	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEAR" % floor_n
-	over_sub = "Points %d / %d   Air bonus +%d coins\nNext: floor %d" % [adv_pts, adv_req, bonus, floor_n + 1]
+	var nxt := "floor %d" % (floor_n + 1)
+	if not arena and floor_n % 3 == 0:
+		nxt = "BOSS ARENA"
+	if arena:
+		over_sub = "Air bonus +%d coins\nNext: %s" % [bonus, nxt]
+	else:
+		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
 	relic_choices = _roll_relics(1 if boss_floor else 0)
 	state = RELIC if relic_choices.size() > 0 else CLEAR
 
@@ -7352,8 +7731,16 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	var sz := AC * (0.98 if is_boss else 0.8)
 	var bob := 0.0
 	ctr += _mon_off(c)
+	if kind == "shard":
+		_draw_shard(ctr)
+		return
 	if is_boss:
 		draw_circle(ctr, AC * 0.55, Color(acc.r, acc.g, acc.b, 0.15 + 0.08 * sin(t * 3.0)))
+		if _titan_immune(c):
+			draw_arc(ctr, AC * 0.62, 0.0, TAU, 32, Color(0.5, 0.9, 1.0, 0.5 + 0.3 * sin(t * 5.0)), 4.0)
+			_ctext("SHIELDED", ctr + Vector2(0, -AC * 0.62), 13, Color("7fe8ff"))
+		elif arena and String(arena_d.get("kind", "")) in ["core", "titan"] and (arena_d.get("mark", []) as Array).size() > 0:
+			_ctext("BLAST NEXT STEP", ctr + Vector2(0, -AC * 0.62), 13, Color("ffb04f"))
 	draw_circle(ctr + Vector2(0, AC * 0.3), AC * 0.28, Color(0, 0, 0, 0.3))
 	if tur.has(c):
 		_draw_mon_sprite(c, ctr, ti, base_lv, false, sz * 1.08, Color.WHITE, false, -4.0, spr_gen.turret(ti, int(tur[c]["v"]), int(tur[c]["d"])))
@@ -7413,10 +7800,13 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 		var scol: Color = TUR_COLS[ti][1]
 		var srd := _lane_ok(c, pos, TUR_RANGE) and (adv_steps + 1 + c.x + c.y) % 2 == 0
 		_ctext("shoots" if srd else "aims", ctr + Vector2(0, -AC * 0.47), 12, scol if srd else Color(1, 1, 1, 0.6))
-	elif kind == "hunter" or kind == "rager":
-		draw_circle(mk, AC * 0.13, Color("6a1218") if kind == "hunter" else Color("a01824"))
-		_ctext("!" if kind == "hunter" else "!!", mk, int(AC * 0.26), Color("ff7a7a"))
-		_ctext("hunts" if kind == "hunter" else "CHARGES", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a") if kind == "hunter" else Color("ff4a4a"))
+	elif kind == "hunter" or kind == "rager" or kind == "drone":
+		draw_circle(mk, AC * 0.13, Color("a01824") if kind == "rager" else Color("6a1218"))
+		_ctext("!!" if kind == "rager" else "!", mk, int(AC * 0.26), Color("ff7a7a"))
+		if kind == "drone":
+			_ctext("heals her", ctr + Vector2(0, -AC * 0.47), 12, Color("6dff9a"))
+		else:
+			_ctext("hunts" if kind == "hunter" else "CHARGES", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a") if kind == "hunter" else Color("ff4a4a"))
 	elif kind == "thief":
 		draw_circle(mk, AC * 0.13, Color("5a4500"))
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
@@ -7637,6 +8027,7 @@ func _adv_draw() -> void:
 				draw_rect(r, Color(0, 0, 0, ffa))
 	_adv_draw_lanes(ti)
 	_adv_draw_shoot_lanes()
+	_arena_draw_under()
 	mlist.sort_custom(func(a, b): return a[1].y < b[1].y)
 	for mm2 in mlist:
 		_adv_draw_mon(mm2[0], mm2[1], ti, names, acc)
@@ -7745,6 +8136,8 @@ func _adv_draw() -> void:
 		ptxt += "   EXIT OPEN"
 	if boss_floor:
 		ptxt += "   BOSS GUARDS EXIT"
+	if arena:
+		ptxt = "ARENA: " + _arena_hint()
 	_txt(ptxt, Vector2(0, 308), 26, Color("6dff9a") if okp else Color(1, 1, 1, 0.75))
 	# tool slots
 	for i in slots_n():
@@ -8519,6 +8912,7 @@ func _adv_selftest() -> void:
 			var posb := pos
 			mons[tcell + TDIRS[dix]] = 1
 			break
+	bad += _arena_selftest()
 	bad += _trait_selftest()
 	bad += _skill_selftest()
 	print("ADV TEST DONE bad=%d" % bad)
