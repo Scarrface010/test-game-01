@@ -860,7 +860,7 @@ func player(accent: Color, cls: String, frame: int = 0, dir: int = 0, eq: Dictio
 		img.flip_x()
 		t = ImageTexture.create_from_image(img)
 	else:
-		var ai: ImageTexture = _player_ai(accent, frame, dir, eq)
+		var ai: ImageTexture = _player_ai(accent, cls, frame, dir, eq)
 		t = ai if ai != null else _build_player(accent, cls, frame, dir, eq).tex()
 	cache[key] = t
 	return t
@@ -880,7 +880,7 @@ const GFIT := {
 const WGRIP := {0: [Vector2(9.0, 23.0), Vector2(-0.22, -0.97), 1.35], 1: [Vector2(23.0, 23.0), Vector2(0.22, -0.97), 1.35], 3: [Vector2(19.0, 23.0), Vector2(0.8, -0.6), 1.35]}
 
 
-func _player_ai(accent: Color, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
+func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
 	if not PCOL.has(dir):
 		return null
 	var bt: ImageTexture = _atlas_cell(PBASE, PCOL[dir], 0, 64)
@@ -889,6 +889,9 @@ func _player_ai(accent: Color, frame: int, dir: int, eq: Dictionary) -> ImageTex
 	var base: Image = bt.get_image()
 	if dir != 1:
 		_tint_visor(base, accent)
+	var front := _class_deco(accent, cls, dir, false)
+	if front != null:
+		base.blend_rect(front, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 	for slot in ["armour", "boots", "trinket", "helmet"]:
 		var art := _art(eq, slot)
 		if art.is_empty():
@@ -899,7 +902,11 @@ func _player_ai(accent: Color, frame: int, dir: int, eq: Dictionary) -> ImageTex
 		var g: Image = cv.img.duplicate()
 		g.resize(64, 64, Image.INTERPOLATE_NEAREST)
 		_blit_fit(base, g, GFIT[slot][dir])
-	base = _walk_frame(base, frame)
+	base = _walk_frame(base, frame, dir)
+	var behind := _class_deco(accent, cls, dir, true)
+	if behind != null:
+		behind.blend_rect(base, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+		base = behind
 	var wa := _art(eq, "weapon")
 	if not wa.is_empty():
 		var wc := Cv.new(32, 32)
@@ -910,6 +917,85 @@ func _player_ai(accent: Color, frame: int, dir: int, eq: Dictionary) -> ImageTex
 		wi.resize(64, 64, Image.INTERPOLATE_NEAREST)
 		base.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 	return ImageTexture.create_from_image(base)
+
+
+# class decorations drawn in 64px space; behind=true is the layer under the body (mystic cloak)
+func _class_deco(accent: Color, cls: String, dir: int, behind: bool) -> Image:
+	var cv := Cv.new(64, 64)
+	var ol := Color("0a0d1a")
+	var used := false
+	var side := dir == 3
+	var cloak := accent.darkened(0.45)
+	var brown := Color("6b4423")
+	var gold := Color("ffd84f")
+	if cls == "mystic":
+		if behind and not (dir == 1):
+			used = true
+			if side:
+				cv.poly([Vector2(24, 36), Vector2(34, 36), Vector2(26, 61), Vector2(6, 61)], cloak)
+			else:
+				cv.poly([Vector2(14, 36), Vector2(50, 36), Vector2(60, 61), Vector2(4, 61)], cloak)
+		elif not behind and dir == 1:
+			used = true
+			cv.poly([Vector2(13, 35), Vector2(51, 35), Vector2(60, 61), Vector2(4, 61)], cloak)
+			cv.line(32, 37, 32, 60, accent.darkened(0.6), 1.0)
+			cv.line(22, 37, 17, 60, accent.darkened(0.55), 1.0)
+			cv.line(42, 37, 47, 60, accent.darkened(0.55), 1.0)
+		if not behind:
+			used = true
+			var gx := 30 if side else 32
+			cv.poly([Vector2(gx, 0), Vector2(gx + 4, 4), Vector2(gx, 8), Vector2(gx - 4, 4)], accent.lightened(0.45))
+			cv.px(gx - 1, 3, Color.WHITE)
+	elif not behind:
+		if cls == "scout":
+			used = true
+			if side:
+				cv.line(24, 8, 19, 1, ol, 2.0)
+				cv.disc(19, 2, 2.6, accent.lightened(0.5))
+			else:
+				cv.line(44, 8, 50, 1, ol, 2.0)
+				cv.disc(50, 2, 2.6, accent.lightened(0.5))
+				if dir == 0:
+					cv.rect(7, 19, 4, 9, accent.darkened(0.2))
+		elif cls == "brute":
+			used = true
+			if side:
+				cv.ell(27, 38, 5.0, 4.0, accent)
+				cv.px(25, 36, accent.lightened(0.5))
+			else:
+				cv.ell(12, 38, 5.5, 4.2, accent)
+				cv.ell(52, 38, 5.5, 4.2, accent)
+				cv.px(10, 36, accent.lightened(0.5))
+				cv.px(50, 36, accent.lightened(0.5))
+		elif cls == "gunslinger":
+			used = true
+			var hx0 := 16 if side else 12
+			var hx1 := 56 if side else 52
+			cv.rect(hx0, 9, hx1 - hx0, 4, brown)
+			cv.rect(hx0, 9, hx1 - hx0, 1, Color("a67238"))
+			cv.rrect(22, 0, 20, 11, 3.0, Color("7a4e2a"))
+			cv.rect(22, 7, 20, 2, accent)
+			if side:
+				cv.line(26, 38, 40, 52, Color("8a5a2a"), 3.0)
+			else:
+				cv.line(14, 38, 46, 54, Color("8a5a2a"), 3.0)
+				cv.px(22, 44, accent.lightened(0.4))
+				cv.px(32, 48, accent.lightened(0.4))
+				cv.px(41, 52, accent.lightened(0.4))
+		elif cls == "gambler":
+			used = true
+			cv.rect(15, 10, 35, 4, gold)
+			cv.rect(15, 10, 35, 1, Color("fff1a0"))
+			if dir == 0:
+				cv.rect(27, 40, 9, 9, Color.WHITE)
+				cv.rect(29, 42, 2, 2, Color("14141c"))
+				cv.rect(33, 46, 2, 2, Color("14141c"))
+				cv.rect(33, 42, 2, 2, Color("14141c"))
+				cv.rect(29, 46, 2, 2, Color("14141c"))
+	if not used:
+		return null
+	cv.outline(ol)
+	return cv.img.duplicate()
 
 
 func _draw_gear(cv: Cv, slot: String, art: Dictionary, dir: int) -> void:
@@ -959,20 +1045,35 @@ func _tint_visor(im: Image, accent: Color) -> void:
 				im.set_pixel(x, y, Color.from_hsv(accent.h, minf(1.0, c.s * sat / 0.55), c.v))
 
 
-# walk cycle: lift the left (frame 1) or right (frame 2) half of the legs
-func _walk_frame(im: Image, frame: int) -> Image:
+# walk cycle (legs are rows 53-61): front/back lift one leg 3px and sway the upper body 1px over the planted leg;
+# side view strides (one leg back and up, the other forward)
+func _walk_frame(im: Image, frame: int, dir: int = 0) -> Image:
 	if frame == 0:
 		return im
-	var x0 := 0 if frame == 1 else 32
-	var out := im.duplicate() as Image
-	for y in range(53, 64):
-		for x in range(x0, x0 + 32):
-			out.set_pixel(x, y, Color(0, 0, 0, 0))
-	for y in range(53, 64):
-		for x in range(x0, x0 + 32):
+	var out := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	var left := frame == 1
+	var sway := 0 if dir == 3 else (1 if left else -1)
+	for y in 64:
+		for x in 64:
 			var c := im.get_pixel(x, y)
-			if c.a > 0.5 and y - 2 >= 0:
-				out.set_pixel(x, y - 2, c)
+			if c.a < 0.5:
+				continue
+			if y < 53:
+				var nx := x + sway
+				if nx >= 0 and nx < 64:
+					out.set_pixel(nx, y, c)
+				continue
+			var in_left := x < 32
+			var lift := in_left == left
+			var ny := y
+			var nx2 := x
+			if dir == 3:
+				nx2 = x + (-2 if lift else 2)
+				ny = y - (2 if lift else 0)
+			elif lift:
+				ny = y - 3
+			if nx2 >= 0 and nx2 < 64 and ny >= 0:
+				out.set_pixel(nx2, ny, c)
 	return out
 
 
