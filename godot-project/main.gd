@@ -3156,49 +3156,89 @@ func _draw_lb(acc: Color) -> void:
 
 # ---------- tutorial ----------
 
+func _tut_shop_page() -> Dictionary:
+	return {"t": "THE SHOP", "ti": 0, "s": [["pcls:gambler", "Classes"], ["use:bomb", "Loadouts"], ["item:big", "Packs"], ["item:shield", "Head starts"]],
+	"x": "Coins from a run are banked when it ends. Spend them in the SHOP (menu or class screen). It only UNLOCKS things: no permanent stat boosts.\n\nClasses: Scout is free, the other four are bought once.\nLoadouts: Starter Kit and Toolbox give free starting gear and tools.\nPacks: Elemental, Bloodthirst, Combo and Relic Cache add traits and relics to your rolls.\nHead starts: Head Start gives a relic each run, Phoenix Ash a Phoenix Feather."}
+
+
+func _tut_saves_page() -> Dictionary:
+	return {"t": "SAVES AND RANKS", "ti": 0, "s": [],
+	"x": "Your run saves itself as you play. If you close the game, tap CONTINUE SAVED RUN on the main menu to pick up where you left off.\n\nTo play on another device, tap EXPORT SAVE, send the file across and tap IMPORT SAVE there. It carries your saved run, banked coins and shop unlocks.\n\nLEADERBOARD ranks the deepest runs in each mode. You can change your name there."}
+
+
 func _tut_pages(which: int) -> Array:
 	if which == 0:
 		return [
 			{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Gate (locked)"], ["icon:door_open", "Gate (open)"]],
-			"x": "Each floor is a small board. Walk to the gate to reach the next floor. The gate shows the level you need (Lv N): you must be at least that level to pass.\\n\\nTap any tile and you walk there automatically. You stop early if something new needs your attention."},
-			{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"]], "s2": [["pcls:gunslinger", "Gunslinger"]],
-			"x": "Pick a class at the start of a run. Each has a different starting kit and a twist on the rules:\\n\\nScout: the dark waits longer, starts with Blink and Time Crystal.\\nBrute: +2 starting levels, a faster dark, starts with a Bomb.\\nMystic: a shield every floor, +1 item slot, starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3.\\nGunslinger: starts with two Zap Rods, but a faster dark. In Adventure: starts with a Blaster Pistol but is frail (4 less health, 10 less air)."},
+			"x": "Each floor is a small board. Walk to the gate to reach the next floor. The gate shows the level you need (Lv N): you must be at least that level to pass.\n\nTap any tile and you walk there automatically. You stop early if something new needs your attention."},
+			{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"], ["pcls:gunslinger", "Gunslinger"]],
+			"x": "Pick a class at the start of a run. Each has a different starting kit and a twist on the rules:\n\nScout: the dark waits longer, starts with Blink and Time Crystal.\nBrute: +2 starting levels, a faster dark, starts with a Bomb.\nMystic: a shield every floor, +1 item slot, starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3.\nGunslinger: starts with two Zap Rods, but a faster dark.\n\nLocked classes are unlocked in the SHOP."},
+			{"t": "CLASS POWERS", "ti": 0, "s": [["pcls:scout", "Deep Breath"], ["pcls:brute", "Iron Stance"], ["pcls:mystic", "Hex Pulse"], ["pcls:gambler", "Reshuffle"], ["pcls:gunslinger", "Ricochet"]],
+			"x": "Every class has one ACTIVE power: tap the coloured button right of your tool bar. It shows READY, or the steps left to recharge (every step counts down).\n\nScout, Deep Breath: pushes the dark back 3 steps.\nBrute, Iron Stance: your next fight counts +3 levels.\nMystic, Hex Pulse: monsters within 3 tiles lose a level.\nGambler, Reshuffle: rerolls all your tools.\nGunslinger, Ricochet: zaps a monster within 2 tiles, then another beside it.\n\nRecharge: 40 / 30 / 35 / 50 / 25 steps, in that order. A power that can't act is not spent."},
 			{"t": "MONSTERS AND LEVELS", "ti": 1, "s": [["mon:1:2:none:g", "Easy"], ["mon:1:5:none:r", "Deadly"], ["mon:1:4:none:r", "Equal = lose"]],
-			"x": "Every monster has a level shown in a badge. Walk into one to fight it instantly.\\n\\nIf your level is HIGHER you win and gain levels. If it is equal or higher you die. A green badge means you win, red means you die, amber means only your shield would save you.\\n\\nSo grab potions first, then pick your fights."},
+			"x": "Every monster has a level shown in a badge. Walk into one to fight it instantly.\n\nIf your level is HIGHER you win and gain levels. If it is equal or higher you die. A green badge means you win, red means you die, amber means only your shield would save you.\n\nSo grab potions first, then pick your fights."},
 			{"t": "THE DARK", "ti": 1, "s": [["dark", "Dark tile"], ["player", "You"], ["icon:spikes", "Spikes"]],
-			"x": "The dark eats the board from the outside in. The meter at the top right counts the steps until it advances one ring. Standing in the dark kills you, and anything in it is lost.\\n\\nSo every step counts. Spikes cost extra steps: the dark gains ground when you walk over them."},
+			"x": "The dark eats the board from the outside in. The meter at the top right counts the steps until it advances one ring. Standing in the dark kills you, and anything in it is lost.\n\nSo every step counts. Spikes cost extra steps: the dark gains ground when you walk over them."},
 			{"t": "ITEMS", "ti": 1, "s": [["item:pot", "Potion +1"], ["item:big", "Overcharged +2"], ["item:shield", "Shield"], ["item:lamp", "Lantern"]], "s2": [["item:coin", "Coin"], ["icon:key", "Key"], ["icon:vault", "Vault"], ["portal", "Portal"]],
-			"x": "Potions raise your level. A shield saves you from one losing fight. A lantern holds the dark back. Coins are banked when you die and buy permanent upgrades in the SHOP.\\n\\nA key opens a vault: coins, a level and a free tool. Portals teleport you to their twin."},
+			"x": "Potions raise your level. A shield saves you from one losing fight. A lantern holds the dark back. Coins are banked when your run ends and unlock things in the SHOP.\n\nA key opens a vault: coins, a level and a free tool. Portals teleport you to their twin."},
 			{"t": "SPECIAL MONSTERS", "ti": 2, "s": [["mon:2:3:elite:g", "Elite star"], ["mon:2:4:sleeper:r", "Sleeper zZ"], ["mon:2:3:feeder:g", "Feeder +"], ["mon:2:2:thief:g", "Thief $"]],
-			"x": "Elite (gold star): beating one gives +2 levels.\\nSleeper (zZ): weak now, but it wakes and gains levels when the dark first moves. Kill it early.\\nFeeder (violet +): grows +1 level every time the dark advances.\\nThief ($): steals coins when you stand beside it. Beat it to get them back."},
+			"x": "Elite (gold star): beating one gives +2 levels.\nSleeper (zZ): weak now, but it wakes and gains levels when the dark first moves. Kill it early.\nFeeder (violet +): grows +1 level every time the dark advances.\nThief ($): steals coins when you stand beside it. Beat it to get them back."},
 			{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:crystal", "Time Crystal"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"]], "s2": [["use:draught", "Elixir"], ["use:magnet", "Magnet"], ["use:pick", "Pickaxe"], ["use:zap", "Zap Rod"]],
-			"x": "Tools sit in the bar under the board. Tap one to use it (tools that need a target ask you to tap a tile).\\n\\nBomb: blasts adjacent walls, spikes and weak monsters. Time Crystal: pushes the dark back. Blink: teleport. Cloak: +3 levels for your next fight. Elixir: +2 levels. Magnet: pulls in every coin. Pickaxe: breaks a wall. Zap: hits a monster nearby."},
+			"x": "Tools sit in the bar under the board. Tap one to use it (tools that need a target ask you to tap a tile).\n\nBomb: blasts adjacent walls, spikes and weak monsters. Time Crystal: pushes the dark back. Blink: teleport. Cloak: +3 levels for your next fight. Elixir: +2 levels. Magnet: pulls in every coin. Pickaxe: breaks a wall. Zap: hits a monster nearby.\n\nTools are used up. Your class power is not: it recharges."},
+			{"t": "DOORS AND MERCHANT", "ti": 0, "s": [["door:standard", "Steady"], ["door:danger", "Perilous"], ["door:calm", "Quiet"], ["door:vault", "Vault"], ["icon:merchant", "Merchant"]],
+			"x": "Between floors you choose a door:\n\nSteady: a normal floor.\nPerilous: monsters +2 levels and coins worth +1, but an extra relic card afterwards.\nQuiet: monsters -1 level and the dark waits 2 steps longer, but no relic afterwards.\nVault: a locked vault and its key are on the floor.\nMerchant: spend this run's coins on tools, then a normal floor."},
 			{"t": "BOSSES AND RELICS", "ti": 2, "s": [["boss:2", "Boss"], ["badge:g:12", "Boss level"]],
-			"x": "Every 5th floor a boss sits on the gate. Its rule is shown under the dark meter: some gain levels as the dark advances, so be quick.\\n\\nAfter each floor you choose a RELIC that lasts the whole run. Some are cursed: strong but risky. You can skip a choice for a few coins. Between floors you also choose which door to take."},
+			"x": "Every 5th floor a boss sits on the gate. Its rule is shown under the dark meter: some gain levels as the dark advances, so be quick.\n\nAfter each floor you choose a RELIC that lasts the whole run. Some are cursed: strong but risky. You can skip a choice for a few coins."},
+			_tut_shop_page(),
+			_tut_saves_page(),
 		]
 	return [
 		{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Exit (sealed)"], ["icon:door_open", "Exit (open)"]],
-		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\\n\\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
+		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\n\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
+		{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"], ["pcls:gunslinger", "Gunslinger"]],
+		"x": "Pick a class at the start of a run:\n\nScout: +10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.\nBrute: +2 starting levels and +1 armour, but 10 less air. Starts with a Bomb.\nMystic: a shield every floor and +1 tool slot. Starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3.\nGunslinger: starts with a Blaster Pistol and 2 Zap Rods, but is frail: 4 less health and 10 less air.\n\nLocked classes are unlocked in the SHOP."},
+		{"t": "CLASS POWERS", "ti": 0, "s": [["pcls:scout", "Deep Breath"], ["pcls:brute", "Iron Stance"], ["pcls:mystic", "Hex Pulse"], ["pcls:gambler", "Reshuffle"], ["pcls:gunslinger", "Ricochet"]],
+		"x": "Every class has one ACTIVE power: the coloured button right of your tool bar. It shows READY or the steps left to recharge.\n\nScout, Deep Breath: +10 air, next 8 steps cost no air.\nBrute, Iron Stance: blocks the next 2 hits, +3 attack until your next kill.\nMystic, Hex Pulse: stuns enemies within 3 tiles for 3 steps (not bosses or turrets).\nGambler, Reshuffle: rerolls all your tools.\nGunslinger, Ricochet: your next shot bounces to a second enemy within 3 tiles (needs a ranged weapon).\n\nRecharge: 40 / 30 / 35 / 50 / 25 steps, in that order."},
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\\n\\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\\n\\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
+		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\n\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\n\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
-		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\\n\\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage. A killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind.\\n\\nRanged weapons (blasters, crossbows, rifles) shoot a monster in a straight clear line up to their range when you tap it (orange tint and reticle show what you can hit). Each shot costs air (shown in the weapon description, more for better weapons). Shot monsters charge you at full speed (hunters are normally half speed), and a monster right next to you still hits back."},
+		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\n\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage.\n\nA killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind."},
+		{"t": "RANGED WEAPONS", "ti": 1, "s": [["icon:crate_weapon", "Blaster"], ["mon:1:3:none:g", "Target"]],
+		"x": "Ranged weapons (blasters, crossbows, rifles) shoot a monster in a straight, clear line up to their range when you tap it. An orange tint and reticle show what you can hit.\n\nEach shot costs air (shown in the weapon description, more for better weapons).\n\nShot monsters charge you at full speed (hunters are normally half speed), and a monster right next to you still hits back.\n\nThe Gunslinger's Ricochet power makes your next shot bounce to a second enemy."},
 		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
-		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\\n\\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
-		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]], "s2": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"]],
-		"x": "Every world has its own floor hazards, shown on the tile.\\nStation: Arc plates shock you only while lit (they flicker each step), Breach vents 8 air.\\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station), Slick patches make you skid one more tile.\\nSmugglers: Mines blow up for big damage (and hurt monsters nearby), Alarm gates wake nearby monsters into hunters.\\nCrystal Deep: Warp pads fling you across the cave, Crystal shards cut you and cost extra air.\\nBombs clear hazards."},
+		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\n\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
+		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]],
+		"x": "Every world has its own floor hazards, shown on the tile.\n\nStation: Arc plates shock you only while lit (they flicker each step). Breach vents cost 8 air.\n\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station). Slick patches make you skid one more tile.\n\nBombs clear hazards."},
+		{"t": "MORE HAZARDS", "ti": 2, "s": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"], ["haz:warp", "Warp pad"], ["haz:shard", "Shard"]],
+		"x": "Smugglers: Mines blow up for big damage (and hurt monsters nearby). Alarm gates wake nearby monsters into hunters.\n\nCrystal Deep: Warp pads fling you across the cave. Crystal shards cut you and cost extra air.\n\nBombs clear hazards, so keep one for a nasty corridor."},
 		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
-		"x": "HP is your health: reach 0 and you die. A medkit heals 40%.\\n\\nArmour reduces every hit you take by its value (always at least 1). Each plate you find adds +1 permanently.\\n\\nShield is a separate bar that soaks damage before your HP does."},
+		"x": "HP is your health: reach 0 and you die. A medkit heals 40%.\n\nArmour reduces every hit you take by its value (always at least 1). Each plate you find adds +1 permanently.\n\nShield is a separate bar that soaks damage before your HP does."},
 		{"t": "LEVELS AND XP", "ti": 1, "s": [["item:pot", "Potion"], ["item:big", "Overcharged"], ["use:draught", "Elixir"], ["icon:vault", "Vault"]],
-		"x": "Kills, potions, elixirs and vaults give XP. Each level adds attack and max health, and your level stays with you for the whole run.\\n\\nMonsters grow stronger with depth, so keep levelling and upgrade your gear to keep up."},
+		"x": "Kills, potions, elixirs and vaults give XP. Each level adds attack and max health, and your level stays with you for the whole run.\n\nEvery 3rd level you also earn a SKILL POINT (a gold +1 SKILL POINT pops up). Spend it in the SKILL WEB.\n\nMonsters grow stronger with depth, so keep levelling and upgrade your gear to keep up."},
+		{"t": "SKILL WEB", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Oxygen"], ["skn:2", "Offense"], ["skn:3", "Tech"], ["skn:4", "Fortune"]],
+		"x": "Tap SKILLS at the top of the screen (it turns gold when you have points). The web has five branches of six nodes, and every node has two ranks that get stronger.\n\nYou earn 1 point every 3 levels. A normal node costs 1 point per rank. The first node of each branch is always open; any other node opens once a node next to it has a rank. The outer KEY node costs 2 points and needs the node before it at rank 2.\n\nTap a node to read it, then tap BUY. RESPEC takes every point back for coins (100, plus 20 per point spent): tap it twice to confirm."},
+		{"t": "SKILL BRANCHES", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Oxygen"], ["skn:2", "Offense"], ["skn:3", "Tech"], ["skn:4", "Fortune"]],
+		"x": "Vitality: max health, armour, shield, medkits, less shot damage, Last Stand.\n\nOxygen: more air, cheaper steps and shots, bigger air pods, healing O2 stations, Second Wind.\n\nOffense: attack, crit chance and damage, lifesteal, finishers, ranged damage.\n\nTech: tool slots, sight, XP, dodge, scanner power, free tools each floor.\n\nFortune: coin value, gear drops, cheaper shops, coins per kill, potions, lucky XP."},
 		{"t": "ENEMIES", "ti": 2, "s": [["mon:2:4:hunter:a", "Hunter !"], ["mon:2:3:thief:g", "Thief $"], ["mon:2:5:elite:a", "Elite star"], ["boss:2", "Boss"]],
-		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\\nElites (gold star) give extra XP and may drop gear.\\nShooters (gun icon) keep their distance, line up with you and fire down a lane: break the line or rush them.\\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
+		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\nElites (gold star) give extra XP and may drop gear.\nShooters (gun icon) keep their distance, line up with you and fire down a lane: break the line or rush them.\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
+		{"t": "AFFIXES", "ti": 2, "s": [["aff:plated", "Plated"], ["aff:regen", "Regenerating"], ["aff:leech", "Leeching"], ["aff:spiny", "Spiny"]],
+		"x": "On deeper floors some monsters carry an AFFIX: a two-letter badge on the sprite. They are tougher but give more XP and may drop gear.\n\nPL Plated: takes 2+ less damage from every hit.\nRG Regenerating: heals 2 health every step.\nLC Leeching: heals itself when it hits you.\nSP Spiny: reflects damage back at you."},
+		{"t": "MORE AFFIXES", "ti": 2, "s": [["aff:frenzy", "Frenzied"], ["aff:volatile", "Unstable"], ["aff:evasive", "Evasive"], ["aff:warded", "Warded"]],
+		"x": "FZ Frenzied: hits much harder below half health. Finish it fast.\n\nUN Unstable: explodes when killed, hurting you if you are beside it. Shoot it from range.\n\nEV Evasive: 20% chance to dodge your attacks.\n\nWD Warded: immune to burn, poison and stun, so trait builds do nothing to it."},
 		{"t": "GEAR", "ti": 2, "s": [["icon:crate_weapon", "Weapon"], ["icon:crate_helmet", "Helmet"], ["icon:crate_armour", "Armour"], ["icon:crate_boots", "Boots"]], "s2": [["icon:crate_trinket", "Trinket"], ["icon:merchant", "Outfitter"]],
-		"x": "Crates hold gear for five slots. Pick one up to add it to your PACK, then equip it from the BAG for bonuses like attack, armour, crit, sight or extra air.\\n\\nWalk onto the SHOP stall to buy gear with coins or sell what you do not need. The pack holds 12 items.\\n\\nWeapons can roll random TRAITS (burn, stun, chain lightning, lifesteal and more): read them in the BAG under GEAR. Enemies with a two-letter badge have an AFFIX such as Plated or Warded: they are tougher but give more XP. Relics can power up the kind of traits your weapon has."},
-		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"]], "s2": [["use:magnet", "Magnet"], ["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["icon:key", "Key"]],
-		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak adds attack for your next fight, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP.\\n\\nA key opens a vault with coins, XP and a tool."},
+		"x": "Crates hold gear for five slots. Pick one up to add it to your PACK, then equip it from the BAG for bonuses like attack, armour, crit, sight or extra air. What you equip shows on your astronaut.\n\nWalk onto the SHOP stall (the Outfitter) to buy gear and tools with coins or sell what you do not need. The pack holds 12 items.\n\nEnemies with a two-letter badge and elites drop gear more often."},
+		{"t": "WEAPON TRAITS", "ti": 0, "s": [["icon:crate_weapon", "Weapon"], ["use:bomb", "Fire"], ["haz:arc", "Shock"], ["haz:toxic", "Toxic"], ["haz:slick", "Cryo"]],
+		"x": "Weapons can roll random TRAITS: special effects you can read in the BAG under GEAR. One weapon can carry several.\n\nFire: Ignite burns, Volatile makes kills explode.\nShock: Static stuns, Arc Chain jumps to a second enemy.\nCryo: Frostbite freezes, Shatter hits stunned or frozen enemies harder.\nToxic: Toxin stacks poison, Plague spreads it when they die.\n\nBurning, poisoned, stunned and frozen enemies show small marks."},
+		{"t": "MORE TRAITS", "ti": 0, "s": [["icon:crate_weapon", "Weapon"], ["item:hp", "Blood"], ["item:big", "Streaks"]],
+		"x": "Blood: Siphon and Bloodlust heal you, Executioner finishes weak enemies.\nStreaks: Rampage, Rhythm, Marked and Deadly Crits reward hitting without being hurt.\nBasic: Brutal, Ambush, Keen Edge, Cleave, Pierce, Overkill, Bounty, Spiked, Duelist and Efficient Rounds.\n\nThe Basic traits are always open. Fire, Shock, Cryo, Toxic, Blood and Streak traits come from SHOP packs. Warded enemies ignore all status effects."},
+		{"t": "RELICS", "ti": 0, "s": [],
+		"x": "After each floor you pick one of three relics (the Gambler sees four). A relic lasts the whole run, and you can skip a choice for a few coins. Some are cursed: strong, but they cost you.\n\nMany relics belong to a family: fire, shock, cryo, toxic, blood, crit and more. They power up weapon traits of the same family. Pyromaniac makes burns last longer and hurt double. Storm Capacitor lets Arc Chain hit three enemies.\n\nSome pairs give an extra SYNERGY bonus when you own both, like Pyromaniac with Storm Capacitor. The Relic Cache pack adds more relics."},
+		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"], ["use:magnet", "Magnet"]], "s2": [["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["use:nano", "Nano Injector"], ["use:cell", "Shield Cell"], ["use:scan", "Scanner"]],
+		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak adds attack for your next fight, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP, Nano Injector heals fully, Shield Cell refills your shield, Scanner reveals the map.\n\nAlso: Plating Kit (+1 armour) and Ration Pack (heals 40%, +15 air). A key opens a vault. Tools are used up; your class power recharges."},
 		{"t": "THE BAG", "ti": 0, "s": [["item:lamp", "Scanner"], ["item:coin", "Coin"]],
-		"x": "Tap BAG (top right) to see everything: STATS, TOOLS, RELICS, GEAR and PACK, each with a description. You can also leave the match from there with BACK TO MENU.\\n\\nScanners reveal the map around you. After each floor you pick a relic that lasts the run, and your coins are banked to spend in the SHOP."},
+		"x": "Tap BAG (top right) to see everything: STATS, TOOLS, RELICS, GEAR and PACK, each with a description. You can also leave the match from there with BACK TO MENU. The SKILLS button sits beside it.\n\nScanners reveal the map around you. After each floor you pick a relic that lasts the run, and your coins are banked to spend in the SHOP."},
+		_tut_shop_page(),
+		_tut_saves_page(),
 	]
 
 
@@ -3268,6 +3308,26 @@ func _tut_icon(spec: String, ctr: Vector2, s: float, ti: int) -> void:
 		draw_circle(ctr, 30, Color("0a0c14"))
 		draw_circle(ctr, 25, bc2)
 		_ctext(String(p[2]), ctr, 30, Color.WHITE)
+	elif k == "door":
+		var dcol: Color = door_defs[String(p[1])]["col"]
+		_spr(spr_gen.icon("door_open"), ctr, s * 0.85)
+		draw_rect(rr, Color(dcol.r, dcol.g, dcol.b, 0.22))
+		draw_rect(rr, dcol, false, 4.0)
+	elif k == "aff":
+		var ad: Dictionary = AFFIX_DEFS[String(p[1])]
+		var ac3: Color = ad["col"]
+		_spr(_monster_tex(ti, 6, false), ctr + Vector2(0, -2), s * 0.82)
+		var ap2 := rr.position + Vector2(s - 20, s - 20)
+		draw_circle(ap2, 17, Color("0a0c14"))
+		draw_circle(ap2, 14.5, Color(ac3.r * 0.55, ac3.g * 0.55, ac3.b * 0.55))
+		_ctext(String(ad["s"]), ap2, 15, ac3)
+	elif k == "skn":
+		var sb := int(p[1])
+		var scl: Color = SK_BR[sb][1]
+		draw_circle(ctr, s * 0.4, Color(0.07, 0.08, 0.13))
+		draw_arc(ctr, s * 0.4, 0, TAU, 28, scl, 4.0)
+		draw_circle(ctr, s * 0.22, Color(scl.r, scl.g, scl.b, 0.55))
+		_ctext(String(SK_BR[sb][0]).substr(0, 3), ctr, 20, Color.WHITE)
 	elif k == "portal":
 		var pc := Color("c07cff")
 		draw_circle(ctr, s * 0.34, Color(pc.r, pc.g, pc.b, 0.18))
@@ -3280,6 +3340,25 @@ func bpos_badge(c: Vector2, txt: String) -> void:
 	draw_circle(c, 15, Color("0a0c14"))
 	draw_circle(c, 12.5, Color("ef4b55"))
 	_ctext(txt, c, 17, Color.WHITE)
+
+
+func _tut_rows(pg: Dictionary) -> Array:
+	var rows: Array = []
+	if not (pg["s"] as Array).is_empty():
+		rows.append(pg["s"])
+	if pg.has("s2"):
+		rows.append(pg["s2"])
+	return rows
+
+
+func _tut_layout(pg: Dictionary) -> Dictionary:
+	var rows := _tut_rows(pg)
+	var ty := 340.0 if rows.is_empty() else 395.0 + rows.size() * 132.0 - 40.0
+	var body := String(pg["x"]).replace("\\n", "\n")
+	var fs := 24 if rows.size() <= 1 else 22
+	while fs > 14 and font.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, 620.0, fs).y + ty > 1130.0:
+		fs -= 1
+	return {"ty": ty, "fs": fs, "body": body, "rows": rows}
 
 
 func _draw_tut(acc: Color) -> void:
@@ -3295,25 +3374,19 @@ func _draw_tut(acc: Color) -> void:
 	tut_page = clampi(tut_page, 0, pages.size() - 1)
 	var pg: Dictionary = pages[tut_page]
 	_txt(String(pg["t"]), Vector2(0, 300), 40, acc)
-	var rows: Array = [pg["s"]]
-	if pg.has("s2"):
-		rows.append(pg["s2"])
+	var lay := _tut_layout(pg)
+	var rows: Array = lay["rows"]
 	var ti: int = pg["ti"]
 	for r in rows.size():
 		var row: Array = rows[r]
-		var cy := 420.0 + r * 205.0
+		var cy := 395.0 + r * 132.0
 		var n := row.size()
-		var sz := 132.0 if n <= 4 else 110.0
+		var sz := 88.0 if n <= 4 else 80.0
 		for i in n:
 			var cx := 40.0 + (i + 0.5) * 640.0 / n
 			_tut_icon(String(row[i][0]), Vector2(cx, cy), sz, ti)
-			_ctext(String(row[i][1]), Vector2(cx, cy + sz * 0.5 + 22), 19, Color(1, 1, 1, 0.85))
-	var ty := 420.0 + rows.size() * 205.0 - 20.0
-	var body := String(pg["x"]).replace("\\n", "\n")
-	var fs := 24 if rows.size() == 1 else 22
-	while fs > 14 and font.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, 620.0, fs).y + ty > 1130.0:
-		fs -= 1
-	_para(body, Vector2(50, ty), fs, Color(1, 1, 1, 0.9), 620.0)
+			_ctext(String(row[i][1]), Vector2(cx, cy + sz * 0.5 + 18), 19 if n <= 4 else 16, Color(1, 1, 1, 0.85))
+	_para(String(lay["body"]), Vector2(50, float(lay["ty"])), int(lay["fs"]), Color(1, 1, 1, 0.9), 620.0)
 	_button(btn_tpv, "PREV", acc, 24)
 	_button(btn_tnx, "NEXT", acc, 24)
 	_ctext("%d / %d" % [tut_page + 1, pages.size()], Vector2(360, 1244), 24, Color(1, 1, 1, 0.7))
@@ -7579,6 +7652,17 @@ func _draw_selftest() -> void:
 		await get_tree().process_frame
 		await get_tree().process_frame
 		print("draw state %d tab %d drawn %d" % [state, inv_tab, draw_count - before])
+	for tm in 2:
+		for pgi in _tut_pages(tm).size():
+			state = TUTORIAL
+			tut_mode = tm
+			tut_page = pgi
+			var b3 := draw_count
+			queue_redraw()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			var lay := _tut_layout(_tut_pages(tm)[pgi])
+			print("tut %d page %d drawn %d font %d" % [tm, pgi, draw_count - b3, int(lay["fs"])])
 	print("DRAW TEST DONE")
 
 
