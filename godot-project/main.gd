@@ -211,7 +211,12 @@ var btn_sv_fexp := Rect2(110, 680, 500, 84)
 var btn_sv_fimp := Rect2(110, 790, 500, 84)
 var btn_sv_back := Rect2(110, 1100, 500, 80)
 var name_edit: LineEdit = null
-const BUILD := 9
+var press_p := Vector2(-999, -999)
+var press_t := -10.0
+var last_state := -1
+var state_t := 0.0
+var bank_disp := -1.0
+const BUILD := 10
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -279,6 +284,9 @@ const SR_MUS := 11025
 func _ready() -> void:
 	randomize()
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var pf = load("res://fonts/PixelifySans.ttf")
+	if pf is Font:
+		font = pf
 	_make_themes()
 	spr_gen = SpritesLib.new(themes)
 	var ar := RandomNumberGenerator.new()
@@ -2280,6 +2288,8 @@ func _gui_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		return
 	var p: Vector2 = event.position
+	press_p = p
+	press_t = t
 	if btn_sound.has_point(p):
 		snd_on = not snd_on
 		_apply_sound()
@@ -2477,6 +2487,17 @@ func _gui_input(event: InputEvent) -> void:
 
 func _process(dt: float) -> void:
 	t += dt
+	if state != last_state:
+		last_state = state
+		state_t = t
+	if bank_disp < 0.0 or absf(bank_disp - bank) < 1.0:
+		bank_disp = float(bank)
+	else:
+		bank_disp = move_toward(bank_disp, float(bank), maxf(2.0, absf(bank_disp - bank) * dt * 5.0))
+	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS:
+		modulate.a = clampf(0.3 + (t - state_t) * 6.0, 0.0, 1.0)
+	elif modulate.a < 1.0:
+		modulate.a = 1.0
 	_anim_update(dt)
 	if state == PLAY and mode == "adv":
 		cam = cam.lerp(vis_pos, minf(1.0, dt * 12.0))
@@ -3077,16 +3098,18 @@ func _saves_input(p: Vector2) -> void:
 func _draw_saves(acc: Color) -> void:
 	_txt("SAVES", Vector2(0, 200), 60, acc)
 	_txt("Move your progress between devices", Vector2(0, 252), 24, Color(1, 1, 1, 0.7))
-	_txt("SAVE CODE (works everywhere)", Vector2(0, 372), 22, Color(1, 1, 1, 0.55))
-	_button(btn_sv_copy, "COPY SAVE CODE", Color("7dffb0"), 28)
-	_button(btn_sv_paste, "PASTE SAVE CODE", Color("7fd8ff"), 28)
+	_panel(Rect2(80, 360, 560, 252), Color("7fd8ff"), 0.05, false)
+	_txt("SAVE CODE (works everywhere)", Vector2(0, 386), 20, Color(1, 1, 1, 0.6))
+	_button(btn_sv_copy, "COPY SAVE CODE", Color("7dffb0"), 28, "copy")
+	_button(btn_sv_paste, "PASTE SAVE CODE", Color("7fd8ff"), 28, "paste")
 	if OS.has_feature("web"):
-		_txt("SAVE FILE (web only)", Vector2(0, 652), 22, Color(1, 1, 1, 0.55))
-		_button(btn_sv_fexp, "EXPORT FILE", Color("c9d3f0"), 28)
-		_button(btn_sv_fimp, "IMPORT FILE", Color("c9d3f0"), 28)
+		_panel(Rect2(80, 640, 560, 252), Color("c9d3f0"), 0.05, false)
+		_txt("SAVE FILE (web only)", Vector2(0, 666), 20, Color(1, 1, 1, 0.6))
+		_button(btn_sv_fexp, "EXPORT FILE", Color("c9d3f0"), 28, "file")
+		_button(btn_sv_fimp, "IMPORT FILE", Color("c9d3f0"), 28, "file")
 	if t - xfer_t < 8.0:
 		_para(xfer_msg, Vector2(60, 930), 24, Color("6dff9a"), 600.0)
-	_button(btn_sv_back, "BACK", Color("ffd84f"), 28)
+	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
 
 
 func _lb_name_edit_open() -> void:
@@ -3562,12 +3585,74 @@ func _tut_input(p: Vector2) -> void:
 
 # ---------- drawing ----------
 
+func _fit(s: String, size: int, w: float) -> int:
+	var fs := size
+	while fs > 10 and font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w - 6.0:
+		fs -= 1
+	return fs
+
+
 func _txt(s: String, p: Vector2, size: int, col: Color, w := 720.0, align := HORIZONTAL_ALIGNMENT_CENTER) -> void:
-	draw_string(font, p, s, align, w, size, col)
+	var fs := _fit(s, size, w)
+	if fs >= 22 and col.a > 0.5:
+		var so := 4.0 if fs >= 48 else 2.0
+		draw_string(font, p + Vector2(0, so), s, align, w, fs, Color(0, 0, 0, 0.55) if fs < 48 else Color(col.r * 0.3, col.g * 0.3, col.b * 0.3, 0.9))
+	draw_string(font, p, s, align, w, fs, col)
 
 
 func _ctext(s: String, c: Vector2, size: int, col: Color) -> void:
-	draw_string(font, Vector2(c.x - 100.0, c.y + size * 0.35), s, HORIZONTAL_ALIGNMENT_CENTER, 200.0, size, col)
+	var fs := _fit(s, size, 200.0)
+	draw_string(font, Vector2(c.x - 100.0, c.y + fs * 0.35), s, HORIZONTAL_ALIGNMENT_CENTER, 200.0, fs, col)
+
+
+func _panel(r: Rect2, col: Color, fill := 0.14, press := true) -> Rect2:
+	var d := 0.0
+	if press and t - press_t < 0.14 and r.has_point(press_p):
+		d = 3.0
+	var x := r.position.x
+	var y := r.position.y + d
+	var w := r.size.x
+	var h := r.size.y
+	var c := minf(8.0, h * 0.25)
+	var pts := PackedVector2Array([Vector2(x + c, y), Vector2(x + w - c, y), Vector2(x + w, y + c), Vector2(x + w, y + h - c), Vector2(x + w - c, y + h), Vector2(x + c, y + h), Vector2(x, y + h - c), Vector2(x, y + c)])
+	if d == 0.0:
+		var sh := PackedVector2Array()
+		for q in pts:
+			sh.append(q + Vector2(0, 4))
+		draw_colored_polygon(sh, Color(0, 0, 0, 0.5))
+	draw_colored_polygon(pts, Color(0.03, 0.04, 0.08, 0.94))
+	draw_colored_polygon(pts, Color(col.r, col.g, col.b, fill * 0.6))
+	if h > 30.0:
+		draw_rect(Rect2(x + c, y + 3, w - 2.0 * c, h * 0.42), Color(col.r, col.g, col.b, fill * 0.7))
+	var loop := pts.duplicate()
+	loop.append(pts[0])
+	draw_polyline(loop, Color(col.r, col.g, col.b, 0.14), 7.0)
+	draw_polyline(loop, col, 2.0)
+	draw_line(Vector2(x + c + 2, y + 4), Vector2(x + w - c - 2, y + 4), Color(1, 1, 1, 0.28), 2.0)
+	draw_line(Vector2(x + c + 2, y + h - 4), Vector2(x + w - c - 2, y + h - 4), Color(0, 0, 0, 0.4), 2.0)
+	return Rect2(x, y, w, h)
+
+
+const ICONS := {
+	"save": ["#######", "#.###.#", "#.###.#", "#.....#", "#.###.#", "#.###.#", "#######"],
+	"trophy": ["#######", "#.###.#", "#.###.#", ".#####.", "..###..", "...#...", "..###.."],
+	"help": [".#####.", "##...##", ".....##", "...###.", "...#...", ".......", "...#..."],
+	"copy": ["#####..", "#...#..", "#.#####", "#.#...#", "###...#", "..#...#", "..#####"],
+	"paste": ["..###..", "#######", "#.....#", "#.###.#", "#.....#", "#.###.#", "#######"],
+	"back": ["..#....", ".##....", "#######", ".##....", "..#....", ".......", "......."],
+	"file": ["#####..", "#...##.", "#...#.#", "#...###", "#.....#", "#.....#", "#######"],
+}
+
+
+func _icon(kind: String, c: Vector2, col: Color) -> void:
+	if not ICONS.has(kind):
+		return
+	var rows: Array = ICONS[kind]
+	for ry in rows.size():
+		var row: String = rows[ry]
+		for rx in row.length():
+			if row[rx] == "#":
+				draw_rect(Rect2(c.x - 10.5 + rx * 3.0, c.y - 10.5 + ry * 3.0, 3.0, 3.0), col)
 
 
 func _cell_rect(c: Vector2i) -> Rect2:
@@ -3578,10 +3663,17 @@ func _spr(tex: Texture2D, ctr: Vector2, size: float, mod := Color.WHITE) -> void
 	draw_texture_rect(tex, Rect2(ctr.x - size * 0.5, ctr.y - size * 0.5, size, size), false, mod)
 
 
-func _button(r: Rect2, label: String, col: Color, size := 20) -> void:
-	draw_rect(r, Color(col.r, col.g, col.b, 0.14))
-	draw_rect(r, col, false, 2.0)
-	_ctext(label, r.get_center(), size, col)
+func _button(r: Rect2, label: String, col: Color, size := 20, icon := "") -> void:
+	var rr := _panel(r, col)
+	var tx := rr.position.x
+	var tw := rr.size.x
+	if icon != "":
+		_icon(icon, Vector2(rr.position.x + 34, rr.get_center().y), col)
+		tx += 30.0
+		tw -= 30.0
+	var fs := _fit(label, size, tw)
+	draw_string(font, Vector2(tx, rr.get_center().y + fs * 0.33 + 2.0), label, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, Color(0, 0, 0, 0.5))
+	draw_string(font, Vector2(tx, rr.get_center().y + fs * 0.33), label, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, col)
 
 
 func _para(s: String, p: Vector2, size: int, col: Color, w: float) -> void:
@@ -3911,28 +4003,21 @@ func _draw_overlay(acc: Color) -> void:
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
-		_txt("Puzzle best: %d floors     Adventure best: %d floors     Bank: %d" % [best, adv_best, bank], Vector2(0, 296), 20, Color(1, 1, 1, 0.55))
+		_txt("Puzzle best: %d floors     Adventure best: %d floors     Bank: %d" % [best, adv_best, int(bank_disp)], Vector2(0, 296), 20, Color(1, 1, 1, 0.55))
 		var mp := Color("9fb3d9")
-		draw_rect(btn_mode_p, Color(mp.r, mp.g, mp.b, 0.12))
-		draw_rect(btn_mode_p, mp, false, 3.0)
+		_panel(btn_mode_p, mp, 0.2)
 		_txt("PUZZLE", Vector2(btn_mode_p.position.x + 28, btn_mode_p.position.y + 70), 52, mp, 560.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_para("Small tense rooms. Level up by beating monsters, then reach the gate before the dark swallows the board. Every step counts.", Vector2(btn_mode_p.position.x + 28, btn_mode_p.position.y + 120), 25, Color.WHITE, 560.0)
 		var ma := Color("7dffb0")
-		draw_rect(btn_mode_a, Color(ma.r, ma.g, ma.b, 0.12))
-		draw_rect(btn_mode_a, ma, false, 3.0)
+		_panel(btn_mode_a, ma, 0.2)
 		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 70), 52, ma, 560.0, HORIZONTAL_ALIGNMENT_LEFT)
-		draw_rect(btn_tut, Color(1, 0.85, 0.3, 0.12))
-		draw_rect(btn_tut, Color("ffd84f"), false, 3.0)
-		_txt("HOW TO PLAY", Vector2(btn_tut.position.x, btn_tut.position.y + 54), 34, Color("ffd84f"), btn_tut.size.x)
-		draw_rect(btn_lb, Color(0.4, 0.8, 1.0, 0.12))
-		draw_rect(btn_lb, Color("7fd8ff"), false, 3.0)
-		_txt("LEADERBOARD", Vector2(btn_lb.position.x, btn_lb.position.y + 54), 34, Color("7fd8ff"), btn_lb.size.x)
+		_button(btn_tut, "HOW TO PLAY", Color("ffd84f"), 34, "help")
+		_button(btn_lb, "LEADERBOARD", Color("7fd8ff"), 34, "trophy")
 		if save_info != "":
-			draw_rect(btn_cont, Color(0.4, 1.0, 0.6, 0.14))
-			draw_rect(btn_cont, Color("6dff9a"), false, 3.0)
+			_panel(btn_cont, Color("6dff9a"), 0.2)
 			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
 			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
-		_button(btn_saves, "SAVES", Color("c9d3f0"), 24)
+		_button(btn_saves, "SAVES", Color("c9d3f0"), 24, "save")
 		var bt := get_node_or_null("/root/Boot")
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
@@ -3946,7 +4031,7 @@ func _draw_overlay(acc: Color) -> void:
 			ly += 42
 		_button(btn_retry, "RETRY THIS FLOOR", acc, 28)
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
-		_button(btn_shop, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
+		_button(btn_shop, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 	elif state == CLEAR:
 		_txt(over_title, Vector2(0, 560), 64, acc)
 		_txt(over_sub, Vector2(0, 630), 26, Color.WHITE)
@@ -4038,7 +4123,7 @@ func _draw_overlay(acc: Color) -> void:
 			for kid in cd["kit"]:
 				_use_icon(String(kid), Vector2(kx, cr.position.y + 34), 40)
 				kx -= 50.0
-		_button(btn_shop2, "SHOP  (bank %d)" % bank, Color("ffc93c"), 28)
+		_button(btn_shop2, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP:
