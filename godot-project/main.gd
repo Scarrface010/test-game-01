@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS }
 const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
 const BAG_MAX := 12
 const AC := 72.0
@@ -220,12 +220,19 @@ var font_clear: Font = null
 var font_title: Font = ThemeDB.fallback_font
 var font_mode := 1
 var btn_font := Rect2(370, 1220, 300, 52)
+var set_res := 0
+var set_fit := 0
+var set_fps := 60
+var set_filt := 0
+var set_shake := 1
+var inv_vel := 0.0
+var inv_mv_t := -10.0
 var press_p := Vector2(-999, -999)
 var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 12
+const BUILD := 13
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -279,8 +286,8 @@ var btn_menu := Rect2(596, 20, 104, 46)
 var btn_invmenu := Rect2(20, 76, 190, 46)
 var menu_armed := -10.0
 var btn_retry := Rect2(160, 790, 400, 76)
-var btn_newrun := Rect2(160, 880, 400, 76)
-var btn_shop := Rect2(160, 970, 400, 76)
+var btn_newrun := Rect2(160, 790, 400, 76)
+var btn_shop := Rect2(160, 880, 400, 76)
 var btn_back := Rect2(250, 1010, 220, 64)
 var btn_shop2 := Rect2(160, 1100, 400, 76)
 var btn_prev := Rect2(40, 1010, 190, 64)
@@ -325,6 +332,12 @@ func _ready() -> void:
 		lb_name = String(cfg.get_value("lb", "name", ""))
 		font_mode = clampi(int(cfg.get_value("ui", "font", 1)), 0, 2)
 		_apply_font()
+		set_res = clampi(int(cfg.get_value("ui", "res", 0)), 0, 1)
+		set_fit = clampi(int(cfg.get_value("ui", "fit", 0)), 0, 1)
+		set_fps = 30 if int(cfg.get_value("ui", "fps", 60)) == 30 else 60
+		set_filt = clampi(int(cfg.get_value("ui", "filt", 0)), 0, 1)
+		set_shake = clampi(int(cfg.get_value("ui", "shake", 1)), 0, 1)
+		_apply_display()
 		lb_uid = String(cfg.get_value("lb", "uid", ""))
 		lb_sent["puzzle"] = int(cfg.get_value("lb", "sent_puzzle", 0))
 		lb_sent["adv"] = int(cfg.get_value("lb", "sent_adv", 0))
@@ -725,6 +738,11 @@ func _save_meta() -> void:
 	cfg.set_value("s", "best_adv", adv_best)
 	cfg.set_value("lb", "name", lb_name)
 	cfg.set_value("ui", "font", font_mode)
+	cfg.set_value("ui", "res", set_res)
+	cfg.set_value("ui", "fit", set_fit)
+	cfg.set_value("ui", "fps", set_fps)
+	cfg.set_value("ui", "filt", set_filt)
+	cfg.set_value("ui", "shake", set_shake)
 	cfg.set_value("lb", "uid", lb_uid)
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
@@ -2322,9 +2340,20 @@ func _new_run(start_floor := 1) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if state == INV and inv_tab == 0:
 		if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+			var now_s := Time.get_ticks_msec() / 1000.0
+			var mdt := maxf(now_s - inv_mv_t, 0.008)
 			inv_scroll = clampf(inv_scroll - event.relative.y, 0.0, inv_scroll_max)
+			inv_vel = clampf(lerpf(inv_vel, -event.relative.y / mdt, 0.5), -4000.0, 4000.0)
+			inv_mv_t = now_s
 			return
+		if event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			if Time.get_ticks_msec() / 1000.0 - inv_mv_t > 0.1:
+				inv_vel = 0.0
+			return
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			inv_vel = 0.0
 		if event is InputEventMouseButton and event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			inv_vel = 0.0
 			inv_scroll = clampf(inv_scroll + (60.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -60.0), 0.0, inv_scroll_max)
 			return
 	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
@@ -2349,6 +2378,9 @@ func _gui_input(event: InputEvent) -> void:
 	if state == SAVES:
 		_saves_input(p)
 		return
+	if state == SETTINGS:
+		_settings_input(p)
+		return
 	if state == MODE:
 		if btn_lb.has_point(p):
 			_lb_open()
@@ -2364,9 +2396,7 @@ func _gui_input(event: InputEvent) -> void:
 			_sfx("ui")
 			return
 		if btn_font.has_point(p):
-			font_mode = (font_mode + 1) % 3
-			_apply_font()
-			_save_meta()
+			state = SETTINGS
 			_sfx("ui")
 			return
 		if save_info != "" and btn_cont.has_point(p):
@@ -2496,10 +2526,7 @@ func _gui_input(event: InputEvent) -> void:
 					_sfx("blocked")
 		return
 	if state == DEAD:
-		if btn_retry.has_point(p):
-			_reset_floor()
-			_sfx("ui")
-		elif btn_newrun.has_point(p):
+		if btn_newrun.has_point(p):
 			state = CLASS
 			_sfx("ui")
 		elif btn_shop.has_point(p):
@@ -2542,11 +2569,22 @@ func _process(dt: float) -> void:
 		bank_disp = float(bank)
 	else:
 		bank_disp = move_toward(bank_disp, float(bank), maxf(2.0, absf(bank_disp - bank) * dt * 5.0))
-	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS:
+	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS:
 		modulate.a = clampf(0.3 + (t - state_t) * 6.0, 0.0, 1.0)
 	elif modulate.a < 1.0:
 		modulate.a = 1.0
 	_anim_update(dt)
+	if inv_vel != 0.0:
+		if state == INV and inv_tab == 0:
+			inv_scroll += inv_vel * dt
+			inv_vel *= exp(-dt * 3.5)
+			if inv_scroll <= 0.0 or inv_scroll >= inv_scroll_max:
+				inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
+				inv_vel = 0.0
+			elif absf(inv_vel) < 8.0:
+				inv_vel = 0.0
+		else:
+			inv_vel = 0.0
 	if state == PLAY and mode == "adv":
 		cam = cam.lerp(vis_pos, minf(1.0, dt * 12.0))
 		if walk.size() > 0:
@@ -2595,6 +2633,8 @@ func _fx_band() -> Rect2:
 
 
 func _shake(amp: float, dur := 0.25) -> void:
+	if set_shake == 0:
+		return
 	var age := t - shake_t0
 	var cur := 0.0
 	if age < shake_dur:
@@ -3158,6 +3198,81 @@ func _draw_saves(acc: Color) -> void:
 	if t - xfer_t < 8.0:
 		_para(xfer_msg, Vector2(60, 930), 24, Color("6dff9a"), 600.0)
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
+
+
+func _apply_display() -> void:
+	var w := get_window()
+	if w != null:
+		w.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS if set_res == 0 else Window.CONTENT_SCALE_MODE_VIEWPORT
+		w.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP if set_fit == 0 else Window.CONTENT_SCALE_ASPECT_IGNORE
+	Engine.max_fps = set_fps
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if set_filt == 0 else CanvasItem.TEXTURE_FILTER_LINEAR
+
+
+func _set_rect(i: int) -> Rect2:
+	return Rect2(110, 290 + i * 125, 500, 80)
+
+
+func _settings_input(p: Vector2) -> void:
+	if btn_sv_back.has_point(p):
+		state = MODE
+		_sfx("ui")
+		return
+	for i in 6:
+		if _set_rect(i).has_point(p):
+			if i == 0:
+				font_mode = (font_mode + 1) % 3
+				_apply_font()
+			elif i == 1:
+				set_res = 1 - set_res
+			elif i == 2:
+				set_fit = 1 - set_fit
+			elif i == 3:
+				set_filt = 1 - set_filt
+			elif i == 4:
+				set_fps = 30 if set_fps == 60 else 60
+			else:
+				set_shake = 1 - set_shake
+			_apply_display()
+			_save_meta()
+			_sfx("ui")
+			return
+
+
+func _draw_settings(acc: Color) -> void:
+	_txt("SETTINGS", Vector2(0, 200), 60, acc)
+	_txt("Saved on this device", Vector2(0, 252), 24, Color(1, 1, 1, 0.7))
+	var labels := [
+		"TEXT: " + ["PIXEL", "MIXED", "CLEAR"][font_mode],
+		"RESOLUTION: " + ("NATIVE" if set_res == 0 else "720p"),
+		"SCREEN: " + ("FIT" if set_fit == 0 else "STRETCH"),
+		"SPRITES: " + ("CRISP" if set_filt == 0 else "SMOOTH"),
+		"FRAME RATE: %d" % set_fps,
+		"SHAKE: " + ("ON" if set_shake == 1 else "OFF"),
+	]
+	var hints := [
+		"Pixel = retro font everywhere. Mixed = pixel titles only.",
+		"Native is sharpest. 720p draws fewer pixels: faster on weak phones.",
+		"Fit keeps proportions with bars. Stretch fills the whole screen.",
+		"Crisp keeps sprite pixels sharp. Smooth blends them.",
+		"30 saves battery. 60 is smoother.",
+		"Screen shake on hits and blasts.",
+	]
+	for i in 6:
+		var r := _set_rect(i)
+		_button(r, String(labels[i]), Color("c9d3f0"), 26)
+		_txt(String(hints[i]), Vector2(0, r.end.y + 26), 18, Color(1, 1, 1, 0.55))
+	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
+
+
+func _para_fit(s: String, p: Vector2, size: int, col: Color, w: float, max_lines: int) -> void:
+	var fs := size
+	while fs > 11:
+		var sz := font.get_multiline_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, w, fs)
+		if int(round(sz.y / font.get_height(fs))) <= max_lines:
+			break
+		fs -= 1
+	draw_multiline_string(font, p, s, HORIZONTAL_ALIGNMENT_LEFT, w, fs, -1, col)
 
 
 func _lb_name_edit_open() -> void:
@@ -3797,7 +3912,7 @@ func _draw() -> void:
 	var ti := tidx()
 	var th := cur_theme()
 	var acc: Color = th["accent"]
-	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL and state != LEADER and state != SAVES:
+	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL and state != LEADER and state != SAVES and state != SETTINGS:
 		_adv_draw()
 		_fx_draw_top()
 		if state != PLAY:
@@ -3814,7 +3929,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES:
+	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -4026,17 +4141,6 @@ func _draw() -> void:
 	_txt(msg, Vector2(0, 1084), 26, Color.WHITE, 720.0)
 	_txt("Green badge = you win the fight. Red = you die. Equal loses!", Vector2(0, 1122), 22, Color(1, 1, 1, 0.55))
 	_txt("Gold star = +2 levels. Shield saves you once. Spikes cost steps.", Vector2(0, 1150), 22, Color(1, 1, 1, 0.55))
-	var tips := [
-		"Sleepers (zZ) gain levels once the dark first moves. Kill them early!",
-		"Feeders (violet +) grow +1 level every time the dark advances.",
-		"Thieves ($) steal coins when you stand beside them. Beat one to get them back.",
-		"Coins are banked when you die and buy permanent upgrades in the SHOP.",
-		"Relics last the whole run. Cursed ones are powerful but risky.",
-		"A key opens a vault: coins, +1 level and a free tool.",
-		"Every 5th floor is a boss. Read its rule in the line under the dark meter.",
-		"Portals warp you. Lanterns hold the dark back.",
-	]
-	_txt(tips[int(t / 5.0) % tips.size()], Vector2(0, 1180), 20, Color(acc.r, acc.g, acc.b, 0.85))
 	_txt("Tap a tile to walk there. The dark eats the outer ring.", Vector2(0, 1208), 22, Color(1, 1, 1, 0.55))
 	if relics.size() > 0:
 		var parts: Array[String] = []
@@ -4069,6 +4173,8 @@ func _menu_tint(acc: Color) -> Color:
 		LEADER:
 			return Color("7fd8ff")
 		SAVES:
+			return Color("c9d3f0")
+		SETTINGS:
 			return Color("c9d3f0")
 	return acc
 
@@ -4167,6 +4273,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_lb(acc)
 	elif state == SAVES:
 		_draw_saves(acc)
+	elif state == SETTINGS:
+		_draw_settings(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -4185,7 +4293,7 @@ func _draw_overlay(acc: Color) -> void:
 			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
 			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
 		_button(btn_saves, "SAVES", Color("c9d3f0"), 24, "save")
-		_button(btn_font, "TEXT: " + ["PIXEL", "MIXED", "CLEAR"][font_mode], Color("c9d3f0"), 24)
+		_button(btn_font, "SETTINGS", Color("c9d3f0"), 24)
 		var bt := get_node_or_null("/root/Boot")
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
@@ -4197,7 +4305,6 @@ func _draw_overlay(acc: Color) -> void:
 		for line in over_sub.split("\n"):
 			_txt(line, Vector2(0, ly), 28, Color.WHITE)
 			ly += 42
-		_button(btn_retry, "RETRY THIS FLOOR", acc, 28)
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
 		_button(btn_shop, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 	elif state == CLEAR:
@@ -4286,9 +4393,9 @@ func _draw_overlay(acc: Color) -> void:
 			if not copen:
 				_para("Unlock this class in the SHOP.", Vector2(cr.position.x + 24, cr.position.y + 72), 21, Color(1, 1, 1, 0.5), 570.0)
 				continue
-			_para(_atext("cls_" + String(cd["id"]), String(cd["desc"])), Vector2(cr.position.x + 24, cr.position.y + 66), 19, Color.WHITE, 570.0)
-			_txt("POWER", Vector2(cr.position.x + 24, cr.position.y + 118), 17, ccol, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_para(_act_desc(String(cd["id"])), Vector2(cr.position.x + 24, cr.position.y + 136), 17, Color(1, 1, 1, 0.8), 572.0)
+			_para_fit(_atext("cls_" + String(cd["id"]), String(cd["desc"])), Vector2(cr.position.x + 24, cr.position.y + 64), 19, Color.WHITE, 570.0, 2)
+			_txt("POWER", Vector2(cr.position.x + 24, cr.position.y + 110), 16, ccol, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para_fit(_act_desc(String(cd["id"])), Vector2(cr.position.x + 24, cr.position.y + 128), 16, Color(1, 1, 1, 0.8), 572.0, 2)
 			var kx := cr.end.x - 40.0
 			for kid in cd["kit"]:
 				_use_icon(String(kid), Vector2(kx, cr.position.y + 34), 40)
@@ -6111,7 +6218,7 @@ func _adv_path_try(target: Vector2i, avoid_spikes: bool) -> Array[Vector2i]:
 			var n: Vector2i = c + dv
 			if prev.has(n) or not _aopen(n) or not _aseen(n):
 				continue
-			if n != target and (mons.has(n) or vaults.has(n) or (avoid_spikes and (spikes.has(n) or haz.has(n)))):
+			if n != target and (mons.has(n) or vaults.has(n) or (avoid_spikes and spikes.has(n))):
 				continue
 			prev[n] = c
 			q.append(n)
@@ -7641,18 +7748,6 @@ func _adv_draw() -> void:
 			_ctext("empty", sr.get_center(), 14, Color(1, 1, 1, 0.3))
 	_act_draw()
 	_txt(msg, Vector2(0, 1144), 26, Color.WHITE, 720.0)
-	_txt("Tap a monster to attack. Badge: green easy, amber costly, red deadly.", Vector2(0, 1178), 20, Color(1, 1, 1, 0.55))
-	var tips := [
-		"Walking costs air. Air pods (O2) refill it. Don't wander blindly!",
-		"Hunters (red !) chase you at half speed. Beat them or outrun them.",
-		"Collect points from kills, coins and items to unlock the exit.",
-		"Leftover air when you leave turns into bonus coins.",
-		"Scanners reveal the map around you for a few steps.",
-		"A key opens a vault: coins, +1 level and a free tool.",
-		"Every 5th floor a boss guards the exit.",
-		"Tap a tile to walk there. You stop when something new appears.",
-	]
-	_txt(tips[int(t / 5.0) % tips.size()], Vector2(0, 1210), 19, Color(acc.r, acc.g, acc.b, 0.85))
 	if relics.size() > 0:
 		var parts: Array[String] = []
 		for d in relic_defs:
