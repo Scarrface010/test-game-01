@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES }
 const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
 const BAG_MAX := 12
 const AC := 72.0
@@ -204,9 +204,14 @@ var lb_status := ""
 var lb_mode := 0
 var tut_page := 0
 var btn_cont := Rect2(50, 1146, 620, 72)
-var btn_exp := Rect2(50, 1228, 300, 44)
-var btn_imp := Rect2(370, 1228, 300, 44)
-const BUILD := 8
+var btn_saves := Rect2(210, 1220, 300, 52)
+var btn_sv_copy := Rect2(110, 400, 500, 84)
+var btn_sv_paste := Rect2(110, 510, 500, 84)
+var btn_sv_fexp := Rect2(110, 680, 500, 84)
+var btn_sv_fimp := Rect2(110, 790, 500, 84)
+var btn_sv_back := Rect2(110, 1100, 500, 80)
+var name_edit: LineEdit = null
+const BUILD := 9
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2122,26 +2127,48 @@ func _load_run() -> bool:
 	return true
 
 
-func _xfer_export() -> void:
-	if not OS.has_feature("web"):
-		xfer_msg = "Export works in the web build"
-		xfer_t = t
-		return
+func _xfer_pack() -> PackedByteArray:
 	var meta := {"best": best, "adv_best": adv_best, "bank": bank, "ups": ups.duplicate(), "v2": true}
 	var pkg := {"ver": 1, "meta": meta, "run": _read_save()}
 	var raw := var_to_bytes(pkg)
 	var comp := raw.compress(FileAccess.COMPRESSION_GZIP)
 	var out := PackedByteArray("PSAV".to_utf8_buffer())
 	out.append_array(comp)
-	JavaScriptBridge.download_buffer(out, "pocket-station-save.psav", "application/octet-stream")
+	return out
+
+
+func _xfer_export() -> void:
+	if not OS.has_feature("web"):
+		return
+	JavaScriptBridge.download_buffer(_xfer_pack(), "pocket-station-save.psav", "application/octet-stream")
 	xfer_msg = "Save file exported - send it to your other device"
 	xfer_t = t
 
 
+func _xfer_copy_code() -> void:
+	DisplayServer.clipboard_set(Marshalls.raw_to_base64(_xfer_pack()))
+	xfer_msg = "Save code copied - paste it into a chat or note, then use PASTE on your other device"
+	xfer_t = t
+
+
+func _xfer_paste_code() -> void:
+	var txt := ""
+	if OS.has_feature("web"):
+		var r = JavaScriptBridge.eval("prompt('Paste your save code here:', '')")
+		if r == null:
+			return
+		txt = String(r)
+	else:
+		txt = DisplayServer.clipboard_get()
+	if txt.strip_edges() == "":
+		xfer_msg = "Nothing to paste - copy the save code first"
+		xfer_t = t
+		return
+	_xfer_apply_b64(txt)
+
+
 func _xfer_import_start() -> void:
 	if not OS.has_feature("web"):
-		xfer_msg = "Import works in the web build"
-		xfer_t = t
 		return
 	JavaScriptBridge.eval("window.__psv='';(function(){var i=document.createElement('input');i.type='file';i.onchange=function(){var f=i.files[0];if(!f)return;var r=new FileReader();r.onload=function(){var u=new Uint8Array(r.result);var s='';for(var k=0;k<u.length;k++)s+=String.fromCharCode(u[k]);window.__psv=btoa(s);};r.readAsArrayBuffer(f);};i.click();})()")
 	imp_wait = true
@@ -2154,8 +2181,12 @@ func _xfer_import_poll() -> void:
 		return
 	JavaScriptBridge.eval("window.__psv=''")
 	imp_wait = false
+	_xfer_apply_b64(b64)
+
+
+func _xfer_apply_b64(b64: String) -> void:
 	xfer_t = t
-	var raw := Marshalls.base64_to_raw(b64)
+	var raw := Marshalls.base64_to_raw(b64.strip_edges().replace("\n", "").replace("\r", "").replace(" ", ""))
 	if raw.size() < 8 or raw.slice(0, 4).get_string_from_utf8() != "PSAV":
 		xfer_msg = "That is not a Pocket Station save file"
 		return
@@ -2263,6 +2294,9 @@ func _gui_input(event: InputEvent) -> void:
 	if state == LEADER:
 		_lb_input(p)
 		return
+	if state == SAVES:
+		_saves_input(p)
+		return
 	if state == MODE:
 		if btn_lb.has_point(p):
 			_lb_open()
@@ -2273,12 +2307,8 @@ func _gui_input(event: InputEvent) -> void:
 			tut_page = 0
 			_sfx("ui")
 			return
-		if btn_exp.has_point(p):
-			_xfer_export()
-			_sfx("ui")
-			return
-		if btn_imp.has_point(p):
-			_xfer_import_start()
+		if btn_saves.has_point(p):
+			state = SAVES
 			_sfx("ui")
 			return
 		if save_info != "" and btn_cont.has_point(p):
@@ -2465,7 +2495,7 @@ func _process(dt: float) -> void:
 				walk.clear()
 			else:
 				_step(nc)
-	if imp_wait and state == MODE and OS.has_feature("web"):
+	if imp_wait and state == SAVES and OS.has_feature("web"):
 		_xfer_import_poll()
 	if state == PLAY and walk.is_empty() and not save_off and t - save_t > 0.4:
 		var sg := _save_sig()
@@ -3020,6 +3050,74 @@ func _anim_update(dt: float) -> void:
 		i -= 1
 
 
+# ---------- saves menu ----------
+
+func _saves_input(p: Vector2) -> void:
+	if btn_sv_back.has_point(p):
+		state = MODE
+		_sfx("ui")
+		return
+	if btn_sv_copy.has_point(p):
+		_xfer_copy_code()
+		_sfx("ui")
+		return
+	if btn_sv_paste.has_point(p):
+		_xfer_paste_code()
+		_sfx("ui")
+		return
+	if OS.has_feature("web"):
+		if btn_sv_fexp.has_point(p):
+			_xfer_export()
+			_sfx("ui")
+		elif btn_sv_fimp.has_point(p):
+			_xfer_import_start()
+			_sfx("ui")
+
+
+func _draw_saves(acc: Color) -> void:
+	_txt("SAVES", Vector2(0, 200), 60, acc)
+	_txt("Move your progress between devices", Vector2(0, 252), 24, Color(1, 1, 1, 0.7))
+	_txt("SAVE CODE (works everywhere)", Vector2(0, 372), 22, Color(1, 1, 1, 0.55))
+	_button(btn_sv_copy, "COPY SAVE CODE", Color("7dffb0"), 28)
+	_button(btn_sv_paste, "PASTE SAVE CODE", Color("7fd8ff"), 28)
+	if OS.has_feature("web"):
+		_txt("SAVE FILE (web only)", Vector2(0, 652), 22, Color(1, 1, 1, 0.55))
+		_button(btn_sv_fexp, "EXPORT FILE", Color("c9d3f0"), 28)
+		_button(btn_sv_fimp, "IMPORT FILE", Color("c9d3f0"), 28)
+	if t - xfer_t < 8.0:
+		_para(xfer_msg, Vector2(60, 930), 24, Color("6dff9a"), 600.0)
+	_button(btn_sv_back, "BACK", Color("ffd84f"), 28)
+
+
+func _lb_name_edit_open() -> void:
+	if name_edit == null:
+		name_edit = LineEdit.new()
+		name_edit.max_length = 12
+		name_edit.placeholder_text = "Your name"
+		name_edit.add_theme_font_size_override("font_size", 30)
+		name_edit.position = Vector2(110, 340)
+		name_edit.size = Vector2(500, 76)
+		name_edit.text_submitted.connect(_lb_name_done)
+		add_child(name_edit)
+	name_edit.text = lb_name
+	name_edit.visible = true
+	name_edit.grab_focus()
+
+
+func _lb_name_done(txt: String) -> void:
+	if name_edit != null:
+		name_edit.visible = false
+		name_edit.release_focus()
+	DisplayServer.virtual_keyboard_hide()
+	var n := _lb_clean(txt)
+	if n == "":
+		return
+	lb_name = n
+	_save_meta()
+	_lb_resubmit()
+	_lb_fetch()
+
+
 # ---------- leaderboard ----------
 
 func _lb_key(i: int) -> String:
@@ -3132,6 +3230,10 @@ func _lb_open() -> void:
 
 
 func _lb_input(p: Vector2) -> void:
+	if name_edit != null and name_edit.visible:
+		if not name_edit.get_global_rect().has_point(p):
+			_lb_name_done(name_edit.text)
+		return
 	if btn_lbback.has_point(p):
 		state = MODE
 		_sfx("ui")
@@ -3144,7 +3246,9 @@ func _lb_input(p: Vector2) -> void:
 			return
 	if btn_lbname.has_point(p):
 		_sfx("ui")
-		if _lb_ask_name():
+		if not OS.has_feature("web"):
+			_lb_name_edit_open()
+		elif _lb_ask_name():
 			_lb_resubmit()
 			_lb_fetch()
 
@@ -3206,7 +3310,7 @@ func _tut_shop_page() -> Dictionary:
 
 func _tut_saves_page() -> Dictionary:
 	return {"t": "SAVES AND RANKS", "ti": 0, "s": [],
-	"x": "Your run saves itself as you play. If you close the game, tap CONTINUE SAVED RUN on the main menu to pick up where you left off.\n\nTo play on another device, tap EXPORT SAVE, send the file across and tap IMPORT SAVE there. It carries your saved run, banked coins and shop unlocks.\n\nLEADERBOARD ranks the deepest runs in each mode. You can change your name there."}
+	"x": "Your run saves itself as you play. If you close the game, tap CONTINUE SAVED RUN on the main menu to pick up where you left off.\n\nTo play on another device, open SAVES, tap COPY SAVE CODE, send the code to yourself, then tap PASTE SAVE CODE on the other device. It carries your saved run, banked coins and shop unlocks. The web version can also use save files.\n\nLEADERBOARD ranks the deepest runs in each mode. You can change your name there."}
 
 
 func _tut_pages(which: int) -> Array:
@@ -3537,7 +3641,7 @@ func _draw() -> void:
 	var ti := tidx()
 	var th := cur_theme()
 	var acc: Color = th["accent"]
-	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL and state != LEADER:
+	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL and state != LEADER and state != SAVES:
 		_adv_draw()
 		_fx_draw_top()
 		if state != PLAY:
@@ -3554,7 +3658,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE or state == TUTORIAL or state == LEADER:
+	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -3802,6 +3906,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_tut(acc)
 	elif state == LEADER:
 		_draw_lb(acc)
+	elif state == SAVES:
+		_draw_saves(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -3826,8 +3932,7 @@ func _draw_overlay(acc: Color) -> void:
 			draw_rect(btn_cont, Color("6dff9a"), false, 3.0)
 			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
 			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
-		_button(btn_exp, "EXPORT SAVE", Color("c9d3f0"), 20)
-		_button(btn_imp, "IMPORT SAVE", Color("c9d3f0"), 20)
+		_button(btn_saves, "SAVES", Color("c9d3f0"), 24)
 		var bt := get_node_or_null("/root/Boot")
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
