@@ -223,7 +223,9 @@ var btn_font := Rect2(370, 1220, 300, 52)
 var set_res := 0
 var set_fit := 0
 var set_fps := 60
-var set_filt := 0
+var set_filt := 1
+var set_ret := 8
+var btn_inset := Rect2(265, 76, 190, 46)
 var set_shake := 1
 var inv_vel := 0.0
 var inv_mv_t := -10.0
@@ -232,7 +234,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 13
+const BUILD := 14
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -335,7 +337,7 @@ func _ready() -> void:
 		set_res = clampi(int(cfg.get_value("ui", "res", 0)), 0, 1)
 		set_fit = clampi(int(cfg.get_value("ui", "fit", 0)), 0, 1)
 		set_fps = 30 if int(cfg.get_value("ui", "fps", 60)) == 30 else 60
-		set_filt = clampi(int(cfg.get_value("ui", "filt", 0)), 0, 1)
+		set_filt = clampi(int(cfg.get_value("ui", "smooth", 1)), 0, 1)
 		set_shake = clampi(int(cfg.get_value("ui", "shake", 1)), 0, 1)
 		_apply_display()
 		lb_uid = String(cfg.get_value("lb", "uid", ""))
@@ -741,7 +743,7 @@ func _save_meta() -> void:
 	cfg.set_value("ui", "res", set_res)
 	cfg.set_value("ui", "fit", set_fit)
 	cfg.set_value("ui", "fps", set_fps)
-	cfg.set_value("ui", "filt", set_filt)
+	cfg.set_value("ui", "smooth", set_filt)
 	cfg.set_value("ui", "shake", set_shake)
 	cfg.set_value("lb", "uid", lb_uid)
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
@@ -3215,7 +3217,8 @@ func _set_rect(i: int) -> Rect2:
 
 func _settings_input(p: Vector2) -> void:
 	if btn_sv_back.has_point(p):
-		state = MODE
+		state = set_ret
+		set_ret = MODE
 		_sfx("ui")
 		return
 	for i in 6:
@@ -7798,6 +7801,11 @@ func _inv_input(p: Vector2) -> void:
 	if btn_invmenu.has_point(p):
 		_menu_leave()
 		return
+	if btn_inset.has_point(p):
+		set_ret = INV
+		state = SETTINGS
+		_sfx("ui")
+		return
 	if btn_inhelp.has_point(p):
 		tut_back = INV
 		tut_mode = 1
@@ -7913,6 +7921,7 @@ func _draw_inv(acc: Color) -> void:
 	var armed := t - menu_armed < 3.0
 	_button(btn_invmenu, "TAP AGAIN: LEAVE" if armed else "BACK TO MENU", Color("ff8a8a") if armed else acc, 17)
 	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 17)
+	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 17)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
 	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR", "PACK"]
 	for i in 5:
