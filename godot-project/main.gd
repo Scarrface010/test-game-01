@@ -204,19 +204,24 @@ var lb_status := ""
 var lb_mode := 0
 var tut_page := 0
 var btn_cont := Rect2(50, 1146, 620, 72)
-var btn_saves := Rect2(210, 1220, 300, 52)
+var btn_saves := Rect2(50, 1220, 300, 52)
 var btn_sv_copy := Rect2(110, 400, 500, 84)
 var btn_sv_paste := Rect2(110, 510, 500, 84)
 var btn_sv_fexp := Rect2(110, 680, 500, 84)
 var btn_sv_fimp := Rect2(110, 790, 500, 84)
 var btn_sv_back := Rect2(110, 1100, 500, 80)
 var name_edit: LineEdit = null
+var font_pix: Font = null
+var font_clear: Font = null
+var font_title: Font = ThemeDB.fallback_font
+var font_mode := 1
+var btn_font := Rect2(370, 1220, 300, 52)
 var press_p := Vector2(-999, -999)
 var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 10
+const BUILD := 11
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -284,9 +289,14 @@ const SR_MUS := 11025
 func _ready() -> void:
 	randomize()
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	font_clear = ThemeDB.fallback_font
 	var pf = load("res://fonts/PixelifySans.ttf")
 	if pf is Font:
-		font = pf
+		var fv := FontVariation.new()
+		fv.base_font = pf
+		fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 650}
+		font_pix = fv
+	_apply_font()
 	_make_themes()
 	spr_gen = SpritesLib.new(themes)
 	var ar := RandomNumberGenerator.new()
@@ -309,6 +319,8 @@ func _ready() -> void:
 			bank += _shop_refund(old_ups)
 			migrate_shop = true
 		lb_name = String(cfg.get_value("lb", "name", ""))
+		font_mode = clampi(int(cfg.get_value("ui", "font", 1)), 0, 2)
+		_apply_font()
 		lb_uid = String(cfg.get_value("lb", "uid", ""))
 		lb_sent["puzzle"] = int(cfg.get_value("lb", "sent_puzzle", 0))
 		lb_sent["adv"] = int(cfg.get_value("lb", "sent_adv", 0))
@@ -708,6 +720,7 @@ func _save_meta() -> void:
 	cfg.set_value("s", "bank", bank)
 	cfg.set_value("s", "best_adv", adv_best)
 	cfg.set_value("lb", "name", lb_name)
+	cfg.set_value("ui", "font", font_mode)
 	cfg.set_value("lb", "uid", lb_uid)
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
@@ -2321,6 +2334,12 @@ func _gui_input(event: InputEvent) -> void:
 			state = SAVES
 			_sfx("ui")
 			return
+		if btn_font.has_point(p):
+			font_mode = (font_mode + 1) % 3
+			_apply_font()
+			_save_meta()
+			_sfx("ui")
+			return
 		if save_info != "" and btn_cont.has_point(p):
 			if _load_run():
 				_sfx("big")
@@ -3585,24 +3604,39 @@ func _tut_input(p: Vector2) -> void:
 
 # ---------- drawing ----------
 
-func _fit(s: String, size: int, w: float) -> int:
+func _apply_font() -> void:
+	var pix: Font = font_pix if font_pix != null else font_clear
+	if font_mode == 0:
+		font = pix
+		font_title = pix
+	elif font_mode == 1:
+		font = font_clear
+		font_title = pix
+	else:
+		font = font_clear
+		font_title = font_clear
+
+
+func _fit(s: String, size: int, w: float, f: Font = null) -> int:
+	var ft: Font = f if f != null else font
 	var fs := size
-	while fs > 10 and font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w - 6.0:
+	while fs > 10 and ft.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w - 6.0:
 		fs -= 1
 	return fs
 
 
 func _txt(s: String, p: Vector2, size: int, col: Color, w := 720.0, align := HORIZONTAL_ALIGNMENT_CENTER) -> void:
-	var fs := _fit(s, size, w)
+	var ft: Font = font_title if size >= 26 else font
+	var fs := _fit(s, size, w, ft)
 	if fs >= 22 and col.a > 0.5:
 		var so := 4.0 if fs >= 48 else 2.0
-		draw_string(font, p + Vector2(0, so), s, align, w, fs, Color(0, 0, 0, 0.55) if fs < 48 else Color(col.r * 0.3, col.g * 0.3, col.b * 0.3, 0.9))
-	draw_string(font, p, s, align, w, fs, col)
+		draw_string(ft, p + Vector2(0, so), s, align, w, fs, Color(0, 0, 0, 0.55) if fs < 48 else Color(col.r * 0.3, col.g * 0.3, col.b * 0.3, 0.9))
+	draw_string(ft, p, s, align, w, fs, col)
 
 
 func _ctext(s: String, c: Vector2, size: int, col: Color) -> void:
-	var fs := _fit(s, size, 200.0)
-	draw_string(font, Vector2(c.x - 100.0, c.y + fs * 0.35), s, HORIZONTAL_ALIGNMENT_CENTER, 200.0, fs, col)
+	var fs := _fit(s, size, 200.0, font_title)
+	draw_string(font_title, Vector2(c.x - 100.0, c.y + fs * 0.35), s, HORIZONTAL_ALIGNMENT_CENTER, 200.0, fs, col)
 
 
 func _panel(r: Rect2, col: Color, fill := 0.14, press := true) -> Rect2:
@@ -3671,9 +3705,9 @@ func _button(r: Rect2, label: String, col: Color, size := 20, icon := "") -> voi
 		_icon(icon, Vector2(rr.position.x + 34, rr.get_center().y), col)
 		tx += 30.0
 		tw -= 30.0
-	var fs := _fit(label, size, tw)
-	draw_string(font, Vector2(tx, rr.get_center().y + fs * 0.33 + 2.0), label, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, Color(0, 0, 0, 0.5))
-	draw_string(font, Vector2(tx, rr.get_center().y + fs * 0.33), label, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, col)
+	var fs := _fit(label, size, tw, font_title)
+	draw_string(font_title, Vector2(tx, rr.get_center().y + fs * 0.33 + 2.0), label, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, Color(0, 0, 0, 0.5))
+	draw_string(font_title, Vector2(tx, rr.get_center().y + fs * 0.33), label, HORIZONTAL_ALIGNMENT_CENTER, tw, fs, col)
 
 
 func _para(s: String, p: Vector2, size: int, col: Color, w: float) -> void:
@@ -3986,8 +4020,111 @@ func _draw() -> void:
 		_draw_overlay(acc)
 
 
+func _menu_tint(acc: Color) -> Color:
+	match state:
+		SHOP:
+			return Color("ffc93c")
+		MARKET:
+			return Color("7dffb0")
+		TRADE:
+			return Color("ff9d6b")
+		INV:
+			return Color("7fd8ff")
+		SKILLS:
+			return Color("c79bff")
+		CLASS, TUTORIAL:
+			return Color("ffd84f")
+		RELIC:
+			return Color("ff8ad8")
+		LEADER:
+			return Color("7fd8ff")
+		SAVES:
+			return Color("c9d3f0")
+	return acc
+
+
+func _draw_menu_bg(tint: Color) -> void:
+	for i in 20:
+		var f := i / 19.0
+		var c := Color(0.02, 0.025, 0.06).lerp(Color(0.05, 0.07, 0.14), f).lerp(tint, 0.05 + 0.05 * f)
+		draw_rect(Rect2(0, i * 64, 720, 65), c)
+	var gc := Color(tint.r, tint.g, tint.b, 0.045)
+	for gx in range(0, 721, 48):
+		draw_line(Vector2(gx, 0), Vector2(gx, 1280), gc, 1.0)
+	for gy in range(0, 1281, 48):
+		draw_line(Vector2(0, gy), Vector2(720, gy), gc, 1.0)
+	for s in amb:
+		var my := fposmod(float(s[1]) - t * (6.0 + float(s[4]) * 5.0), 1280.0)
+		var ma := 0.15 + 0.25 * absf(sin(t * 0.8 + float(s[3])))
+		draw_rect(Rect2(float(s[0]), my, 3, 3), Color(tint.r, tint.g, tint.b, ma))
+	var sy := fposmod(t * 70.0, 1700.0) - 200.0
+	draw_rect(Rect2(0, sy, 720, 3), Color(tint.r, tint.g, tint.b, 0.07))
+	for i in 8:
+		var a := 0.3 * (1.0 - i / 8.0)
+		draw_rect(Rect2(0, i * 10, 720, 10), Color(0, 0, 0, a))
+		draw_rect(Rect2(0, 1280 - (i + 1) * 10, 720, 10), Color(0, 0, 0, a))
+		draw_rect(Rect2(i * 10, 0, 10, 1280), Color(0, 0, 0, a))
+		draw_rect(Rect2(720 - (i + 1) * 10, 0, 10, 1280), Color(0, 0, 0, a))
+	draw_rect(Rect2(14, 14, 692, 1252), Color(tint.r, tint.g, tint.b, 0.35), false, 2.0)
+	draw_rect(Rect2(22, 22, 676, 1236), Color(tint.r, tint.g, tint.b, 0.14), false, 1.0)
+	var bc := Color(tint.r, tint.g, tint.b, 0.9)
+	for cx in [14.0, 706.0]:
+		for cy in [14.0, 1266.0]:
+			var dx := 36.0 if cx < 360.0 else -36.0
+			var dy := 36.0 if cy < 640.0 else -36.0
+			draw_line(Vector2(cx, cy), Vector2(cx + dx, cy), bc, 4.0)
+			draw_line(Vector2(cx, cy), Vector2(cx, cy + dy), bc, 4.0)
+
+
+func _draw_menu_hero(acc: Color) -> void:
+	for i in 32:
+		var f := i / 31.0
+		var c := Color(0.02, 0.02, 0.07).lerp(Color(0.07, 0.10, 0.22), f).lerp(acc, 0.05)
+		draw_rect(Rect2(0, i * 40, 720, 41), c)
+	for s in amb:
+		var tw := 0.35 + 0.65 * absf(sin(t * float(s[4]) * 0.6 + float(s[3])))
+		var sz := 4.0 if float(s[2]) > 0.8 else 2.0
+		draw_rect(Rect2(float(s[0]), float(s[1]) * 0.55, sz, sz), Color(1, 1, 1, tw * 0.85))
+	var pc := Vector2(570.0, 175.0)
+	var base := Color(0.22, 0.27, 0.5).lerp(acc, 0.3)
+	for dy in range(-84, 84, 6):
+		var half := sqrt(maxf(0.0, 84.0 * 84.0 - float(dy * dy)))
+		var sh := base.lerp(Color.WHITE, 0.22 if dy < -30 else 0.0).lerp(Color.BLACK, 0.35 if dy > 30 else 0.0)
+		draw_rect(Rect2(pc.x - half, pc.y + dy, half * 2.0, 6), sh)
+	for cr in [Vector2(-30, -20), Vector2(20, 10), Vector2(-10, 40), Vector2(40, -40)]:
+		draw_rect(Rect2(pc.x + cr.x, pc.y + cr.y, 14, 8), Color(0, 0, 0, 0.22))
+	draw_arc(pc, 108.0, 3.4, 6.0, 40, Color(acc.r, acc.g, acc.b, 0.4), 4.0)
+	var mods := [[312, 700, 96, 580], [232, 820, 80, 460], [408, 780, 88, 500], [160, 960, 72, 320], [496, 900, 80, 380], [88, 1060, 72, 220], [576, 1020, 64, 260], [0, 1140, 88, 140], [640, 1100, 80, 180]]
+	for m in mods:
+		var mx: int = m[0]
+		var my: int = m[1]
+		var mw: int = m[2]
+		var mh: int = m[3]
+		draw_rect(Rect2(mx, my, mw, mh), Color(0.05, 0.07, 0.14, 0.95))
+		draw_rect(Rect2(mx, my, mw, 4), Color(acc.r, acc.g, acc.b, 0.55))
+		draw_rect(Rect2(mx + mw - 4, my, 4, mh), Color(0, 0, 0, 0.35))
+		for wy in range(my + 18, my + mh - 10, 26):
+			for wx in range(mx + 12, mx + mw - 14, 20):
+				var k := (int(wx / 20) * 7 + int(wy / 26) * 13) % 5
+				if k < 2:
+					var fl := fmod(t * 0.6 + float(wx) * 0.013 + float(wy) * 0.007, 4.0) < 0.12
+					if not fl:
+						draw_rect(Rect2(wx, wy, 9, 12), Color(1.0, 0.85, 0.45, 0.55) if k == 0 else Color(acc.r, acc.g, acc.b, 0.5))
+	draw_rect(Rect2(358, 620, 4, 80), Color(0.1, 0.12, 0.22))
+	if fmod(t, 1.4) < 0.6:
+		draw_rect(Rect2(352, 608, 16, 16), Color(1, 0.2, 0.2, 0.25))
+		draw_rect(Rect2(356, 612, 8, 8), Color(1, 0.3, 0.3, 0.95))
+	for i in 10:
+		draw_rect(Rect2(0, 960 + i * 32, 720, 33), Color(0.01, 0.02, 0.05, 0.05 + 0.06 * i))
+
+
 func _draw_overlay(acc: Color) -> void:
-	draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
+	if state == MODE:
+		_draw_menu_hero(acc)
+	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC]:
+		_draw_menu_bg(_menu_tint(acc))
+	else:
+		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
 	if state == INV:
 		_draw_inv(acc)
 	elif state == SKILLS:
@@ -4018,6 +4155,7 @@ func _draw_overlay(acc: Color) -> void:
 			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
 			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
 		_button(btn_saves, "SAVES", Color("c9d3f0"), 24, "save")
+		_button(btn_font, "TEXT: " + ["PIXEL", "MIXED", "CLEAR"][font_mode], Color("c9d3f0"), 24)
 		var bt := get_node_or_null("/root/Boot")
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
