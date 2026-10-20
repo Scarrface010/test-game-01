@@ -109,6 +109,8 @@ var inv: Array[String] = []
 var aim := -1
 var boost := 0
 var act_cd := 0
+var station_uses := 0
+const STATION_USES := 3
 var act_free := 0
 var act_stance := 0
 var act_rico := false
@@ -217,7 +219,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -1847,6 +1849,42 @@ func _act_selftest() -> void:
 	if act_stance != 1 or hp != hp_max:
 		bad += 1
 		print("STANCE FAIL ", act_stance, " ", hp)
+	mode = "adv"
+	cls = "scout"
+	_new_run(7)
+	state = PLAY
+	mons.clear()
+	haz.clear()
+	spikes.clear()
+	items.clear()
+	coin_at.clear()
+	var sa := pos
+	var sb := Vector2i(-1, -1)
+	for dv in TDIRS:
+		var nb: Vector2i = sa + dv
+		if _aopen(nb) and not vaults.has(nb) and nb != stairs:
+			sb = nb
+			break
+	if sb.x < 0:
+		print("STATION TEST SKIPPED (no open neighbour)")
+	else:
+		stations[sa] = true
+		stations[sb] = true
+		station_uses = 0
+		for i in 5:
+			oxy = oxy_max - 20.0
+			_adv_step(sb if i % 2 == 0 else sa, true)
+			var full := oxy >= oxy_max - 0.01
+			var want := i < 3
+			if full != want or station_uses != mini(i + 1, 3):
+				bad += 1
+				print("STATION FAIL step ", i, " full=", full, " uses=", station_uses)
+		station_uses = 0
+		oxy = oxy_max
+		_adv_step(sb, true)
+		if station_uses != 0:
+			bad += 1
+			print("STATION FAIL: use spent with full air")
 	print("ACT TEST DONE bad=", bad)
 
 
@@ -3200,7 +3238,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "CLASS POWERS", "ti": 0, "s": [["pcls:scout", "Deep Breath"], ["pcls:brute", "Iron Stance"], ["pcls:mystic", "Hex Pulse"], ["pcls:gambler", "Reshuffle"], ["pcls:gunslinger", "Ricochet"]],
 		"x": "Every class has one ACTIVE power: the coloured button right of your tool bar. It shows READY or the steps left to recharge.\n\nScout, Deep Breath: +10 air, next 8 steps cost no air.\nBrute, Iron Stance: blocks the next 2 hits, +3 attack until your next kill.\nMystic, Hex Pulse: stuns enemies within 3 tiles for 3 steps (not bosses or turrets).\nGambler, Reshuffle: rerolls all your tools.\nGunslinger, Ricochet: your next shot bounces to a second enemy within 3 tiles (needs a ranged weapon).\n\nRecharge: 40 / 30 / 35 / 50 / 25 steps, in that order."},
 		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\n\nO2 stations refill you completely, as often as you like. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\n\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
+		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\n\nO2 stations refill you completely, but only 3 times per floor and only when you are missing air (or health, with the Recycler skill). A spent station goes dark. They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\n\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
 		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
 		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\n\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage.\n\nA killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind."},
 		{"t": "RANGED WEAPONS", "ti": 1, "s": [["icon:crate_weapon", "Blaster"], ["mon:1:3:none:g", "Target"]],
@@ -4889,7 +4927,7 @@ var sk_defs: Dictionary = {}
 var sk_adj: Dictionary = {}
 var sk_edges: Array = []
 var btn_skill := Rect2(486, 20, 100, 46)
-var btn_sk_buy := Rect2(500, 972, 180, 64)
+var btn_sk_buy := Rect2(500, 962, 180, 44)
 var btn_sk_respec := Rect2(40, 1150, 310, 64)
 var btn_sk_close := Rect2(380, 1150, 300, 64)
 const SK_C := Vector2(360, 640)
@@ -5103,7 +5141,7 @@ func _skill_input(p: Vector2) -> void:
 func _draw_skills(acc: Color) -> void:
 	_txt("SKILL WEB", Vector2(0, 130), 52, acc)
 	var nxt := (level / 3 + 1) * 3
-	_txt("Points: %d      next at level %d" % [skill_pts, nxt], Vector2(0, 178), 26, Color("ffd84f") if skill_pts > 0 else Color(1, 1, 1, 0.7))
+	_txt("Points: %d      next at level %d      Coins: %d" % [skill_pts, nxt, coins], Vector2(0, 178), 26, Color("ffd84f") if skill_pts > 0 else Color(1, 1, 1, 0.7))
 	for e in sk_edges:
 		var pa: Vector2 = sk_defs[e[0]]["pos"]
 		var pb: Vector2 = sk_defs[e[1]]["pos"]
@@ -5146,7 +5184,7 @@ func _draw_skills(acc: Color) -> void:
 			var pc := c + Vector2(-6.0 + 12.0 * k, rad + 11.0)
 			draw_circle(pc, 3.5, col if rk > k else Color(1, 1, 1, 0.2))
 	# detail panel
-	draw_rect(Rect2(30, 960, 660, 100), Color(1, 1, 1, 0.05))
+	draw_rect(Rect2(30, 956, 660, 178), Color(1, 1, 1, 0.05))
 	if sk_sel == "":
 		_txt("Tap a node to inspect it. Paths grow outward from the centre; the diamonds at the ends are the strongest.", Vector2(46, 1000), 20, Color(1, 1, 1, 0.6), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 	else:
@@ -5154,21 +5192,27 @@ func _draw_skills(acc: Color) -> void:
 		var sc: Color = sd["col"]
 		var srk := sk_rank(sk_sel)
 		_txt(String(sd["name"]) + ("   KEYSTONE" if bool(sd["key"]) else "") + "   %d/2" % srk, Vector2(46, 992), 26, sc, 450.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_txt("Rank 1: " + sk_text(sk_sel, 1), Vector2(46, 1022), 17, Color.WHITE if srk >= 1 else Color(1, 1, 1, 0.7), 450.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_txt("Rank 2: " + sk_text(sk_sel, 2), Vector2(46, 1046), 17, Color.WHITE if srk >= 2 else Color(1, 1, 1, 0.7), 450.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var warn := ""
 		if srk >= 2:
-			_txt("MAXED", Vector2(500, 1004), 28, sc, 180.0, HORIZONTAL_ALIGNMENT_CENTER)
+			_txt("MAXED", Vector2(500, 994), 28, sc, 180.0, HORIZONTAL_ALIGNMENT_CENTER)
 		else:
-			_button(btn_sk_buy, ("UPGRADE  (%d pt)" % sk_cost(sk_sel)) if sk_can_buy(sk_sel) else "LOCKED", sc if sk_can_buy(sk_sel) else Color(1, 1, 1, 0.35), 20)
+			_button(btn_sk_buy, ("UPGRADE  (%d pt)" % sk_cost(sk_sel)) if sk_can_buy(sk_sel) else "LOCKED", sc if sk_can_buy(sk_sel) else Color(1, 1, 1, 0.35), 19)
 			if not sk_unlocked(sk_sel):
-				_txt("Needs a connected node first" if not bool(sd["key"]) else "Needs an outer node at rank 2", Vector2(46, 1078), 16, Color("ff9a8a"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+				warn = "Needs a connected node first" if not bool(sd["key"]) else "Needs an outer node at rank 2"
 			elif skill_pts < sk_cost(sk_sel):
-				_txt("Not enough skill points", Vector2(46, 1078), 16, Color("ff9a8a"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+				warn = "Not enough skill points"
+		var ry := 1022.0
+		if warn != "":
+			_txt(warn, Vector2(46, 1016), 16, Color("ff9a8a"), 450.0, HORIZONTAL_ALIGNMENT_LEFT)
+			ry = 1044.0
+		for rk2 in [1, 2]:
+			var rtxt := "Rank %d: %s" % [rk2, sk_text(sk_sel, rk2)]
+			_para(rtxt, Vector2(46, ry), 18, Color.WHITE if srk >= rk2 else Color(1, 1, 1, 0.7), 620.0)
+			ry += font.get_multiline_string_size(rtxt, HORIZONTAL_ALIGNMENT_LEFT, 620.0, 18).y + 4.0
 	var armed := t - sk_armed < 3.0
 	var rc := sk_respec_cost()
 	_button(btn_sk_respec, "TAP AGAIN: -%d" % rc if armed else "RESPEC (%d coins)" % rc, Color("ff8a8a") if armed else (Color("ffc93c") if coins >= rc and skill_spent() > 0 else Color(1, 1, 1, 0.35)), 20)
 	_button(btn_sk_close, "CLOSE", acc, 24)
-	_txt("Coins: %d" % coins, Vector2(0, 1118), 22, Color("ffc93c"))
 
 
 func _make_gear() -> void:
@@ -5587,6 +5631,7 @@ func _adv_begin() -> void:
 	pops.clear()
 	adv_pts = 0
 	adv_steps = 0
+	station_uses = 0
 	scan_steps = 0
 	oxy_max = adv_oxy_max()
 	oxy = oxy_max
@@ -5961,15 +6006,25 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		_pop(pos, "+%d loot" % lc, Color("ffc93c"))
 		snd = "coin"
 	if moved and stations.has(pos):
-		if sk("stationheal") > 0.0 and hp < hp_cap():
-			var sh2 := maxi(1, int(hp_cap() * sk("stationheal") / 100.0))
-			hp = mini(hp_cap(), hp + sh2)
-			_pop(pos, "+%d HP" % sh2, Color("ff8a9a"))
-		if oxy < oxy_max - 0.5:
-			msg = "O2 station: air fully restored"
-			_pop(pos, "AIR FULL", Color("7fd8ff"))
-			snd = "lamp"
-		oxy = oxy_max
+		var need_air := oxy < oxy_max - 1.5
+		var need_hp := sk("stationheal") > 0.0 and hp < hp_cap()
+		if need_air or need_hp:
+			if station_uses >= STATION_USES:
+				msg = "O2 station is spent: it only works %d times per floor" % STATION_USES
+				snd = "blocked"
+			else:
+				station_uses += 1
+				var uses_left := STATION_USES - station_uses
+				if need_hp:
+					var sh2 := maxi(1, int(hp_cap() * sk("stationheal") / 100.0))
+					hp = mini(hp_cap(), hp + sh2)
+					_pop(pos, "+%d HP" % sh2, Color("ff8a9a"))
+					msg = "O2 station: health restored (%d uses left)" % uses_left
+				if need_air:
+					oxy = oxy_max
+					msg = "O2 station: air fully restored (%d uses left)" % uses_left
+					_pop(pos, "AIR FULL", Color("7fd8ff"))
+				snd = "lamp"
 	if scan_steps > 0:
 		scan_steps -= 1
 	_adv_update_vis()
@@ -6945,6 +7000,12 @@ func _draw_med(ctr: Vector2) -> void:
 
 
 func _draw_station(ctr: Vector2) -> void:
+	_draw_station_base(ctr)
+	if station_uses >= STATION_USES:
+		draw_circle(ctr, AC * 0.38, Color(0.03, 0.04, 0.08, 0.55))
+
+
+func _draw_station_base(ctr: Vector2) -> void:
 	var pc := Color("7fd8ff")
 	var fl := 0.5 + 0.5 * sin(t * 3.0)
 	var flick := 0.85 + 0.15 * sin(t * 17.0) * sin(t * 5.3)
