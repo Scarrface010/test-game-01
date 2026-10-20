@@ -1,5 +1,5 @@
 extends Node
-# Boot stub (Android self-update). Loads a previously downloaded update pack, starts the game,
+# Boot autoload (Android self-update). Loads a previously downloaded update pack before the game scene loads,
 # then checks for a newer pack. Packs are only accepted if their RSA-SHA256 signature matches PUBLIC_KEY.
 const BASE_URL := "https://scarrface010.github.io/test-game-01/"
 const BASE_VERSION := 1
@@ -20,7 +20,6 @@ func _ready() -> void:
 	if android and FileAccess.file_exists(PACK) and _stored_ver() > BASE_VERSION:
 		if not ProjectSettings.load_resource_pack(PACK, true):
 			DirAccess.remove_absolute(PACK)
-	get_tree().change_scene_to_file.call_deferred("res://main.tscn")
 	if android:
 		_check.call_deferred()
 
