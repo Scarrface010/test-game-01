@@ -140,7 +140,7 @@ var relic_choices: Array = []
 var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
-var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0}
+var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0, "suit": 0, "tank": 0, "vet": 0}
 # Shop v2 (unlocks only). The old stat-boost shop is refunded once, using these old prices.
 const OLD_SHOP_COSTS := {"vet": [15, 35, 60], "iron": [20, 40, 70], "packed": [45], "lucky": [50], "pockets": [40, 90], "treasure": [25, 55, 100], "oil": [25, 50, 85], "toolbox": [30, 70], "gate": [60, 120], "steel": [35], "haggle": [30], "head": [75, 150], "ash": [120], "interest": [40, 80, 130], "kit": [40, 90]}
 # Drop-pool packs: traits and relics that stay out of drops until the pack is bought.
@@ -168,6 +168,13 @@ var adv_steps := 0
 var adv_seed := 0
 var cam := Vector2.ZERO
 var scan_steps := 0
+var mirror_n := 0      # Mirror Shard: hits left to reflect
+var lucky_n := 0       # Lucky Coin: coins left that pay double
+var bounty_n := 0      # Bounty Chip: kills left that pay coins
+var oil_steps := 0     # Lantern Oil: steps of extra sight left
+var decoy_steps := 0   # Decoy Beacon: steps left
+var decoy_c := Vector2i(-1, -1)
+var rw_hist: Array = []   # Rewind Device: last positions, health and air
 var scan_r := 0
 var xp := 0
 var bag: Array[String] = []
@@ -256,7 +263,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 21
+const BUILD := 22
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -270,7 +277,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "pick_n", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "pick_n", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -565,6 +572,12 @@ func _make_defs() -> void:
 		"plate": {"name": "Plating Kit", "desc": "+1 armour for the rest of the run", "col": Color("c9d3f0"), "adv": true},
 		"scan": {"name": "Pulse Scanner", "desc": "Reveals the map around you", "col": Color("5fe0b0"), "adv": true},
 		"ration": {"name": "Ration Pack", "desc": "Heals 40% health and gives +15 air", "col": Color("ffb347"), "adv": true},
+		"decoy": {"name": "Decoy Beacon", "desc": "Place a decoy up to 6 tiles away: monsters chase it instead of you for 8 steps", "col": Color("ffb347"), "adv": true},
+		"foam": {"name": "Foam Canister", "desc": "Smothers every spike and hazard within 2 tiles", "col": Color("e8f4ff"), "adv": true},
+		"frost": {"name": "Frost Charge", "desc": "Stuns every enemy within 2 tiles for 4 steps", "col": Color("9fe8ff"), "adv": true},
+		"grapple": {"name": "Grapple Hook", "desc": "Zip along a straight, clear line of up to 7 tiles in a single step", "col": Color("c9d3f0"), "adv": true},
+		"mirror": {"name": "Mirror Shard", "desc": "Reflects the next hit you take back at the attacker", "col": Color("c8f1ff"), "adv": true},
+		"rewind": {"name": "Rewind Device", "desc": "Return to where you stood 8 steps ago and recover the health and air lost since", "col": Color("c07cff"), "adv": true},
 	}
 	class_defs = [
 		{"id": "scout", "name": "Scout", "desc": "The dark waits +1 step per ring. Starts with a Blink Scroll and a Time Crystal.", "col": Color("4fd1ff"), "lvl": 0, "per": 1, "kit": ["blink", "crystal"]},
@@ -581,18 +594,21 @@ func _make_defs() -> void:
 		"market": {"name": "Merchant", "desc": "Spend your run coins on tools, then continue to a normal floor.", "col": Color("c07cff")},
 	}
 	shop_defs = [
-		{"id": "c_brute", "name": "Brute Class", "desc": "Unlock the Brute: +2 levels, starts with a Bomb", "costs": [30]},
-		{"id": "c_mystic", "name": "Mystic Class", "desc": "Unlock the Mystic: shield each floor, +1 slot", "costs": [50]},
-		{"id": "c_gunslinger", "name": "Gunslinger Class", "desc": "Unlock the Gunslinger: starts with two Zap Rods", "costs": [60]},
-		{"id": "c_gambler", "name": "Gambler Class", "desc": "Unlock the Gambler: 2 random relics, 4 cards", "costs": [80]},
-		{"id": "kit", "name": "Starter Kit", "desc": "Adventure: begin each run with random starter gear", "costs": [40, 90]},
-		{"id": "toolbox", "name": "Toolbox", "desc": "Start every run with a random tool", "costs": [30, 70]},
-		{"id": "p_elem", "name": "Elemental Pack", "desc": "8 fire, shock, cryo and toxic traits + 4 relics", "costs": [70]},
-		{"id": "p_blood", "name": "Bloodthirst Pack", "desc": "5 heal, execute and kill traits + 3 relics", "costs": [60]},
-		{"id": "p_combo", "name": "Combo Pack", "desc": "5 streak, crit and XP traits + 1 relic", "costs": [60]},
-		{"id": "p_relic", "name": "Relic Cache", "desc": "7 utility relics join the relic pool", "costs": [50]},
-		{"id": "head", "name": "Head Start", "desc": "Begin every run with a random relic", "costs": [75]},
-		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [120]},
+		{"id": "c_brute", "name": "Brute Class", "desc": "Unlock the Brute: +2 levels, starts with a Bomb", "costs": [45]},
+		{"id": "c_mystic", "name": "Mystic Class", "desc": "Unlock the Mystic: shield each floor, +1 slot", "costs": [75]},
+		{"id": "c_gunslinger", "name": "Gunslinger Class", "desc": "Unlock the Gunslinger: starts with two Zap Rods", "costs": [90]},
+		{"id": "c_gambler", "name": "Gambler Class", "desc": "Unlock the Gambler: 2 random relics, 4 cards", "costs": [120]},
+		{"id": "kit", "name": "Starter Kit", "desc": "Adventure: begin each run with random starter gear", "costs": [80, 180]},
+		{"id": "toolbox", "name": "Toolbox", "desc": "Start every run with a random tool", "costs": [60, 140]},
+		{"id": "p_elem", "name": "Elemental Pack", "desc": "8 fire, shock, cryo and toxic traits + 4 relics", "costs": [40]},
+		{"id": "p_blood", "name": "Bloodthirst Pack", "desc": "5 heal, execute and kill traits + 3 relics", "costs": [35]},
+		{"id": "p_combo", "name": "Combo Pack", "desc": "5 streak, crit and XP traits + 1 relic", "costs": [35]},
+		{"id": "p_relic", "name": "Relic Cache", "desc": "7 utility relics join the relic pool", "costs": [30]},
+		{"id": "head", "name": "Head Start", "desc": "Begin every run with a random relic", "costs": [150]},
+		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [240]},
+	{"id": "suit", "name": "Reinforced Suit", "desc": "Adventure: +4 starting max health per rank", "costs": [60, 120, 200]},
+	{"id": "tank", "name": "Spare Tank", "desc": "Adventure: +8 starting air per rank", "costs": [50, 100, 170]},
+	{"id": "vet", "name": "Veteran Training", "desc": "Adventure: start each run 1 level higher per rank", "costs": [90, 180, 300]},
 	]
 
 
@@ -656,7 +672,7 @@ func cdef() -> Dictionary:
 
 
 func start_lvl() -> int:
-	return START_LEVEL + relic_n("vanguard") + 3 * relic_n("glass") + int(cdef()["lvl"])
+	return START_LEVEL + (up("vet") if mode == "adv" else 0) + relic_n("vanguard") + 3 * relic_n("glass") + int(cdef()["lvl"])
 
 
 func pot_g() -> int:
@@ -673,7 +689,7 @@ func lamp_amt() -> int:
 		base = 12
 	elif relic_n("lantern") > 0:
 		base = 8
-	return base + int(sk("lamp"))
+	return base + int(sk("lamp")) + (3 if oil_steps > 0 else 0)
 
 
 func spike_x() -> int:
@@ -1730,8 +1746,8 @@ func _act_tick() -> void:
 func _act_rect() -> Rect2:
 	var sy := 1046.0 if mode == "adv" else 982.0
 	var x0 := 40.0 + slots_n() * 118.0
-	if 680.0 - x0 >= 110.0:
-		return Rect2(x0, sy, 680.0 - x0, 62.0)
+	if 616.0 - x0 >= 110.0:
+		return Rect2(x0, sy, 616.0 - x0, 62.0)
 	return Rect2(40.0, sy + 64.0, 640.0, 30.0)
 
 
@@ -2345,6 +2361,10 @@ func _new_run(start_floor := 1) -> void:
 	floor_n = start_floor
 	coins = 0
 	run_banked = 0
+	mirror_n = 0
+	lucky_n = 0
+	bounty_n = 0
+	oil_steps = 0
 	relics.clear()
 	inv.clear()
 	act_cd = 0
@@ -3259,6 +3279,18 @@ func _draw_saves(acc: Color) -> void:
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
 
 
+func _sk_banner() -> void:
+	var k := t - sk_ban_t0
+	if sk_ban_n <= 0 or k < 0.0 or k > 4.0:
+		return
+	var a := minf(1.0, minf(k / 0.4, (4.0 - k) / 0.6))
+	var br := Rect2(110, 352, 500, 84)
+	draw_rect(br, Color(0.05, 0.06, 0.1, 0.88 * a))
+	draw_rect(br, Color(1.0, 0.85, 0.31, a), false, 3.0)
+	_ctext("+%d SKILL POINT%s" % [sk_ban_n, "S" if sk_ban_n > 1 else ""], br.get_center() + Vector2(0, -12), 30, Color(1.0, 0.85, 0.31, a))
+	_ctext("Tap SKILLS to spend it", br.get_center() + Vector2(0, 20), 20, Color(1, 1, 1, 0.85 * a))
+
+
 func _wbox_info(r: bool) -> Array:
 	var sv := shooting
 	shooting = r
@@ -3605,7 +3637,7 @@ func _draw_lb(acc: Color) -> void:
 
 func _tut_shop_page() -> Dictionary:
 	return {"t": "THE SHOP", "ti": 0, "s": [["pcls:gambler", "Classes"], ["use:bomb", "Loadouts"], ["item:big", "Packs"], ["item:shield", "Head starts"]],
-	"x": "Coins from a run are banked when it ends. Spend them in the SHOP (menu or class screen). It only UNLOCKS things: no permanent stat boosts.\n\nClasses: Scout is free, the other four are bought once.\nLoadouts: Starter Kit and Toolbox give free starting gear and tools.\nPacks: Elemental, Bloodthirst, Combo and Relic Cache add traits and relics to your rolls.\nHead starts: Head Start gives a relic each run, Phoenix Ash a Phoenix Feather."}
+	"x": "Coins from a run are banked when it ends. Spend them in the SHOP (menu or class screen). It unlocks classes, packs and starts, and Suit, Tank and Veteran give small permanent boosts for Adventure.\n\nClasses: Scout is free, the other four are bought once.\nLoadouts: Starter Kit and Toolbox give free starting gear and tools.\nPacks: Elemental, Bloodthirst, Combo and Relic Cache add traits and relics to your rolls.\nHead starts: Head Start gives a relic each run, Phoenix Ash a Phoenix Feather."}
 
 
 func _tut_saves_page() -> Dictionary:
@@ -3662,10 +3694,10 @@ func _tut_pages(which: int) -> Array:
 		"x": "HP is your health: reach 0 and you die. A medkit heals 40%.\n\nArmour reduces every hit you take by its value (always at least 1). Each plate you find adds +1 permanently.\n\nShield is a separate bar that soaks damage before your HP does."},
 		{"t": "LEVELS AND XP", "ti": 1, "s": [["item:pot", "Potion"], ["item:big", "Overcharged"], ["use:draught", "Elixir"], ["icon:vault", "Vault"]],
 		"x": "Kills, potions, elixirs and vaults give XP. Each level adds attack and max health, and your level stays with you for the whole run.\n\nEvery 3rd level you also earn a SKILL POINT (a gold +1 SKILL POINT pops up). Spend it in the SKILL WEB.\n\nMonsters grow stronger with depth, so keep levelling and upgrade your gear to keep up."},
-		{"t": "SKILL WEB", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Oxygen"], ["skn:2", "Offense"], ["skn:3", "Tech"], ["skn:4", "Fortune"]],
-		"x": "Tap SKILLS at the top of the screen (it turns gold when you have points). The web has five branches of six nodes, and every node has two ranks that get stronger.\n\nYou earn 1 point every 3 levels. A normal node costs 1 point per rank. The first node of each branch is always open; any other node opens once a node next to it has a rank. The outer KEY node costs 2 points and needs the node before it at rank 2.\n\nTap a node to read it, then tap BUY. RESPEC takes every point back for coins (100, plus 20 per point spent): tap it twice to confirm."},
-		{"t": "SKILL BRANCHES", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Oxygen"], ["skn:2", "Offense"], ["skn:3", "Tech"], ["skn:4", "Fortune"]],
-		"x": "Vitality: max health, armour, shield, medkits, less shot damage, Last Stand.\n\nOxygen: more air, cheaper steps and shots, bigger air pods, healing O2 stations, Second Wind.\n\nOffense: attack, crit chance and damage, lifesteal, finishers, ranged damage.\n\nTech: tool slots, sight, XP, dodge, scanner power, free tools each floor.\n\nFortune: coin value, gear drops, cheaper shops, coins per kill, potions, lucky XP."},
+		{"t": "SKILL WEB", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Offense"], ["skn:2", "Ranged"], ["skn:3", "Fortune"], ["skn:4", "Tactics"], ["skn:5", "Oxygen"]],
+		"x": "Tap SKILLS at the top of the screen (it turns gold when you have points). The web has six branches of six nodes, and every node has two ranks that get stronger.\n\nYou earn 1 point every 3 levels. A normal node costs 1 point per rank. The first node of each branch is always open; any other node opens once a node next to it has a rank. The outer KEY node costs 2 points and needs the node before it at rank 2.\n\nTap a node to read it, then tap BUY. RESPEC takes every point back for coins (100, plus 20 per point spent): tap it twice to confirm."},
+		{"t": "SKILL BRANCHES", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Offense"], ["skn:2", "Ranged"], ["skn:3", "Fortune"], ["skn:4", "Tactics"], ["skn:5", "Oxygen"]],
+		"x": "Vitality: max health, armour, shield, medkits, thorns, Last Stand.\n\nOffense: melee attack, crit chance and damage, lifesteal, finishers, Berserker.\n\nRanged: ranged damage, max ammo, ammo drops, range, ranged crits, free shots.\n\nFortune: coin value, gear drops, cheaper shops, coins per kill, potions, lucky XP.\n\nTactics: dodge, opening strikes, free steps after kills, tool slots, free tools, Phoenix.\n\nOxygen: more air, cheaper steps, bigger air pods, air from kills, healing O2 stations, Second Wind."},
 		{"t": "ENEMIES", "ti": 2, "s": [["mon:2:4:hunter:a", "Hunter !"], ["mon:2:3:thief:g", "Thief $"], ["mon:2:5:elite:a", "Elite star"], ["boss:2", "Boss"]],
 		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\nElites (gold star) give extra XP and may drop gear.\nShooters (gun icon) keep their distance, line up with you and fire down a lane: break the line or rush them.\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
 		{"t": "AFFIXES", "ti": 2, "s": [["aff:plated", "Plated"], ["aff:regen", "Regenerating"], ["aff:leech", "Leeching"], ["aff:spiny", "Spiny"]],
@@ -3681,7 +3713,7 @@ func _tut_pages(which: int) -> Array:
 		{"t": "RELICS", "ti": 0, "s": [],
 		"x": "After each floor you pick one of three relics (the Gambler sees four). A relic lasts the whole run, and you can skip a choice for a few coins. Some are cursed: strong, but they cost you.\n\nMany relics belong to a family: fire, shock, cryo, toxic, blood, crit and more. They power up weapon traits of the same family. Pyromaniac makes burns last longer and hurt double. Storm Capacitor lets Arc Chain hit three enemies.\n\nSome pairs give an extra SYNERGY bonus when you own both, like Pyromaniac with Storm Capacitor. The Relic Cache pack adds more relics."},
 		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"], ["use:magnet", "Magnet"]], "s2": [["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["use:nano", "Nano Injector"], ["use:cell", "Shield Cell"], ["use:scan", "Scanner"]],
-		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak makes you invisible for 16 steps or until you attack, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP, Nano Injector heals fully, Shield Cell refills your shield, Scanner reveals the map.\n\nAlso: Plating Kit (+1 armour) and Ration Pack (heals 40%, +15 air). A key opens a vault. Tools are used up; your class power recharges."},
+		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak makes you invisible for 16 steps or until you attack, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP, Nano Injector heals fully, Shield Cell refills your shield, Scanner reveals the map.\n\nAlso: Plating Kit (+1 armour) and Ration Pack (heals 40%, +15 air). Newer tools: Decoy Beacon (monsters chase it), Foam Canister (smothers hazards), Frost Charge (stuns nearby enemies), Grapple Hook (zip along a straight line), Mirror Shard (reflects the next hit) and Rewind Device (back 8 steps). A key opens a vault. Tools are used up; your class power recharges."},
 		{"t": "THE BAG", "ti": 0, "s": [["item:lamp", "Scanner"], ["item:coin", "Coin"]],
 		"x": "Tap BAG (top right) to see everything: STATS, TOOLS, RELICS, GEAR and PACK, each with a description. You can also leave the match from there with BACK TO MENU. The SKILLS button sits beside it.\n\nScanners reveal the map around you. After each floor you pick a relic that lasts the run, and your coins are banked to spend in the SHOP."},
 		_tut_shop_page(),
@@ -4563,7 +4595,7 @@ func adv_vis_r() -> int:
 
 
 func adv_oxy_max() -> float:
-	return 90.0 + 10.0 * int(cdef()["per"]) + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air") + 10.0 * float(pk.get("air", 0))
+	return 90.0 + 10.0 * int(cdef()["per"]) + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air") + 10.0 * float(pk.get("air", 0)) + 2.0 * float(level - START_LEVEL) + 8.0 * float(up("tank"))
 
 
 func adv_pod_amt() -> float:
@@ -5137,6 +5169,12 @@ func _adv_gen() -> void:
 			if lc.x >= 0:
 				items[lc] = "lamp"
 				pts += 2
+		if not is_start and rng.randf() < 0.16:
+			var xc := _adv_pick(rng, r, false, taken)
+			if xc.x >= 0:
+				var xpool := ["shieldbattery", "shieldbattery", "luckycoin", "luckycoin", "bounty", "bounty", "lanternoil", "lanternoil", "idol", "shrine", "shrine", "heartcell"]
+				items[xc] = String(xpool[rng.randi() % xpool.size()])
+				pts += 2
 		if rng.randf() < 0.22:
 			var tc := _adv_pick(rng, r, false, taken)
 			if tc.x >= 0:
@@ -5251,7 +5289,7 @@ func _adv_gen() -> void:
 		var raw := 1 + d / 10 + rng.randi_range(0, 1)
 		lvls.append({"c": c, "lv": _adv_scaled(raw)})
 	lvls.sort_custom(func(a, b): return int(a["lv"]) < int(b["lv"]))
-	var budget := level + 1
+	var budget := level + 1 + floor_n / 6
 	for k in lvls.size():
 		var e: Dictionary = lvls[k]
 		var lv2: int = maxi(1, mini(int(e["lv"]), budget + k / 2 + 1))
@@ -5302,15 +5340,15 @@ func armor_total() -> int:
 
 
 func p_atk() -> int:
-	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0))
+	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0)) + (int(sk("berserk")) if hp * 2 < hp_cap() else 0)
 
 
 func _ranged_atk() -> int:
-	return 1 + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("rng", 0)) + (3 if cls == "gunslinger" else 0)
+	return 1 + (level - START_LEVEL) / 2 + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("rng", 0)) + (3 if cls == "gunslinger" else 0)
 
 
 func ammo_max() -> int:
-	return 12 + 4 * int(pk.get("ammo", 0))
+	return 12 + 4 * int(pk.get("ammo", 0)) + int(sk("ammomax"))
 
 
 func _roll_picks() -> void:
@@ -5382,7 +5420,7 @@ func _aff_pill(p: Vector2, key: String, fs: int, right: bool) -> void:
 func mon_atk(c: Vector2i) -> int:
 	var a := maxi(1, _mon_level(c))
 	if mode == "adv":
-		a += armor_total() / 3
+		a += armor_total() / 3 + floor_n / 10
 		if _is_frenzied(c):
 			a += maxi(2, a / 2)
 	return a
@@ -5395,7 +5433,7 @@ func mon_hp_max(c: Vector2i) -> int:
 	if boss_floor and c == boss_cell:
 		h = int(h * 1.6)
 	if mode == "adv":
-		h = int(h * (1.0 + minf(0.5, 0.03 * float(threat()))))
+		h = int(h * (1.0 + minf(0.6, 0.03 * float(threat()))) * (1.0 + 0.02 * float(floor_n)))
 	return h
 
 
@@ -5443,22 +5481,31 @@ func _adv_mname(c: Vector2i) -> String:
 
 func _adv_level_up(n: int, pick := false) -> void:
 	var old := level
+	var oh := hp_cap()
+	var oo := oxy_max
 	level += n
-	var ph := 2 if pick else 3
-	hp_max += ph * n
-	hp += ph * n
-	if pick:
-		pick_n += n
+	hp_max += 3 * n
+	_adv_apply_change(oh, oo)
 	var got := 0
 	for l in range(old + 1, level + 1):
 		if l % 3 == 0:
 			got += 1
 	if got > 0:
 		skill_pts += got
-		_pop(pos, "+%d SKILL POINT" % got, Color("ffd84f"))
+		sk_ban_n = got
+		sk_ban_t0 = t + 1.0
 
 
 func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
+	if mirror_n > 0:
+		mirror_n -= 1
+		_pop(pos, "REFLECT", Color("c8f1ff"))
+		_fx_ring(vis_pos, Color("c8f1ff"), 1.2, 0.4, 5.0)
+		msg += "   Mirror Shard reflects %s!" % who
+		_sfx("shield")
+		if mons.has(src):
+			_adv_damage_mon(src, a)
+		return true
 	if randf() * 100.0 < dodge_chance():
 		_pop(pos, "DODGE", Color("9fe8ff"))
 		_fx_ring(vis_pos, Color("9fe8ff"), 1.1, 0.35, 3.0)
@@ -5492,6 +5539,8 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	var th := thorns_dmg()
 	if th > 0 and mons.has(src):
 		_adv_damage_mon(src, th)
+	if hp <= 0 and _phoenix():
+		return true
 	if hp <= 0:
 		hp = 0
 		_die("%s was too strong" % who)
@@ -5516,6 +5565,8 @@ func _adv_env_hurt(d: int, text: String, why: String, snd := "spike") -> bool:
 		_shake(4.0, 0.25)
 	msg = text % d
 	_sfx(snd)
+	if hp <= 0 and _phoenix():
+		return true
 	if hp <= 0:
 		hp = 0
 		_die(why)
@@ -5685,7 +5736,7 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 
 
 func crit_chance() -> float:
-	return gear("crit") + sk("crit") + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
+	return gear("crit") + sk("crit") + (sk("rcrit") if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
 
 
 func dodge_chance() -> float:
@@ -5693,7 +5744,7 @@ func dodge_chance() -> float:
 
 
 func thorns_dmg() -> int:
-	return int(gear("thorns")) + ((2 + floor_n / 6) if has_tr("thorned") else 0) + 2 * relic_n("thornmail")
+	return int(gear("thorns")) + int(sk("thorns")) + ((2 + floor_n / 6) if has_tr("thorned") else 0) + 2 * relic_n("thornmail")
 
 
 func _stunned(c: Vector2i) -> bool:
@@ -5781,6 +5832,8 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 	add += mini(4, tag_kinds()) * relic_n("prism")
 	if sk("finish") > 0.0 and mon_hp_now(c) * 2 <= mon_hp_max(c):
 		mul += sk("finish") / 100.0
+	if sk("opener") > 0.0 and mon_hp_now(c) >= mon_hp_max(c):
+		mul += sk("opener") / 100.0
 	var d := maxi(1, int(round(float(dmg + add) * mul)))
 	if String(affix.get(c, "")) == "plated":
 		d = maxi(1, d - 2 - floor_n / 8)
@@ -5960,6 +6013,10 @@ var skills: Dictionary = {}    # node id -> rank (0-2)
 var skill_pts := 0
 var sk_sel := ""
 var sk_wind := false           # Second Wind used this floor
+var sk_phx := false            # Phoenix used this run
+var sk_ban_n := 0
+var sk_ban_t0 := -100.0
+var mom_steps := 0             # Momentum: free steps left
 var sk_armed := -10.0
 var sk_defs: Dictionary = {}
 var sk_adj: Dictionary = {}
@@ -5968,36 +6025,31 @@ var btn_skill := Rect2(486, 20, 100, 46)
 var btn_sk_buy := Rect2(500, 962, 180, 44)
 var btn_sk_respec := Rect2(40, 1150, 310, 64)
 var btn_sk_close := Rect2(380, 1150, 300, 64)
-const SK_C := Vector2(360, 640)
+const SK_C := Vector2(360, 620)
+const SK_N := 6
+const SK_A0 := -75.0
 const SK_BR := [
 	["VITALITY", Color("ff6a5c"), [
 		["Sturdy Frame", "+%s max health", "hp", [5, 10]],
 		["Plating", "+%s armour", "armor", [1, 2]],
 		["Field Generator", "+%s starting shield", "shield", [4, 8]],
 		["Trauma Kit", "Medkits heal %s%% more", "medk", [25, 50]],
-		["Deflector", "Enemy shots deal %s less damage", "rdef", [1, 2]],
+		["Spiked Plating", "Enemies that hit you take %s damage", "thorns", [1, 3]],
 		["Last Stand", "Below 30%% health you take %s%% less damage", "laststand", [30, 50]]]],
-	["OXYGEN", Color("7fd8ff"), [
-		["Deep Lungs", "+%s max air", "air", [12, 24]],
-		["Easy Breathing", "%s%% less air used per step", "airsave", [6, 12]],
-		["Pod Boost", "Air pods give %s%% more air", "pod", [25, 50]],
-		["Clean Shots", "Ranged shots cost %s less air", "shotsave", [0.5, 1.0]],
-		["Recycler", "O2 stations also heal %s%% of max health (3 times per floor)", "stationheal", [15, 30]],
-		["Second Wind", "Once per floor, running out of air gives %s air instead", "wind", [15, 30]]]],
 	["OFFENSE", Color("ffb347"), [
-		["Edge", "+%s attack", "atk", [1, 2]],
-		["Precision", "+%s%% crit chance", "crit", [5, 10]],
+		["Edge", "+%s melee attack", "atk", [1, 2]],
+		["Precision", "+%s%% crit chance", "crit", [6, 12]],
 		["Siphon Core", "Heal %s on every hit", "leech", [1, 2]],
 		["Finisher", "+%s%% damage to enemies under half health", "finish", [25, 50]],
-		["Marksman", "+%s damage with ranged weapons", "rdmg", [1, 2]],
+		["Berserker", "+%s attack while under half health", "berserk", [2, 4]],
 		["Overdrive", "Crits deal %s%% more damage", "critmult", [50, 100]]]],
-	["TECH", Color("c07cff"), [
-		["Utility Belt", "+%s tool slot(s)", "slots", [1, 2]],
-		["Sensors", "+%s sight range", "sight", [1, 2]],
-		["Quick Study", "+%s%% XP from everything", "xp", [10, 20]],
-		["Evasion Matrix", "+%s%% dodge chance", "dodge", [4, 8]],
-		["Scanner Boost", "Scanner pulses reveal more (power +%s)", "lamp", [4, 8]],
-		["Quartermaster", "Every new floor starts with %s free random tool(s)", "quarter", [1, 2]]]],
+	["RANGED", Color("6dff9a"), [
+		["Marksman", "+%s damage with ranged weapons", "rdmg", [2, 3]],
+		["Deep Quiver", "+%s max ammo", "ammomax", [4, 8]],
+		["Scavenger", "+%s%% chance for kills to drop ammo", "ammodrop", [20, 40]],
+		["Long Barrel", "+%s shot range", "rrange", [1, 2]],
+		["Hawk Eye", "+%s%% crit chance with ranged weapons", "rcrit", [10, 20]],
+		["Ghost Rounds", "%s%% chance a shot uses no ammo", "noammo", [20, 40]]]],
 	["FORTUNE", Color("ffd84f"), [
 		["Prospector", "Coins are worth +%s each", "coin", [1, 2]],
 		["Salvager", "+%s%% gear drop chance from elites and affixed enemies", "drop", [10, 20]],
@@ -6005,17 +6057,30 @@ const SK_BR := [
 		["Bounty Hunter", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
 		["Alchemy", "XP potions give %s%% more XP", "pot", [25, 50]],
 		["Lucky Day", "%s%% chance for a kill to give double XP", "lucky", [8, 16]]]],
+	["TACTICS", Color("c07cff"), [
+		["Evasion Matrix", "+%s%% dodge chance", "dodge", [5, 10]],
+		["Opening Strike", "+%s%% damage to enemies at full health", "opener", [40, 80]],
+		["Momentum", "After a kill your next %s step(s) cost no air", "momentum", [1, 2]],
+		["Utility Belt", "+%s tool slot(s)", "slots", [1, 2]],
+		["Quartermaster", "Every new floor starts with %s free random tool(s)", "quarter", [1, 2]],
+		["Phoenix", "Once per run, a killing blow leaves you at %s%% health instead", "phoenix", [30, 60]]]],
+	["OXYGEN", Color("7fd8ff"), [
+		["Deep Lungs", "+%s max air", "air", [12, 24]],
+		["Easy Breathing", "%s%% less air used per step", "airsave", [6, 12]],
+		["Pod Boost", "Air pods give %s%% more air", "pod", [25, 50]],
+		["Air Siphon", "Every kill restores %s air", "airkill", [1, 2]],
+		["Recycler", "O2 stations also heal %s%% of max health (3 times per floor)", "stationheal", [15, 30]],
+		["Second Wind", "Once per floor, running out of air gives %s air instead", "wind", [20, 40]]]],
 ]
-
 
 func _make_skills() -> void:
 	sk_defs.clear()
 	sk_adj.clear()
 	sk_edges.clear()
-	var rr := [85.0, 160.0, 160.0, 235.0, 235.0, 305.0]
-	var ph := [0.0, -13.0, 13.0, -9.0, 9.0, 0.0]
-	for b in 5:
-		var th := deg_to_rad(-90.0 + 72.0 * b)
+	var rr := [78.0, 147.0, 147.0, 216.0, 216.0, 280.0]
+	var ph := [0.0, -11.0, 11.0, -8.0, 8.0, 0.0]
+	for b in SK_N:
+		var th := deg_to_rad(SK_A0 + 60.0 * b)
 		var nodes: Array = SK_BR[b][2]
 		for n in 6:
 			var a := th + deg_to_rad(float(ph[n]))
@@ -6024,8 +6089,8 @@ func _make_skills() -> void:
 			sk_defs[id] = {"b": b, "n": n, "name": nd[0], "d": nd[1], "stat": nd[2], "v": nd[3], "key": n == 5, "ring": 1 if n == 0 else (2 if n < 3 else (3 if n < 5 else 4)),
 				"pos": SK_C + Vector2(cos(a), sin(a)) * float(rr[n]), "col": SK_BR[b][1]}
 			sk_adj[id] = []
-	for b in 5:
-		var b2 := (b + 1) % 5
+	for b in SK_N:
+		var b2 := (b + 1) % SK_N
 		for e in [[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 5]]:
 			_sk_link("b%dn%d" % [b, e[0]], "b%dn%d" % [b, e[1]])
 		_sk_link("b%dn2" % b, "b%dn1" % b2)
@@ -6123,6 +6188,17 @@ func crit_mult() -> float:
 	return (3.0 if has_tr("deadly") else 2.0) + sk("critmult") / 100.0
 
 
+func _phoenix() -> bool:
+	if sk("phoenix") <= 0.0 or sk_phx:
+		return false
+	sk_phx = true
+	hp = maxi(1, int(hp_cap() * sk("phoenix") / 100.0))
+	_pop(pos, "PHOENIX", Color("ffb347"))
+	_fx_ring(vis_pos, Color("ffb347"), 1.6, 0.6, 6.0)
+	msg += "   Phoenix! You rise again"
+	return true
+
+
 func _oxy_dead() -> bool:
 	if oxy > 0.0:
 		return false
@@ -6186,12 +6262,14 @@ func _draw_skills(acc: Color) -> void:
 		var on := sk_rank(String(e[0])) > 0 and sk_rank(String(e[1])) > 0
 		var ec: Color = sk_defs[e[0]]["col"]
 		draw_line(pa, pb, Color(ec.r, ec.g, ec.b, 0.8) if on else Color(1, 1, 1, 0.13), 3.0 if on else 2.0)
-	for b in 5:
+	for b in SK_N:
 		var p0: Vector2 = sk_defs["b%dn0" % b]["pos"]
 		var bc: Color = SK_BR[b][1]
 		draw_line(SK_C, p0, Color(bc.r, bc.g, bc.b, 0.8) if sk_rank("b%dn0" % b) > 0 else Color(1, 1, 1, 0.13), 3.0)
-		var th := deg_to_rad(-90.0 + 72.0 * b)
-		_ctext(String(SK_BR[b][0]), SK_C + Vector2(cos(th), sin(th)) * 352.0, 18, bc)
+		var th := deg_to_rad(SK_A0 + 60.0 * b)
+		var lp := SK_C + Vector2(cos(th), sin(th)) * 322.0
+		lp.x = clampf(lp.x, 56.0, 664.0)
+		_ctext(String(SK_BR[b][0]), lp, 18, bc)
 	draw_circle(SK_C, 24.0, Color("0a0c14"))
 	draw_arc(SK_C, 24.0, 0.0, TAU, 24, Color(1, 1, 1, 0.5), 2.0)
 	_ctext("YOU", SK_C, 15, Color(1, 1, 1, 0.75))
@@ -6622,9 +6700,11 @@ func _adv_init_run() -> void:
 	pick_n = 0
 	pick_opts.clear()
 	sk_sel = ""
+	sk_phx = false
+	mom_steps = 0
 	level = start_lvl()
 	xp = 0
-	hp_max = 24 + 3 * (level - START_LEVEL) - (4 if cls == "gunslinger" else 0)
+	hp_max = 24 + 4 * up("suit") + 3 * (level - START_LEVEL) - (4 if cls == "gunslinger" else 0)
 	armor = 1 if cls == "brute" else 0
 	sh = 0
 	equip.clear()
@@ -6650,7 +6730,7 @@ func _adv_gain_xp(n: int) -> void:
 	var gained := 0
 	while xp >= xp_need():
 		xp -= xp_need()
-		_adv_level_up(1, true)
+		_adv_level_up(1)
 		gained += 1
 	if gained > 0:
 		_pop(pos, "LEVEL UP! %d" % level, Color("ffd84f"))
@@ -6669,7 +6749,7 @@ func _adv_relic_applied(id: String) -> void:
 func _adv_scaled(raw: int) -> int:
 	var r := raw + int(round(0.7 * float(level - START_LEVEL)))
 	if raw >= 2:
-		r += (floor_n - 1) / 2
+		r += (floor_n - 1) * 2 / 3
 	else:
 		r += (floor_n - 1) / 4
 	r += relic_n("greedy")
@@ -6699,6 +6779,8 @@ func _adv_begin() -> void:
 	adv_steps = 0
 	station_uses = 0
 	scan_steps = 0
+	decoy_steps = 0
+	rw_hist.clear()
 	oxy_max = adv_oxy_max()
 	oxy = oxy_max
 	adv_seen.fill(0)
@@ -6826,10 +6908,17 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		coins += back
 	var was_elite := elite.has(nc)
 	var was_affix := affix.has(nc)
-	if _weapon_range() > 0 and ammo < ammo_max() and randf() < (0.8 if was_elite else 0.5):
+	var bounty_hit := false
+	if bounty_n > 0 and was_elite:
+		bounty_n -= 1
+		bounty_hit = true
+	if _weapon_range() > 0 and ammo < ammo_max() and randf() < (0.8 if was_elite else 0.5) + sk("ammodrop") / 100.0:
 		var ag := 1 + (randi() % 2)
 		ammo = mini(ammo_max(), ammo + ag)
 		_pop(nc, "+%d AMMO" % ag, Color("ffc24f"))
+	mom_steps += int(sk("momentum"))
+	if sk("airkill") > 0.0 and oxy < oxy_max:
+		oxy = minf(oxy_max, oxy + sk("airkill"))
 	var mult := 1.0 + 0.5 * relic_n("blade")
 	if was_elite:
 		mult += 1.0 + 0.5 * relic_n("slayer")
@@ -6856,7 +6945,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	if kh > 0:
 		hp = mini(hp_cap(), hp + kh)
 	if was_elite or is_boss or was_affix:
-		if randf() < (1.0 if is_boss else ((0.3 if was_elite else 0.12) + sk("drop") / 100.0)):
+		if randf() < (1.0 if (is_boss or bounty_hit) else ((0.3 if was_elite else 0.12) + sk("drop") / 100.0)):
 			var gid := _adv_roll_gear(null, 1 if is_boss else 0)
 			if _adv_give_gear(gid):
 				msg += "  Dropped: " + gname(gid) + (" [" + gtrait_line(gid) + "]" if gtr(gid).size() > 0 else "")
@@ -7010,6 +7099,59 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				msg = "Medkit! +%d HP" % heal
 				_pop(nc, "+%d HP" % heal, Color("ff8a9a"))
 				snd = "pot"
+		elif kind == "shieldbattery":
+			pk["shield"] = int(pk.get("shield", 0)) + 1
+			sh = mini(sh_cap(), sh + 3)
+			adv_pts += 3
+			msg = "Shield Battery! +3 max shield"
+			_pop(nc, "+3 MAX SHIELD", Color("9fd0ff"))
+			snd = "shield"
+		elif kind == "heartcell":
+			hp_max += 4
+			hp = mini(hp_cap(), hp + 4)
+			adv_pts += 4
+			msg = "Heart Cell! +4 max health"
+			_pop(nc, "+4 MAX HP", Color("ff8a9a"))
+			snd = "big"
+		elif kind == "luckycoin":
+			lucky_n += 5
+			adv_pts += 2
+			msg = "Lucky Coin! Your next %d coins are worth double" % lucky_n
+			_pop(nc, "LUCKY", Color("ffd84f"))
+			snd = "coin"
+		elif kind == "bounty":
+			bounty_n += 1
+			adv_pts += 2
+			msg = "Bounty Token! The next elite you kill drops gear"
+			_pop(nc, "BOUNTY", Color("ffc93c"))
+			snd = "coin"
+		elif kind == "idol":
+			var iv := 8 * coin_val()
+			coins += iv
+			adv_pts += 6
+			msg = "Golden Idol! +%d coins" % iv
+			_pop(nc, "+%d coins" % iv, Color("ffc93c"))
+			snd = "big"
+		elif kind == "lanternoil":
+			oil_steps = 80
+			adv_pts += 2
+			msg = "Lantern Oil! Your light reaches 3 tiles further for 80 steps"
+			_pop(nc, "+3 SIGHT", Color("ffe9a0"))
+			snd = "lamp"
+		elif kind == "shrine":
+			var scost := maxi(1, int(hp_cap() * 0.15))
+			if hp <= scost + 1:
+				items[nc] = kind
+				msg = "The shrine asks for %d health - you are too weak" % scost
+				snd = "blocked"
+			else:
+				hp -= scost
+				var sxp := maxi(5, int(round(xp_need() * 0.8)))
+				adv_pts += 4
+				msg = "Shrine: paid %d health for +%d XP" % [scost, sxp]
+				_pop(nc, "-%d HP" % scost, Color("ff6a6a"))
+				_adv_gain_xp(sxp)
+				snd = "big"
 		elif kind == "armor":
 			armor += 1
 			adv_pts += 3
@@ -7073,6 +7215,9 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		pick_c = nc
 		pick_kind = "coin"
 		var cv := coin_val()
+		if lucky_n > 0:
+			lucky_n -= 1
+			cv *= 2
 		coins += cv
 		adv_pts += 1
 		msg = "Coin! %d total" % coins
@@ -7081,9 +7226,15 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if moved:
 		pos = nc
 	adv_steps += 1
+	rw_hist.append([pos, hp, oxy])
+	if rw_hist.size() > 9:
+		rw_hist.pop_front()
 	_act_tick()
 	if act_free > 0:
 		act_free -= 1
+		oxy -= extra
+	elif mom_steps > 0:
+		mom_steps -= 1
 		oxy -= extra
 	else:
 		oxy -= (1.0 - (gear("airsave") + sk("airsave")) / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
@@ -7117,6 +7268,10 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		oxy = oxy_max
 	if scan_steps > 0:
 		scan_steps -= 1
+	if decoy_steps > 0:
+		decoy_steps -= 1
+	if oil_steps > 0:
+		oil_steps -= 1
 	_adv_update_vis()
 	if spike_dmg > 0 and not _adv_spike_hurt(spike_dmg):
 		return
@@ -7215,7 +7370,11 @@ func _cloak_break() -> void:
 
 
 func _adv_hunters() -> void:
-	if cloak_steps > 0:
+	var tgt := pos
+	var dec := decoy_steps > 0
+	if dec:
+		tgt = decoy_c
+	elif cloak_steps > 0:
 		return
 	var hs: Array[Vector2i] = []
 	for c in kinds:
@@ -7223,13 +7382,15 @@ func _adv_hunters() -> void:
 			hs.append(c)
 	if hs.is_empty():
 		return
-	var dist := _adv_bfs(pos, 9)
+	var dist := _adv_bfs(tgt, 9)
 	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 	for c in hs:
 		if not mons.has(c) or not dist.has(c) or _stunned(c):
 			continue
 		var bd: int = dist[c]
 		if bd == 1:
+			if dec:
+				continue
 			walk.clear()
 			mon_lunge[c] = [t, Vector2(pos - c).normalized()]
 			msg = "%s attacks!" % _adv_mname(c)
@@ -7241,7 +7402,7 @@ func _adv_hunters() -> void:
 		var bn := c
 		for dv in dirs:
 			var n: Vector2i = c + dv
-			if dist.has(n) and int(dist[n]) < bd and n != pos and not (mons.has(n) or vaults.has(n)):
+			if dist.has(n) and int(dist[n]) < bd and n != pos and n != tgt and not (mons.has(n) or vaults.has(n)):
 				bd = dist[n]
 				bn = n
 		if bn != c:
@@ -7259,7 +7420,7 @@ func _shoot_range() -> int:
 	var w := _weapon_range()
 	if w <= 0:
 		return 0
-	return w + int(gear("rangeb")) + relic_n("deadeye")
+	return w + int(gear("rangeb")) + relic_n("deadeye") + int(sk("rrange"))
 
 
 func _haz_mult() -> float:
@@ -7350,7 +7511,10 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		_sfx("blocked")
 		return
 	var is_boss := boss_floor and c == boss_cell
-	ammo = maxi(0, ammo - 1)
+	if randf() * 100.0 < sk("noammo"):
+		_pop(pos, "FREE SHOT", Color("6dff9a"))
+	else:
+		ammo = maxi(0, ammo - 1)
 	var dmg := _tr_hit_mod(c, _ranged_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg")))
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
@@ -7394,10 +7558,17 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		if not _adv_hurt(mon_atk(c), nm, c):
 			return
 	adv_steps += 1
+	rw_hist.append([pos, hp, oxy])
+	if rw_hist.size() > 9:
+		rw_hist.pop_front()
 	_act_tick()
 	oxy -= _shot_cost()
 	if scan_steps > 0:
 		scan_steps -= 1
+	if decoy_steps > 0:
+		decoy_steps -= 1
+	if oil_steps > 0:
+		oil_steps -= 1
 	_adv_update_vis()
 	if poison_n > 0:
 		poison_n -= 1
@@ -7445,7 +7616,7 @@ func _shooter_score(n: Vector2i) -> int:
 
 
 func _adv_shooters() -> void:
-	if cloak_steps > 0:
+	if cloak_steps > 0 or decoy_steps > 0:
 		return
 	var ss: Array[Vector2i] = []
 	for c in kinds:
@@ -7648,7 +7819,26 @@ func _adv_aim_valid(id: String, c: Vector2i) -> bool:
 		return dd <= 8 and _aopen(c) and not mons.has(c) and not vaults.has(c) and c != pos
 	if id == "zap":
 		return dd <= 3 and mons.has(c) and adv_vis.has(c)
+	if id == "decoy":
+		return dd <= 6 and _aopen(c) and not mons.has(c) and not vaults.has(c) and c != pos
+	if id == "grapple":
+		return dd <= 7 and _grapple_ok(c)
 	return false
+
+
+func _grapple_ok(c: Vector2i) -> bool:
+	var d := c - pos
+	if (d.x != 0 and d.y != 0) or (d.x == 0 and d.y == 0):
+		return false
+	if not _aopen(c) or mons.has(c) or vaults.has(c):
+		return false
+	var n := maxi(absi(d.x), absi(d.y))
+	var st := Vector2i(signi(d.x), signi(d.y))
+	for i in range(1, n):
+		var m := pos + st * i
+		if not _aopen(m) or mons.has(m) or vaults.has(m):
+			return false
+	return true
 
 
 func _adv_aim_any(id: String) -> bool:
@@ -7832,6 +8022,72 @@ func _adv_use_slot(i: int) -> void:
 		adv_pts += n
 		msg = "Magnet! +%d coins" % (n * coin_val())
 		_sfx("coin")
+	elif id == "foam":
+		var fc := 0
+		for dx in range(-2, 3):
+			for dy in range(-2, 3):
+				var c := pos + Vector2i(dx, dy)
+				if spikes.has(c):
+					spikes.erase(c)
+					fc += 1
+				if haz.has(c):
+					haz.erase(c)
+					fc += 1
+		if fc == 0:
+			msg = "Nothing to smother nearby"
+			_sfx("blocked")
+			return
+		_fx_ring(vis_pos, Color("e8f4ff"), 2.0, 0.5, 6.0)
+		_fx_burst(vis_pos, Color("e8f4ff"), 24, 3.5, 0.7, 6.0)
+		msg = "Foam! Smothered %d hazards" % fc
+		_pop(pos, "FOAM", Color("e8f4ff"))
+		_sfx("shield")
+	elif id == "frost":
+		var fn := 0
+		for c in mons.keys():
+			if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 2:
+				_st_stun(c, 4)
+				if _stunned(c):
+					fn += 1
+		if fn == 0:
+			msg = "No enemy in reach"
+			_sfx("blocked")
+			return
+		_fx_ring(vis_pos, Color("9fe8ff"), 3.0, 0.6, 6.0)
+		_fx_burst(vis_pos, Color("c8f1ff"), 24, 3.5, 0.7, 6.0)
+		msg = "Frost Charge: %d enemies stunned" % fn
+		_sfx("lamp")
+	elif id == "mirror":
+		if mirror_n > 0:
+			msg = "Mirror already up"
+			_sfx("blocked")
+			return
+		mirror_n = 1
+		_fx_ring(vis_pos, Color("c8f1ff"), 1.2, 0.5, 5.0)
+		_fx_burst(vis_pos, Color("c8f1ff"), 12, 2.6, 0.6, 5.0)
+		msg = "Mirror Shard: the next hit you take is reflected"
+		_sfx("shield")
+	elif id == "rewind":
+		if rw_hist.size() < 4:
+			msg = "Not enough history to rewind yet"
+			_sfx("blocked")
+			return
+		var snap: Array = rw_hist[0]
+		var rp: Vector2i = snap[0]
+		if mons.has(rp) or vaults.has(rp) or rp == pos:
+			msg = "Nothing to rewind to from here"
+			_sfx("blocked")
+			return
+		inv.remove_at(i)
+		_sfx("warp")
+		_fx_burst(vis_pos, Color("c07cff"), 16, 3.0, 0.5, 5.0)
+		_adv_step(rp, true)
+		if state == PLAY:
+			hp = maxi(hp, int(snap[1]))
+			oxy = maxf(oxy, float(snap[2]))
+			rw_hist.clear()
+			msg = "Rewind! Back where you were 8 steps ago"
+		return
 	elif id == "nano":
 		if hp >= hp_cap():
 			msg = "Health is already full"
@@ -7904,6 +8160,20 @@ func _adv_aim_apply(c: Vector2i) -> void:
 		return
 	inv.remove_at(aim)
 	aim = -1
+	if id == "decoy":
+		decoy_c = c
+		decoy_steps = 8
+		_fx_ring(Vector2(c), Color("ffb347"), 1.2, 0.5, 5.0)
+		_fx_burst(Vector2(c), Color("ffb347"), 12, 2.6, 0.6, 5.0)
+		msg = "Decoy placed: monsters chase it for 8 steps"
+		_sfx("lamp")
+		return
+	if id == "grapple":
+		_sfx("warp")
+		_fx_ring(vis_pos, Color("c9d3f0"), 1.0, 0.4, 4.0)
+		msg = "Grapple! Zipped across"
+		_adv_step(c, true)
+		return
 	if id == "blink":
 		_sfx("warp")
 		_fx_burst(vis_pos, Color("b57cff"), 16, 3.0, 0.5, 5.0)
@@ -7938,7 +8208,7 @@ func _adv_input(p: Vector2) -> void:
 		inv_scroll = 0.0
 		_sfx("ui")
 		return
-	if _weapon_range() > 0 and btn_mode.has_point(p):
+	if _weapon_range() > 0 and p.distance_to(btn_mode.get_center()) <= 36.0:
 		wbox_from = ranged_mode
 		wbox_t0 = Time.get_ticks_msec()
 		ranged_mode = not ranged_mode
@@ -8279,6 +8549,8 @@ func _adv_draw() -> void:
 				draw_rect(r, Color(0, 0, 0, ffa))
 	_adv_draw_lanes(ti)
 	_adv_draw_shoot_lanes()
+	if decoy_steps > 0:
+		_use_icon("decoy", _actr(decoy_c), AC * 0.5)
 	_arena_draw_under()
 	mlist.sort_custom(func(a, b): return a[1].y < b[1].y)
 	for mm2 in mlist:
@@ -8354,6 +8626,7 @@ func _adv_draw() -> void:
 	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(24, 112), 22, Color(1, 1, 1, 0.6), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_wbox_draw()
+	_sk_banner()
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var sx := 40.0
@@ -8386,9 +8659,11 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(380, 222, 300.0 * hpf, 24), Color("e8505b") if hpf > 0.3 else Color("ff2b3d"))
 	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
 	if _weapon_range() > 0:
-		var ar := _act_rect()
-		btn_mode = Rect2(ar.position.x, ar.end.y + 6.0, maxf(84.0, ar.size.x * 0.5), maxf(28.0, ar.size.y * 0.5))
-		_button(btn_mode, "RANGED" if ranged_mode else "MELEE", Color("ffc24f") if ranged_mode else Color("ff8a4f"), 14)
+		btn_mode = Rect2(626, 1046, 60, 60)
+		var mcol := Color("ffc24f") if ranged_mode else Color("ff8a4f")
+		draw_circle(btn_mode.get_center(), 30.0, Color(mcol.r, mcol.g, mcol.b, 0.18))
+		draw_arc(btn_mode.get_center(), 30.0, 0.0, TAU, 32, mcol, 3.0)
+		_ctext("RANGED" if ranged_mode else "MELEE", btn_mode.get_center(), 12, mcol)
 	draw_rect(Rect2(380, 252, 300, 16), Color(1, 1, 1, 0.12))
 	if sh > 0:
 		draw_rect(Rect2(380, 252, 300.0 * clampf(float(sh) / float(sh_cap()), 0.0, 1.0), 16), Color("5aa8ff"))
@@ -8900,7 +9175,7 @@ func _skill_selftest() -> int:
 	# every node must be reachable from the centre
 	var seen := {}
 	var queue: Array = []
-	for b in 5:
+	for b in SK_N:
 		queue.append("b%dn0" % b)
 		seen["b%dn0" % b] = true
 	while queue.size() > 0:
@@ -8909,7 +9184,7 @@ func _skill_selftest() -> int:
 			if not seen.has(o):
 				seen[o] = true
 				queue.append(o)
-	if seen.size() != 30 or sk_defs.size() != 30:
+	if seen.size() != 36 or sk_defs.size() != 36:
 		print("FAIL web connectivity ", seen.size())
 		bad += 1
 	skills.clear()
@@ -9010,7 +9285,7 @@ func _adv_selftest() -> void:
 				lvs.append(int(mons[c]))
 		lvs.sort()
 		for k in lvs.size():
-			if int(lvs[k]) > level + 2 + k / 2:
+			if int(lvs[k]) > level + 2 + k / 2 + f / 6:
 				ok = false
 		if adv_req > adv_pts_total:
 			ok = false

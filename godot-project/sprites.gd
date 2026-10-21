@@ -1618,9 +1618,28 @@ func turret(ti: int, v: int, dir: int) -> ImageTexture:
 
 # ---------------------------------------------------------------- items
 
+# Hand-picked 64px pickup and tool art (art/pickups/<id>_64.png); null when there is no file for the id
+func _pickup_png(id: String) -> ImageTexture:
+	var key := "pk_" + id
+	if cache.has(key):
+		return cache[key]
+	var tx: ImageTexture = null
+	var path := "res://art/pickups/%s_64.png" % id
+	if ResourceLoader.exists(path):
+		var src := load(path) as Texture2D
+		if src != null:
+			tx = ImageTexture.create_from_image(src.get_image())
+	cache[key] = tx
+	return tx
+
+
 func item(kind: String) -> ImageTexture:
 	if cache.has("item_" + kind):
 		return cache["item_" + kind]
+	var ptx := _pickup_png(kind)
+	if ptx != null:
+		cache["item_" + kind] = ptx
+		return ptx
 	var cv := Cv.new(32, 32)
 	if kind == "pot" or kind == "big":
 		var liq := Color("ffd84f") if kind == "pot" else Color("4fd1ff")
@@ -1728,6 +1747,11 @@ func item(kind: String) -> ImageTexture:
 func icon(name: String) -> ImageTexture:
 	if cache.has("icon_" + name):
 		return cache["icon_" + name]
+	if name.begins_with("use_"):
+		var utx := _pickup_png(name.substr(4))
+		if utx != null:
+			cache["icon_" + name] = utx
+			return utx
 	var cv := Cv.new(32, 32)
 	var ol := Color("0e1322")
 	if name == "spikes":
