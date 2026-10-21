@@ -266,7 +266,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 23
+const BUILD := 24
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -9637,8 +9637,21 @@ func _apply_sound() -> void:
 		music_player.volume_db = -11.0 + linear_to_db(mv) if (snd_on and mv > 0.0) else -80.0
 
 
+var buzz_ok := -1   # -1 unknown, 0 no, 1 yes
+
+
+# An APK installed before the vibrate permission was added (self-updates only swap the .pck) would crash on vibrate_handheld, so check the permission first.
 func _buzz(ms: int) -> void:
-	if set_vib == 1 and (OS.has_feature("mobile") or OS.has_feature("web")):
+	if set_vib != 1:
+		return
+	if buzz_ok < 0:
+		buzz_ok = 0
+		if OS.get_name() == "Android":
+			if OS.get_granted_permissions().has("android.permission.VIBRATE"):
+				buzz_ok = 1
+		elif OS.has_feature("web"):
+			buzz_ok = 1
+	if buzz_ok == 1:
 		Input.vibrate_handheld(ms)
 
 
