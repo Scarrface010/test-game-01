@@ -9,8 +9,18 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS }
-const GEAR_SLOTS := ["weapon", "helmet", "armour", "boots", "trinket"]
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, PICK }
+const GEAR_SLOTS := ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]
+const PICK_DEFS := {
+	"hp": {"n": "Vitality", "d": "+5 max health"},
+	"air": {"n": "Deep Lungs", "d": "+10 max air"},
+	"mel": {"n": "Edge", "d": "+1 melee damage"},
+	"rng": {"n": "Marksman", "d": "+1 ranged damage"},
+	"ammo": {"n": "Bandolier", "d": "+4 max ammo, and load 4 now"},
+	"armor": {"n": "Plating", "d": "+1 armour"},
+	"shield": {"n": "Barrier", "d": "+3 start shield"},
+	"crit": {"n": "Keen Eye", "d": "+4% crit chance"},
+}
 const BAG_MAX := 12
 const AC := 72.0
 const AMX := 360.0
@@ -169,6 +179,13 @@ var pack_page := 0
 var inv_tab := 0
 var inv_page := 0
 var equip: Dictionary = {}
+var ammo := 0
+var ranged_mode := false
+var btn_mode := Rect2(40, 1114, 230, 54)
+var pk: Dictionary = {}
+var pick_n := 0
+var pick_opts: Array = []
+var shooting := false
 var btn_inv := Rect2(596, 20, 104, 46)
 var btn_icl := Rect2(250, 1150, 220, 64)
 var btn_ipv := Rect2(40, 1070, 190, 56)
@@ -237,7 +254,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 19
+const BUILD := 20
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -251,7 +268,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "pick_n", "sk_wind", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -806,7 +823,8 @@ func _player_tex(frame := 0, dir := -1, geared := true) -> ImageTexture:
 
 
 func _gear_tex(id: String) -> ImageTexture:
-	return spr_gen.gear_icon(gb(id), String(gear_defs[gb(id)]["slot"]))
+	var sl := String(gear_defs[gb(id)]["slot"])
+	return spr_gen.gear_icon(gb(id), "weapon" if sl == "ranged" else sl)
 
 
 func _item_tex(kind: String) -> ImageTexture:
@@ -2482,6 +2500,12 @@ func _gui_input(event: InputEvent) -> void:
 	if state == CLEAR:
 		_finish_clear()
 		return
+	if state == PICK:
+		for i in pick_opts.size():
+			if _pick_rect(i).has_point(p):
+				_pick_apply(String(pick_opts[i]))
+				return
+		return
 	if state == RELIC:
 		if btn_skip.has_point(p):
 			coins += 3
@@ -2591,6 +2615,10 @@ func _gui_input(event: InputEvent) -> void:
 
 func _process(dt: float) -> void:
 	t += dt
+	if mode == "adv" and state == PLAY and pick_n > 0 and walk.is_empty():
+		_roll_picks()
+		state = PICK
+		_sfx("big")
 	if state != last_state:
 		last_state = state
 		state_t = t
@@ -4349,6 +4377,21 @@ func _draw_overlay(acc: Color) -> void:
 		_txt(over_title, Vector2(0, 560), 64, acc)
 		_txt(over_sub, Vector2(0, 630), 26, Color.WHITE)
 		_txt("Tap to continue", Vector2(0, 700), 28, Color(1, 1, 1, 0.6))
+	elif state == PICK:
+		_txt("LEVEL UP!", Vector2(0, 230), 56, Color("ffd84f"))
+		_txt("Level %d" % level, Vector2(0, 276), 24, Color(1, 1, 1, 0.7))
+		_txt("Choose one upgrade" + ("   (%d more after this)" % (pick_n - 1) if pick_n > 1 else ""), Vector2(0, 340), 28, Color.WHITE)
+		for i in pick_opts.size():
+			var pid := String(pick_opts[i])
+			var pr := _pick_rect(i)
+			var pcol := Color("ffd84f")
+			draw_rect(pr, Color(pcol.r, pcol.g, pcol.b, 0.12))
+			draw_rect(pr, pcol, false, 2.0)
+			_txt(String(PICK_DEFS[pid]["n"]), Vector2(pr.position.x + 22, pr.position.y + 44), 32, pcol, pr.size.x - 40, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(PICK_DEFS[pid]["d"]), Vector2(pr.position.x + 22, pr.position.y + 88), 24, Color.WHITE, pr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
+			var have := int(pk.get(pid, 0))
+			if have > 0:
+				_txt("picked %d" % have, Vector2(pr.end.x - 160, pr.position.y + 44), 18, Color(1, 1, 1, 0.5), 140.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	elif state == RELIC:
 		_txt(over_title, Vector2(0, 230), 52, acc)
 		_txt(over_sub, Vector2(0, 276), 22, Color(1, 1, 1, 0.7))
@@ -4477,7 +4520,7 @@ func adv_vis_r() -> int:
 
 
 func adv_oxy_max() -> float:
-	return 90.0 + 10.0 * int(cdef()["per"]) + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air")
+	return 90.0 + 10.0 * int(cdef()["per"]) + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air") + 10.0 * float(pk.get("air", 0))
 
 
 func adv_pod_amt() -> float:
@@ -5193,6 +5236,8 @@ func _adv_gen() -> void:
 func gear(stat: String) -> float:
 	var tot := 0.0
 	for slot in equip:
+		if slot == ("weapon" if shooting else "ranged"):
+			continue
 		var id := String(equip[slot])
 		if id == "" or not gear_defs.has(gb(id)):
 			continue
@@ -5206,15 +5251,65 @@ func hp_cap() -> int:
 
 
 func sh_cap() -> int:
-	return sh_max + int(gear("shield")) + int(sk("shield"))
+	return sh_max + int(gear("shield")) + int(sk("shield")) + 3 * int(pk.get("shield", 0))
 
 
 func armor_total() -> int:
-	return armor + int(gear("armor")) + int(sk("armor"))
+	return armor + int(gear("armor")) + int(sk("armor")) + int(pk.get("armor", 0))
 
 
 func p_atk() -> int:
-	return level + boost + int(gear("atk")) + int(sk("atk"))
+	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0))
+
+
+func _ranged_atk() -> int:
+	return 1 + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("rng", 0)) + (3 if cls == "gunslinger" else 0)
+
+
+func ammo_max() -> int:
+	return 12 + 4 * int(pk.get("ammo", 0))
+
+
+func _roll_picks() -> void:
+	var keys: Array = PICK_DEFS.keys()
+	keys.shuffle()
+	pick_opts.clear()
+	for k in keys:
+		if (k == "rng" or k == "ammo") and randf() < 0.45:
+			continue
+		pick_opts.append(String(k))
+		if pick_opts.size() >= 3:
+			break
+	for k in keys:
+		if pick_opts.size() >= 3:
+			break
+		if not pick_opts.has(String(k)):
+			pick_opts.append(String(k))
+
+
+func _pick_rect(i: int) -> Rect2:
+	return Rect2(50, 380 + i * 150, 620, 134)
+
+
+func _pick_apply(id: String) -> void:
+	var oh := hp_cap()
+	var oo := oxy_max
+	pk[id] = int(pk.get(id, 0)) + 1
+	if id == "hp":
+		hp_max += 5
+		hp += 5
+	elif id == "ammo":
+		ammo = mini(ammo_max(), ammo + 4)
+	elif id == "shield":
+		sh = mini(sh_cap(), sh + 3)
+	_adv_apply_change(oh, oo)
+	pick_n -= 1
+	_sfx("big")
+	if pick_n > 0:
+		_roll_picks()
+	else:
+		pick_opts.clear()
+		state = PLAY
 
 
 func _is_frenzied(c: Vector2i) -> bool:
@@ -5303,11 +5398,14 @@ func _adv_mname(c: Vector2i) -> String:
 	return _affix_name(c, String(names[(int(mons[c]) - 1) % names.size()]))
 
 
-func _adv_level_up(n: int) -> void:
+func _adv_level_up(n: int, pick := false) -> void:
 	var old := level
 	level += n
-	hp_max += 3 * n
-	hp += 3 * n
+	var ph := 2 if pick else 3
+	hp_max += ph * n
+	hp += ph * n
+	if pick:
+		pick_n += n
 	var got := 0
 	for l in range(old + 1, level + 1):
 		if l % 3 == 0:
@@ -5468,7 +5566,7 @@ func gtr(id: String) -> Array:
 func wtr() -> Array:
 	if mode != "adv":
 		return []
-	return gtr(String(equip.get("weapon", "")))
+	return gtr(String(equip.get("ranged" if shooting else "weapon", "")))
 
 
 func has_tr(id: String) -> bool:
@@ -5544,7 +5642,7 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 
 
 func crit_chance() -> float:
-	return gear("crit") + sk("crit") + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
+	return gear("crit") + sk("crit") + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
 
 
 func dodge_chance() -> float:
@@ -6209,11 +6307,13 @@ func _make_gear() -> void:
 	]
 	gear_defs.clear()
 	for d in gear_list:
+		if String(d["slot"]) == "weapon" and int((d["stats"] as Dictionary).get("range", 0)) > 0:
+			d["slot"] = "ranged"
 		gear_defs[String(d["id"])] = d
 
 
 func _gear_col(slot: String) -> Color:
-	var cols := {"weapon": Color("ff8a4f"), "helmet": Color("4fd1ff"), "armour": Color("9fb3d9"), "boots": Color("6dff9a"), "trinket": Color("c07cff")}
+	var cols := {"ranged": Color("ffc24f"), "weapon": Color("ff8a4f"), "helmet": Color("4fd1ff"), "armour": Color("9fb3d9"), "boots": Color("6dff9a"), "trinket": Color("c07cff")}
 	return cols.get(slot, Color.WHITE)
 
 
@@ -6267,7 +6367,7 @@ func _adv_roll_gear(rng: RandomNumberGenerator, bonus := 0) -> String:
 	var idx := (rng.randi() if rng != null else randi()) % pool.size()
 	var gd: Dictionary = pool[idx]
 	var rid := String(gd["id"])
-	if String(gd["slot"]) == "weapon":
+	if String(gd["slot"]) == "weapon" or String(gd["slot"]) == "ranged":
 		rid += _roll_traits(rng, int(gd["tier"]), int((gd["stats"] as Dictionary).get("range", 0)) > 0)
 	return rid
 
@@ -6404,7 +6504,8 @@ func _draw_trade(acc: Color) -> void:
 
 func _draw_crate(ctr: Vector2, id: String, bob: float) -> void:
 	var d: Dictionary = gear_defs[gb(id)]
-	_spr(spr_gen.icon("crate_" + String(d["slot"])), ctr + Vector2(0, bob), AC * 0.62)
+	var csl := String(d["slot"])
+	_spr(spr_gen.icon("crate_" + ("weapon" if csl == "ranged" else csl)), ctr + Vector2(0, bob), AC * 0.62)
 
 
 func _draw_merchant(ctr: Vector2) -> void:
@@ -6418,7 +6519,7 @@ func _adv_snapshot() -> void:
 		"coin_at": coin_at.duplicate(), "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
 		"vaults": vaults.duplicate(), "inv": inv.duplicate(), "coins": coins,
 		"level": level, "xp": xp, "hp_max": hp_max, "armor": armor, "sh": sh,
-		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(), "skills": skills.duplicate(), "skill_pts": skill_pts,
+		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(), "skills": skills.duplicate(), "skill_pts": skill_pts, "ammo": ammo, "pk": pk.duplicate(),
 	}
 
 
@@ -6463,6 +6564,9 @@ func _adv_reset() -> void:
 	affix = saved.get("affix", {}).duplicate()
 	skills = saved.get("skills", {}).duplicate()
 	skill_pts = int(saved.get("skill_pts", 0))
+	ammo = int(saved.get("ammo", ammo))
+	pk = saved.get("pk", {}).duplicate()
+	pick_n = 0
 	_adv_begin()
 
 
@@ -6471,6 +6575,9 @@ func _adv_init_run() -> void:
 	arena_d = {}
 	skills.clear()
 	skill_pts = 0
+	pk = {}
+	pick_n = 0
+	pick_opts.clear()
 	sk_sel = ""
 	level = start_lvl()
 	xp = 0
@@ -6480,7 +6587,9 @@ func _adv_init_run() -> void:
 	equip.clear()
 	bag.clear()
 	if cls == "gunslinger":
-		equip["weapon"] = "blaster"
+		equip["ranged"] = "blaster"
+	ammo = 0
+	ranged_mode = false
 	for i in up("kit"):
 		var kid := _adv_roll_gear(null, -1)
 		if not equip.has(String(gear_defs[gb(kid)]["slot"])):
@@ -6498,7 +6607,7 @@ func _adv_gain_xp(n: int) -> void:
 	var gained := 0
 	while xp >= xp_need():
 		xp -= xp_need()
-		_adv_level_up(1)
+		_adv_level_up(1, true)
 		gained += 1
 	if gained > 0:
 		_pop(pos, "LEVEL UP! %d" % level, Color("ffd84f"))
@@ -6674,6 +6783,10 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		coins += back
 	var was_elite := elite.has(nc)
 	var was_affix := affix.has(nc)
+	if _weapon_range() > 0 and ammo < ammo_max() and randf() < (0.8 if was_elite else 0.5):
+		var ag := 1 + (randi() % 2)
+		ammo = mini(ammo_max(), ammo + ag)
+		_pop(nc, "+%d AMMO" % ag, Color("ffc24f"))
 	var mult := 1.0 + 0.5 * relic_n("blade")
 	if was_elite:
 		mult += 1.0 + 0.5 * relic_n("slayer")
@@ -6783,9 +6896,6 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			walk.clear()
 			msg = "Something blocks the way"
 			_sfx("blocked")
-			return
-		if _shoot_range() > 0:
-			_adv_shoot(nc)
 			return
 		var res := _adv_fight(nc)
 		if res == 0:
@@ -7096,7 +7206,7 @@ func _adv_hunters() -> void:
 
 
 func _weapon_range() -> int:
-	var wid := String(equip.get("weapon", ""))
+	var wid := String(equip.get("ranged", ""))
 	if wid == "" or not gear_defs.has(gb(wid)):
 		return 0
 	return int((gear_defs[gb(wid)]["stats"] as Dictionary).get("range", 0))
@@ -7137,17 +7247,16 @@ func _tier_shot_air(tier: int) -> float:
 
 
 func _shot_cost() -> float:
-	var wid := String(equip.get("weapon", ""))
+	var wid := String(equip.get("ranged", ""))
 	var tier := 1
 	if wid != "" and gear_defs.has(gb(wid)):
 		tier = int(gear_defs[gb(wid)]["tier"])
-	var cst := _tier_shot_air(tier) * (1.0 - (gear("airsave") + sk("airsave")) / 100.0) - gear("shotsave") - sk("shotsave") - float(relic_n("efficient")) + 2.0 * float(relic_n("heavyammo")) - (1.0 if has_tr("tireless") else 0.0)
-	return maxf(0.5, cst) + (0.5 if relic_n("glass") > 0 else 0.0)
+	return 1.0
 
 
 func _adv_draw_shoot_lanes() -> void:
 	var rg := _shoot_range()
-	if rg <= 0 or aim >= 0:
+	if rg <= 0 or aim >= 0 or not ranged_mode:
 		return
 	for dv in TDIRS:
 		for st in range(1, rg + 1):
@@ -7162,7 +7271,9 @@ func _adv_draw_shoot_lanes() -> void:
 
 func _adv_can_shoot(c: Vector2i) -> bool:
 	var rg := _shoot_range()
-	if rg <= 0 or not mons.has(c) or not adv_vis.has(c):
+	if rg <= 0 or ammo <= 0 or not mons.has(c) or not adv_vis.has(c):
+		return false
+	if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 1:
 		return false
 	var d := c - pos
 	if (d.x != 0 and d.y != 0) or (d.x == 0 and d.y == 0):
@@ -7179,6 +7290,12 @@ func _adv_can_shoot(c: Vector2i) -> bool:
 
 
 func _adv_shoot(c: Vector2i) -> void:
+	shooting = true
+	_adv_shoot_do(c)
+	shooting = false
+
+
+func _adv_shoot_do(c: Vector2i) -> void:
 	_cloak_break()
 	walk.clear()
 	aim = -1
@@ -7190,7 +7307,8 @@ func _adv_shoot(c: Vector2i) -> void:
 		_sfx("blocked")
 		return
 	var is_boss := boss_floor and c == boss_cell
-	var dmg := _tr_hit_mod(c, p_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg")))
+	ammo = maxi(0, ammo - 1)
+	var dmg := _tr_hit_mod(c, _ranged_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg")))
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
 		dmg = int(round(float(dmg) * crit_mult()))
@@ -7777,6 +7895,11 @@ func _adv_input(p: Vector2) -> void:
 		inv_scroll = 0.0
 		_sfx("ui")
 		return
+	if _weapon_range() > 0 and btn_mode.has_point(p):
+		ranged_mode = not ranged_mode
+		walk.clear()
+		_sfx("ui")
+		return
 	if _act_rect().has_point(p):
 		_act_use()
 		return
@@ -7796,7 +7919,7 @@ func _adv_input(p: Vector2) -> void:
 	if c == pos and meds.has(pos):
 		_adv_med_touch()
 		return
-	if mons.has(c) and _adv_can_shoot(c):
+	if ranged_mode and mons.has(c) and _adv_can_shoot(c):
 		_adv_shoot(c)
 		return
 	if c == pos or not _aopen(c) or not _aseen(c):
@@ -7860,7 +7983,7 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	draw_rect(Rect2(bx, by, bw * clampf(float(hpn) / float(hpm), 0.0, 1.0), 9), Color("e8505b"))
 	_ctext("%d" % hpn, Vector2(ctr.x, by + 4.5), 10, Color.WHITE)
 	var rgw := _shoot_range()
-	if rgw > 0 and adv_vis.has(c):
+	if rgw > 0 and ranged_mode and adv_vis.has(c):
 		if _adv_can_shoot(c):
 			var rc := Color(1.0, 0.7, 0.3, 0.55 + 0.3 * sin(t * 7.0))
 			draw_arc(ctr, AC * 0.5, 0.0, TAU, 28, rc, 2.5)
@@ -7868,12 +7991,12 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 			draw_line(ctr + Vector2(AC * 0.4, 0), ctr + Vector2(AC * 0.58, 0), rc, 2.5)
 			draw_line(ctr + Vector2(0, -AC * 0.58), ctr + Vector2(0, -AC * 0.4), rc, 2.5)
 			draw_line(ctr + Vector2(0, AC * 0.4), ctr + Vector2(0, AC * 0.58), rc, 2.5)
-			_ctext("SHOOT -%s air" % str(snappedf(_shot_cost(), 0.1)), ctr + Vector2(0, AC * 0.56), 11, Color("ffcf8a"))
+			_ctext("SHOOT  %d ammo" % ammo, ctr + Vector2(0, AC * 0.56), 11, Color("ffcf8a"))
 		elif maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= rgw:
 			var dc := Color(1.0, 0.7, 0.3, 0.3)
 			for qa in 4:
 				draw_arc(ctr, AC * 0.5, qa * PI * 0.5 + 0.25, qa * PI * 0.5 + 0.9, 6, dc, 2.0)
-			_ctext("in range: line up", ctr + Vector2(0, AC * 0.56), 11, Color(1, 0.8, 0.5, 0.5))
+			_ctext("in range: line up" if ammo > 0 else "out of ammo", ctr + Vector2(0, AC * 0.56), 11, Color(1, 0.8, 0.5, 0.5))
 	var mk := ctr + Vector2(-AC * 0.3, AC * 0.2)
 	if kind == "turret":
 		var rdy := _tur_ready(c, adv_steps + 1)
@@ -8213,6 +8336,9 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(380, 222, 300, 24), Color(1, 1, 1, 0.12))
 	draw_rect(Rect2(380, 222, 300.0 * hpf, 24), Color("e8505b") if hpf > 0.3 else Color("ff2b3d"))
 	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
+	if _weapon_range() > 0:
+		_button(btn_mode, "RANGED  (tap enemy = shoot)" if ranged_mode else "MELEE  (tap to go ranged)", Color("ffc24f") if ranged_mode else Color("ff8a4f"), 17)
+		_txt("AMMO %d" % ammo, Vector2(366, 244), 22, Color("ffc24f") if ammo > 0 else Color("ff6a5c"), 200.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	draw_rect(Rect2(380, 252, 300, 16), Color(1, 1, 1, 0.12))
 	if sh > 0:
 		draw_rect(Rect2(380, 252, 300.0 * clampf(float(sh) / float(sh_cap()), 0.0, 1.0), 16), Color("5aa8ff"))
@@ -8522,7 +8648,7 @@ func _draw_inv(acc: Color) -> void:
 				_button(_gear_btn_rect(i), "REMOVE", col, 20)
 		var wl := wtr()
 		if wl.size() > 0:
-			var gy := 790.0
+			var gy := 870.0
 			_txt("WEAPON TRAITS", Vector2(58, gy), 20, Color("ffd84f"), 400.0, HORIZONTAL_ALIGNMENT_LEFT)
 			for k in wl.size():
 				var td: Dictionary = TRAIT_DEFS[wl[k]]
@@ -8593,7 +8719,10 @@ func _trait_selftest() -> int:
 	for rid in ["pyro", "storm", "frost", "toxi", "bloodpact", "hood", "luckychip", "prism", "echo", "overclock", "thornmail", "scrapper"]:
 		relics[rid] = 1
 	for cs in cases:
-		equip["weapon"] = String(cs["w"])
+		equip.erase("weapon")
+		equip.erase("ranged")
+		equip["ranged" if bool(cs["r"]) else "weapon"] = String(cs["w"])
+		ammo = 9999
 		hp_max = 600
 		hp = hp_cap()
 		sh = 0
@@ -8648,7 +8777,8 @@ func _trait_selftest() -> int:
 	mons.clear()
 	affix.clear()
 	mstat.clear()
-	equip["weapon"] = "railsniper"
+	equip.erase("weapon")
+	equip["ranged"] = "railsniper"
 	# scaling and affix roll sanity
 	floor_n = 12
 	adv_seed = 4242
@@ -8893,6 +9023,7 @@ func _adv_selftest() -> void:
 		if bag.size() > 0:
 			_adv_equip(bag[0])
 	_adv_unequip("weapon")
+	_adv_unequip("ranged")
 	var okc := 0
 	for c in merchants:
 		okc += 1
@@ -8998,7 +9129,8 @@ func _adv_selftest() -> void:
 			mons.erase(tcell)
 			mons[tcell] = 1
 			kinds.erase(tcell)
-			equip["weapon"] = "railsniper"
+			equip["ranged"] = "railsniper"
+			ammo = 9999
 			adv_vis[tcell] = true
 			mon_hp.erase(tcell)
 			if not _adv_can_shoot(tcell):
