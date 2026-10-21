@@ -2496,11 +2496,13 @@ func _floor2(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
 		cv.rect(11, 11, 10, 1, base.lightened(0.2))
 
 
-func wall_tile(ti: int) -> ImageTexture:
-	var key := "wall%d" % ti
+func wall_tile(ti: int, wvar: int = 0) -> ImageTexture:
+	var key := "wall%d_%d" % [ti, wvar]
 	if cache.has(key):
 		return cache[key]
-	var art_w: ImageTexture = _atlas_cell("res://art/tile_atlas.png", ti, 8)
+	var art_w: ImageTexture = _atlas_cell("res://art/tile_atlas.png", ti, 8 + wvar)
+	if art_w == null and wvar > 0:
+		return wall_tile(ti, 0)
 	if art_w != null:
 		cache[key] = art_w
 		return art_w

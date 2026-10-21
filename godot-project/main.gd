@@ -237,7 +237,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 18
+const BUILD := 19
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -843,6 +843,25 @@ func _floor_tex(ti: int, parity: int, variant: int) -> ImageTexture:
 
 func _wall_tex(ti: int) -> ImageTexture:
 	return spr_gen.wall_tile(ti)
+
+
+const WALL_VARS := 6
+var wall_sets: Dictionary = {}
+
+
+# All wall variants of a theme, cached so the draw loops never build texture keys per cell.
+func _wall_set(ti: int) -> Array:
+	if not wall_sets.has(ti):
+		var a: Array = []
+		for v in WALL_VARS:
+			a.append(spr_gen.wall_tile(ti, v))
+		wall_sets[ti] = a
+	return wall_sets[ti]
+
+
+# Stable per-cell pick, so a wall keeps the same look every frame.
+func _wall_var(x: int, y: int) -> int:
+	return _tile_hash(x + 57, y + 91) % WALL_VARS
 
 
 func _monster_tex(ti: int, lvl: int, boss: bool, blink := false, dir := 0) -> ImageTexture:
@@ -3998,7 +4017,7 @@ func _draw() -> void:
 	# grid
 	_map_begin()
 	var names: Array = th["mons"]
-	var wall_tex := _wall_tex(ti)
+	var wall_set: Array = _wall_set(ti)
 	for x in N:
 		for y in N:
 			var c := Vector2i(x, y)
@@ -4014,7 +4033,7 @@ func _draw() -> void:
 			var ctr := r.get_center()
 			var bob := sin(t * 3.0 + x * 1.7 + y) * 2.0
 			if walls.has(c):
-				draw_texture_rect(wall_tex, r.grow(-1.0), false)
+				draw_texture_rect(wall_set[_wall_var(x, y)], r.grow(-1.0), false)
 			elif c == stairs:
 				if boss_floor:
 					continue
@@ -8006,7 +8025,7 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(0, 0, 720, 1280), th["dark"])
 	_map_begin()
 	var mlist: Array = []
-	var wall_tex := _wall_tex(ti)
+	var wall_set: Array = _wall_set(ti)
 	var x0 := int(floor(cam.x)) - 6
 	var y0 := int(floor(cam.y)) - 6
 	for cx in range(x0, x0 + 14):
@@ -8020,7 +8039,7 @@ func _adv_draw() -> void:
 			var r := Rect2(ctr - Vector2(AC, AC) * 0.5, Vector2(AC, AC))
 			var vis := adv_vis.has(c)
 			if not _aopen(c):
-				draw_texture_rect(wall_tex, r.grow(-1.0), false)
+				draw_texture_rect(wall_set[_wall_var(cx, cy)], r.grow(-1.0), false)
 				var wfa := _fog_a(c, 0.6)
 				if wfa > 0.01:
 					draw_rect(r, Color(0, 0, 0, wfa))
@@ -9348,7 +9367,7 @@ func _self_test() -> void:
 			for p in 2:
 				for v in 3:
 					_floor_tex(ti, p, v)
-			_wall_tex(ti)
+			_wall_set(ti)
 		_player_tex()
 		for kind in ["pot", "big", "lamp", "shield", "coin"]:
 			_item_tex(kind)
