@@ -1725,6 +1725,17 @@ func item(kind: String) -> ImageTexture:
 		cv.px(6, 11, Color.WHITE)
 		cv.px(25, 11, Color("9aa3c7"))
 		cv.outline(Color("151a2e"))
+	elif kind == "ammocrate":
+		cv.rrect(4, 10, 24, 17, 2.0, Color("6b5a2e"))
+		cv.shade(0.22)
+		cv.rect(4, 14, 24, 2, Color("4a3e1e"))
+		cv.rect(4, 22, 24, 2, Color("4a3e1e"))
+		cv.rect(5, 11, 22, 1, Color("a8914f"))
+		for bx in [9, 14, 19]:
+			cv.rect(bx, 5, 4, 8, Color("ffc24f"))
+			cv.rect(bx, 4, 4, 3, Color("d98a1f"))
+			cv.rect(bx, 7, 1, 5, Color("fff0b0"))
+		cv.outline(Color("2a2210"))
 	elif kind == "armor":
 		var pts2 := [Vector2(5, 7), Vector2(11, 5), Vector2(16, 7), Vector2(21, 5), Vector2(27, 7), Vector2(26, 19), Vector2(21, 27), Vector2(16, 29), Vector2(11, 27), Vector2(6, 19)]
 		cv.poly(pts2, Color("8a93b5"))
@@ -1747,6 +1758,8 @@ func item(kind: String) -> ImageTexture:
 func icon(name: String) -> ImageTexture:
 	if cache.has("icon_" + name):
 		return cache["icon_" + name]
+	if name == "use_ammopack":
+		return item("ammocrate")
 	if name.begins_with("use_"):
 		var utx := _pickup_png(name.substr(4))
 		if utx != null:
