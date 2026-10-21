@@ -2152,6 +2152,9 @@ func _tool_icon(cv: Cv, id: String) -> void:
 const NV := 16
 
 
+const STATION_FLOOR_LIGHT := 0.16   # how much lighter the Station floor is (0 = original)
+
+
 func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
 	variant = variant % NV
 	var key := "floor%d_%d_%d" % [ti, parity, variant]
@@ -2159,6 +2162,12 @@ func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
 		return cache[key]
 	var art_f: ImageTexture = _atlas_cell("res://art/tile_atlas.png", variant, ti * 2 + parity)
 	if art_f != null:
+		if ti == 0:
+			var fim: Image = art_f.get_image()
+			var fov := Image.create(fim.get_width(), fim.get_height(), false, fim.get_format())
+			fov.fill(Color(0.75, 0.82, 1.0, STATION_FLOOR_LIGHT))
+			fim.blend_rect(fov, Rect2i(Vector2i.ZERO, fim.get_size()), Vector2i.ZERO)
+			art_f = ImageTexture.create_from_image(fim)
 		cache[key] = art_f
 		return art_f
 	var base: Color = themes[ti]["tile"] if parity == 0 else themes[ti]["tile2"]

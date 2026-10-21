@@ -186,6 +186,8 @@ var pk: Dictionary = {}
 var pick_n := 0
 var pick_opts: Array = []
 var shooting := false
+var wbox_from := false
+var wbox_t0 := -1000
 var btn_inv := Rect2(596, 20, 104, 46)
 var btn_icl := Rect2(250, 1150, 220, 64)
 var btn_ipv := Rect2(40, 1070, 190, 56)
@@ -254,7 +256,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 20
+const BUILD := 21
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3255,6 +3257,47 @@ func _draw_saves(acc: Color) -> void:
 	if t - xfer_t < 8.0:
 		_para(xfer_msg, Vector2(60, 930), 24, Color("6dff9a"), 600.0)
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
+
+
+func _wbox_info(r: bool) -> Array:
+	var sv := shooting
+	shooting = r
+	var id := String(equip.get("ranged" if r else "weapon", ""))
+	var ok := id != "" and gear_defs.has(gb(id))
+	var nm := gname(id) if ok else ("None" if r else "Fists")
+	var l2 := ""
+	if r:
+		var dmg := _ranged_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg"))
+		l2 = "DMG %d   RNG %d   AMMO %d/%d" % [dmg, _shoot_range(), ammo, ammo_max()]
+	else:
+		l2 = "DMG %d" % p_atk()
+		var cr := int(gear("crit"))
+		if cr > 0:
+			l2 += "   CRIT %d%%" % cr
+	var tr := gtrait_line(id) if ok else ""
+	shooting = sv
+	return [nm, l2, tr]
+
+
+# Weapon box: flips between the melee and ranged weapon stats.
+func _wbox_draw() -> void:
+	var has_r := _weapon_range() > 0
+	var rg := ranged_mode and has_r
+	var k := clampf(float(Time.get_ticks_msec() - wbox_t0) / 260.0, 0.0, 1.0) if has_r else 1.0
+	var side := (wbox_from and has_r) if k < 0.5 else rg
+	var sc := maxf(0.03, absf(cos(k * PI)))
+	var bx := Rect2(372, 70, 324, 70)
+	draw_set_transform(bx.get_center(), 0.0, Vector2(sc, 1.0))
+	var lr := Rect2(-bx.size * 0.5, bx.size)
+	var col := Color("ffc24f") if side else Color("ff8a4f")
+	_panel(lr, col, 0.08, false)
+	var info := _wbox_info(side)
+	_txt(String(info[0]), Vector2(lr.position.x + 12, -10), 20, Color.WHITE, 210.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("RANGED" if side else "MELEE", Vector2(lr.end.x - 112, -10), 14, col, 100.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_txt(String(info[1]), Vector2(lr.position.x + 12, 13), 18, Color("ffd84f"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+	if String(info[2]) != "":
+		_txt(String(info[2]), Vector2(lr.position.x + 12, 30), 13, Color(1, 1, 1, 0.6), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _hud_panels(acc: Color, right_h: float) -> void:
@@ -7896,6 +7939,8 @@ func _adv_input(p: Vector2) -> void:
 		_sfx("ui")
 		return
 	if _weapon_range() > 0 and btn_mode.has_point(p):
+		wbox_from = ranged_mode
+		wbox_t0 = Time.get_ticks_msec()
 		ranged_mode = not ranged_mode
 		walk.clear()
 		_sfx("ui")
@@ -8307,7 +8352,8 @@ func _adv_draw() -> void:
 	_txt("XP %d/%d" % [xp, xp_need()], Vector2(288, 256), 14, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_hud_panels(acc, 124.0)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
-	_txt("ADVENTURE   FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
+	_txt("FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(24, 112), 22, Color(1, 1, 1, 0.6), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_wbox_draw()
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var sx := 40.0
@@ -8315,6 +8361,9 @@ func _adv_draw() -> void:
 	sx += 84.0
 	_txt("ARMOUR %d" % armor_total(), Vector2(sx, 272), 18, Color("c9d3f0") if armor_total() > 0 else Color(1, 1, 1, 0.4), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
 	sx += 126.0
+	if _weapon_range() > 0:
+		_txt("AMMO %d" % ammo, Vector2(sx, 272), 18, Color("ffc24f") if ammo > 0 else Color("ff6a5c"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
+		sx += 100.0
 	if cloak_steps > 0:
 		_txt("HIDDEN %d" % cloak_steps, Vector2(sx, 272), 18, Color("9aa3c7"), 130.0, HORIZONTAL_ALIGNMENT_LEFT)
 		sx += 110.0
@@ -8337,8 +8386,9 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(380, 222, 300.0 * hpf, 24), Color("e8505b") if hpf > 0.3 else Color("ff2b3d"))
 	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
 	if _weapon_range() > 0:
-		_button(btn_mode, "RANGED  (tap enemy = shoot)" if ranged_mode else "MELEE  (tap to go ranged)", Color("ffc24f") if ranged_mode else Color("ff8a4f"), 17)
-		_txt("AMMO %d" % ammo, Vector2(366, 244), 22, Color("ffc24f") if ammo > 0 else Color("ff6a5c"), 200.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		var ar := _act_rect()
+		btn_mode = Rect2(ar.position.x, ar.end.y + 6.0, maxf(84.0, ar.size.x * 0.5), maxf(28.0, ar.size.y * 0.5))
+		_button(btn_mode, "RANGED" if ranged_mode else "MELEE", Color("ffc24f") if ranged_mode else Color("ff8a4f"), 14)
 	draw_rect(Rect2(380, 252, 300, 16), Color(1, 1, 1, 0.12))
 	if sh > 0:
 		draw_rect(Rect2(380, 252, 300.0 * clampf(float(sh) / float(sh_cap()), 0.0, 1.0), 16), Color("5aa8ff"))
