@@ -978,8 +978,13 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	if front != null:
 		ov.blend_rect(front, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 	var hi_helm: Image = null
+	var hi_arm: Image = null
 	for slot in ["armour", "boots", "trinket", "helmet"]:
 		var gid := String(eq.get(slot, ""))
+		if slot == "armour" and gid != "" and ResourceLoader.exists(HI_HELM % [gid, dir]):
+			hi_arm = (load(HI_HELM % [gid, dir]) as Texture2D).get_image()
+			hi_arm.convert(Image.FORMAT_RGBA8)
+			continue
 		if slot == "helmet" and gid != "" and ResourceLoader.exists(HI_HELM % [gid, dir]):
 			hi_helm = (load(HI_HELM % [gid, dir]) as Texture2D).get_image()
 			hi_helm.convert(Image.FORMAT_RGBA8)
@@ -1017,6 +1022,8 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 		wi.resize(64, 64, Image.INTERPOLATE_NEAREST)
 		ov.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 	base.blend_rect(_map_old(ov, m), Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	if hi_arm != null and hi_arm.get_width() == HW and hi_arm.get_height() == HH:
+		base.blend_rect(hi_arm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if hi_helm != null and hi_helm.get_width() == HW and hi_helm.get_height() == HH:
 		base.blend_rect(hi_helm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	base = _walk_frame_hi(base, frame, dir)
@@ -1534,7 +1541,9 @@ func _gear_icon64(id: String, slot: String) -> ImageTexture:
 	var img: Image = player(Color("4fd1ff"), "", 0, 0, {slot: id}).get_image()
 	var k := maxi(1, img.get_width() / 64)
 	var rect := Rect2i(6 * k, 0, 52 * k, 40 * k)
-	if slot == "armour":
+	if slot == "armour" and img.get_width() == HH:
+		rect = Rect2i(30, 80, 116, 58)
+	elif slot == "armour":
 		rect = Rect2i(8 * k, 32 * k, 48 * k, 24 * k)
 	elif slot == "boots":
 		rect = Rect2i(12 * k, 48 * k, 40 * k, 16 * k)
