@@ -131,7 +131,8 @@ var relic_choices: Array = []
 var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
-var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0, "suit": 0, "tank": 0, "vet": 0}
+var run_kills := 0
+var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0, "suit": 0, "tank": 0, "belt": 0, "vet": 0}
 # Shop v2 (unlocks only). The old stat-boost shop is refunded once, using these old prices.
 const OLD_SHOP_COSTS := {"vet": [15, 35, 60], "iron": [20, 40, 70], "packed": [45], "lucky": [50], "pockets": [40, 90], "treasure": [25, 55, 100], "oil": [25, 50, 85], "toolbox": [30, 70], "gate": [60, 120], "steel": [35], "haggle": [30], "head": [75, 150], "ash": [120], "interest": [40, 80, 130], "kit": [40, 90]}
 # Drop-pool packs: traits and relics that stay out of drops until the pack is bought.
@@ -236,7 +237,13 @@ var name_edit: LineEdit = null
 var inv_scroll := 0.0
 var inv_scroll_max := 0.0
 var tut_back := MODE
-var btn_inhelp := Rect2(510, 76, 190, 46)
+var tutorial := false
+var tut_zone := -1
+var tut_prev_cls := "scout"
+var tut_prev_save_off := false
+var inv_more := false
+var btn_inmore := Rect2(190, 1062, 340, 58)
+var btn_inhelp := Rect2(510, 76, 190, 56)
 var font_pix: Font = null
 var font_clear: Font = null
 var font_title: Font = ThemeDB.fallback_font
@@ -247,7 +254,7 @@ var set_fit := 0
 var set_fps := 60
 var set_filt := 1
 var set_ret := 8
-var btn_inset := Rect2(265, 76, 190, 46)
+var btn_inset := Rect2(265, 76, 190, 56)
 var set_shake := 1
 var set_mus := 0     # music volume step: 0 = 100%, 1 = 60%, 2 = 30%, 3 = off
 var set_sfxv := 0    # sound effects volume step, same scale
@@ -266,7 +273,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 24
+const BUILD := 25
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -317,7 +324,7 @@ var music_theme := -1
 var btn_sound := Rect2(20, 20, 104, 46)
 var btn_reset := Rect2(596, 20, 104, 46)
 var btn_menu := Rect2(596, 20, 104, 46)
-var btn_invmenu := Rect2(20, 76, 190, 46)
+var btn_invmenu := Rect2(20, 76, 190, 56)
 var menu_armed := -10.0
 var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 790, 400, 76)
@@ -411,6 +418,12 @@ func _ready() -> void:
 			print("gen run %d relics %s tries? ms %d boss %s" % [r, relics, Time.get_ticks_msec() - t0, boss_floor])
 		get_tree().quit()
 		return
+	if "--savetest" in args or "--acttest" in args or "--advtest" in args or "--test" in args:
+		var test_seed := 20261021
+		for ta in args:
+			if String(ta).begins_with("--seed="):
+				test_seed = int(String(ta).substr(7))
+		seed(test_seed)
 	if "--savetest" in args:
 		_save_selftest()
 		get_tree().quit()
@@ -585,7 +598,7 @@ func _make_defs() -> void:
 		"decoy": {"name": "Decoy Beacon", "desc": "Place a decoy up to 6 tiles away: monsters chase it instead of you for 8 steps", "col": Color("ffb347"), "adv": true},
 		"foam": {"name": "Foam Canister", "desc": "Smothers every spike and hazard within 2 tiles", "col": Color("e8f4ff"), "adv": true},
 		"frost": {"name": "Frost Charge", "desc": "Stuns every enemy within 2 tiles for 4 steps", "col": Color("9fe8ff"), "adv": true},
-		"grapple": {"name": "Grapple Hook", "desc": "Zip along a straight, clear line of up to 7 tiles in a single step", "col": Color("c9d3f0"), "adv": true},
+		"grapple": {"name": "Grapple Hook", "desc": "Fire a hook along a straight line: it grabs the nearest enemy or wall at any distance and pulls you in", "col": Color("c9d3f0"), "adv": true},
 		"mirror": {"name": "Mirror Shard", "desc": "Reflects the next hit you take back at the attacker", "col": Color("c8f1ff"), "adv": true},
 		"rewind": {"name": "Rewind Device", "desc": "Return to where you stood 8 steps ago and recover the health and air lost since", "col": Color("c07cff"), "adv": true},
 		"ammopack": {"name": "Ammo Pack", "desc": "Refills half your max ammo", "col": Color("ffc24f"), "adv": true},
@@ -619,6 +632,7 @@ func _make_defs() -> void:
 		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [240]},
 	{"id": "suit", "name": "Reinforced Suit", "desc": "Adventure: +4 starting max health per rank", "costs": [60, 120, 200]},
 	{"id": "tank", "name": "Spare Tank", "desc": "Adventure: +8 starting air per rank", "costs": [50, 100, 170]},
+	{"id": "belt", "name": "Ammo Belt", "desc": "Adventure: +4 max ammo per rank, start runs with full ammo", "costs": [40, 90, 150]},
 	{"id": "vet", "name": "Veteran Training", "desc": "Adventure: start each run 1 level higher per rank", "costs": [90, 180, 300]},
 	]
 
@@ -782,6 +796,8 @@ func _mon_level(c: Vector2i, m: int = -1) -> int:
 
 
 func _save_meta() -> void:
+	if save_off:
+		return
 	var cfg := ConfigFile.new()
 	cfg.load("user://best.cfg")
 	cfg.set_value("s", "best", best)
@@ -1489,6 +1505,12 @@ func _thief_check() -> void:
 
 
 func _die(why: String) -> void:
+	if tutorial:
+		hp = hp_cap()
+		oxy = oxy_max
+		msg = "Knocked out! Tutorial: you are back on your feet"
+		_sfx("shield")
+		return
 	if mode == "adv" and relic_n("phoenix") > 0:
 		relics.erase("phoenix")
 		hp = hp_cap()
@@ -1513,11 +1535,14 @@ func _die(why: String) -> void:
 	walk.clear()
 	aim = -1
 	var reached := floor_n - 1
+	var was_best := false
 	if mode == "adv":
 		if reached > adv_best:
 			adv_best = reached
+			was_best = true
 	elif reached > best:
 		best = reached
+		was_best = true
 	var delta := maxi(0, coins - run_banked)
 	bank += delta
 	run_banked += delta
@@ -1525,7 +1550,12 @@ func _die(why: String) -> void:
 	_lb_note(reached, true)
 	_sfx("death")
 	over_title = "YOU DIED"
-	over_sub = "%s\nFloors cleared: %d   Best: %d\nBanked +%d coins (total %d)" % [why, reached, adv_best if mode == "adv" else best, delta, bank]
+	var dl: PackedStringArray = PackedStringArray([why, "Floor %d   Level %d" % [floor_n, level]])
+	if mode == "adv":
+		dl.append("Kills %d" % run_kills)
+	dl.append("Floors cleared %d   Best %d%s" % [reached, adv_best if mode == "adv" else best, "   NEW BEST!" if was_best else ""])
+	dl.append("Banked +%d coins (total %d)" % [delta, bank])
+	over_sub = "\n".join(dl)
 
 
 func _clear() -> void:
@@ -2385,6 +2415,8 @@ func _wipe_progress() -> void:
 func _new_run(start_floor := 1) -> void:
 	floor_n = start_floor
 	coins = 0
+	run_kills = 0
+	guide_seen.clear()
 	run_banked = 0
 	mirror_n = 0
 	lucky_n = 0
@@ -3136,6 +3168,18 @@ func _fx_draw() -> void:
 			var bc: Color = f["col"]
 			draw_polyline(pl, Color(bc.r, bc.g, bc.b, (1.0 - u) * 0.4), 10.0)
 			draw_polyline(pl, Color(1, 1, 0.8, 1.0 - u), 3.0)
+		elif k == "rope":
+			var rp0 := _wp(vis_pos)
+			var rtip := _wp(f["a"]).lerp(_wp(f["b"]), clampf(u / 0.3, 0.0, 1.0))
+			var ral := 1.0 if u < 0.7 else (1.0 - u) / 0.3
+			var rdir := (rtip - rp0).normalized()
+			var rprp := Vector2(-rdir.y, rdir.x)
+			draw_line(rp0, rtip, Color(0.3, 0.19, 0.08, ral), 6.0)
+			draw_line(rp0, rtip, Color(0.82, 0.66, 0.42, ral), 3.0)
+			var rhc := Color(0.82, 0.88, 1.0, ral)
+			draw_circle(rtip, 7.0, rhc)
+			draw_line(rtip, rtip + rdir * 6.0 + rprp * 10.0, rhc, 4.0)
+			draw_line(rtip, rtip + rdir * 6.0 - rprp * 10.0, rhc, 4.0)
 
 
 func _bez(a: Vector2, b: Vector2, c: Vector2, u: float) -> Vector2:
@@ -3732,94 +3776,45 @@ func _draw_lb(acc: Color) -> void:
 
 # ---------- tutorial ----------
 
-func _tut_shop_page() -> Dictionary:
-	return {"t": "THE SHOP", "ti": 0, "s": [["pcls:gambler", "Classes"], ["use:bomb", "Loadouts"], ["item:big", "Packs"], ["item:shield", "Head starts"]],
-	"x": "Coins from a run are banked when it ends. Spend them in the SHOP (menu or class screen). It unlocks classes, packs and starts, and Suit, Tank and Veteran give small permanent boosts for Adventure.\n\nClasses: Scout is free, the other four are bought once.\nLoadouts: Starter Kit and Toolbox give free starting gear and tools.\nPacks: Elemental, Bloodthirst, Combo and Relic Cache add traits and relics to your rolls.\nHead starts: Head Start gives a relic each run, Phoenix Ash a Phoenix Feather."}
-
-
-func _tut_saves_page() -> Dictionary:
-	return {"t": "SAVES AND RANKS", "ti": 0, "s": [],
-	"x": "Your run saves itself as you play. If you close the game, tap CONTINUE SAVED RUN on the main menu to pick up where you left off.\n\nTo play on another device, open SAVES, tap COPY SAVE CODE, send the code to yourself, then tap PASTE SAVE CODE on the other device. It carries your saved run, banked coins and shop unlocks. The web version can also use save files.\n\nLEADERBOARD ranks the deepest runs in each mode. You can change your name there."}
+func _tut_need_page() -> Dictionary:
+	return {"t": "SHOP AND SAVES", "ti": 0, "s": [["pcls:gambler", "Classes"], ["item:big", "Packs"], ["item:shield", "Head starts"]],
+	"x": "Coins are banked when a run ends. Spend them in the SHOP to unlock classes, packs and head starts.\n\nYour run saves itself. Use CONTINUE SAVED RUN on the main menu to pick it up. SAVES copies your progress to another device."}
 
 
 func _tut_pages(which: int) -> Array:
 	if which == 0:
 		return [
 			{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Gate (locked)"], ["icon:door_open", "Gate (open)"]],
-			"x": "Each floor is a small board. Walk to the gate to reach the next floor. The gate shows the level you need (Lv N): you must be at least that level to pass.\n\nTap any tile and you walk there automatically. You stop early if something new needs your attention."},
-			{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"], ["pcls:gunslinger", "Gunslinger"]],
-			"x": "Pick a class at the start of a run. Each has a different starting kit and a twist on the rules:\n\nScout: the dark waits longer, starts with Blink and Time Crystal.\nBrute: +2 starting levels, a faster dark, starts with a Bomb.\nMystic: a shield every floor, +1 item slot, starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3.\nGunslinger: starts with two Zap Rods, but a faster dark.\n\nLocked classes are unlocked in the SHOP."},
-			{"t": "CLASS POWERS", "ti": 0, "s": [["pcls:scout", "Deep Breath"], ["pcls:brute", "Iron Stance"], ["pcls:mystic", "Hex Pulse"], ["pcls:gambler", "Reshuffle"], ["pcls:gunslinger", "Ricochet"]],
-			"x": "Every class has one ACTIVE power: tap the coloured button right of your tool bar. It shows READY, or the steps left to recharge (every step counts down).\n\nScout, Deep Breath: pushes the dark back 3 steps.\nBrute, Iron Stance: your next fight counts +3 levels.\nMystic, Hex Pulse: monsters within 3 tiles lose a level.\nGambler, Reshuffle: rerolls all your tools.\nGunslinger, Ricochet: zaps a monster within 2 tiles, then another beside it.\n\nRecharge: 40 / 30 / 35 / 50 / 25 steps, in that order. A power that can't act is not spent."},
+			"x": "Walk to the gate to reach the next floor. It shows the level you need (Lv N).\n\nTap any tile and you walk there. You stop early if something new needs attention."},
 			{"t": "MONSTERS AND LEVELS", "ti": 1, "s": [["mon:1:2:none:g", "Easy"], ["mon:1:5:none:r", "Deadly"], ["mon:1:4:none:r", "Equal = lose"]],
-			"x": "Every monster has a level shown in a badge. Walk into one to fight it instantly.\n\nIf your level is HIGHER you win and gain levels. If it is equal or higher you die. A green badge means you win, red means you die, amber means only your shield would save you.\n\nSo grab potions first, then pick your fights."},
+			"x": "Walk into a monster to fight it. Your level HIGHER means you win and level up. Equal or higher means you die.\n\nGreen badge: win. Red: die. Amber: only your shield saves you."},
 			{"t": "THE DARK", "ti": 1, "s": [["dark", "Dark tile"], ["player", "You"], ["icon:spikes", "Spikes"]],
-			"x": "The dark eats the board from the outside in. The meter at the top right counts the steps until it advances one ring. Standing in the dark kills you, and anything in it is lost.\n\nSo every step counts. Spikes cost extra steps: the dark gains ground when you walk over them."},
-			{"t": "ITEMS", "ti": 1, "s": [["item:pot", "Potion +1"], ["item:big", "Overcharged +2"], ["item:shield", "Shield"], ["item:lamp", "Lantern"]], "s2": [["item:coin", "Coin"], ["icon:key", "Key"], ["icon:vault", "Vault"], ["portal", "Portal"]],
-			"x": "Potions raise your level. A shield saves you from one losing fight. A lantern holds the dark back. Coins are banked when your run ends and unlock things in the SHOP.\n\nA key opens a vault: coins, a level and a free tool. Portals teleport you to their twin."},
-			{"t": "SPECIAL MONSTERS", "ti": 2, "s": [["mon:2:3:elite:g", "Elite star"], ["mon:2:4:sleeper:r", "Sleeper zZ"], ["mon:2:3:feeder:g", "Feeder +"], ["mon:2:2:thief:g", "Thief $"]],
-			"x": "Elite (gold star): beating one gives +2 levels.\nSleeper (zZ): weak now, but it wakes and gains levels when the dark first moves. Kill it early.\nFeeder (violet +): grows +1 level every time the dark advances.\nThief ($): steals coins when you stand beside it. Beat it to get them back."},
-			{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:crystal", "Time Crystal"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"]], "s2": [["use:draught", "Elixir"], ["use:magnet", "Magnet"], ["use:pick", "Pickaxe"], ["use:zap", "Zap Rod"]],
-			"x": "Tools sit in the bar under the board. Tap one to use it (tools that need a target ask you to tap a tile).\n\nBomb: blasts adjacent walls, spikes and weak monsters. Time Crystal: pushes the dark back. Blink: teleport. Cloak: +3 levels for your next fight. Elixir: +2 levels. Magnet: pulls in every coin. Pickaxe: breaks a wall. Zap: hits a monster nearby.\n\nTools are used up. Your class power is not: it recharges."},
-			{"t": "DOORS AND MERCHANT", "ti": 0, "s": [["door:standard", "Steady"], ["door:danger", "Perilous"], ["door:calm", "Quiet"], ["door:vault", "Vault"], ["icon:merchant", "Merchant"]],
-			"x": "Between floors you choose a door:\n\nSteady: a normal floor.\nPerilous: monsters +2 levels and coins worth +1, but an extra relic card afterwards.\nQuiet: monsters -1 level and the dark waits 2 steps longer, but no relic afterwards.\nVault: a locked vault and its key are on the floor.\nMerchant: spend this run's coins on tools, then a normal floor."},
-			{"t": "BOSSES AND RELICS", "ti": 2, "s": [["boss:2", "Boss"], ["badge:g:12", "Boss level"]],
-			"x": "Every 5th floor a boss sits on the gate. Its rule is shown under the dark meter: some gain levels as the dark advances, so be quick.\n\nAfter each floor you choose a RELIC that lasts the whole run. Some are cursed: strong but risky. You can skip a choice for a few coins."},
-			_tut_shop_page(),
-			_tut_saves_page(),
+			"x": "The dark eats the board from the outside in. The meter at the top right counts steps until it advances. Standing in the dark kills you.\n\nEvery step counts, and spikes cost extra steps."},
+			{"t": "ITEMS", "ti": 1, "s": [["item:pot", "Potion +1"], ["item:shield", "Shield"], ["item:lamp", "Lantern"], ["item:coin", "Coin"]], "s2": [["icon:key", "Key"], ["icon:vault", "Vault"], ["portal", "Portal"]],
+			"x": "Potions raise your level. A shield saves you from one losing fight. A lantern holds the dark back. A key opens a vault. Portals teleport you to their twin."},
+			{"t": "TOOLS AND DOORS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink"], ["use:crystal", "Crystal"], ["door:standard", "Doors"]],
+			"x": "Tools sit in the bar under the board: tap one to use it. They are used up, but your class power recharges.\n\nBetween floors pick a door: Steady is normal, Perilous is harder, Quiet is easier, Vault holds a key, Merchant sells tools. A boss guards every 5th gate."},
+			_tut_need_page(),
 		]
 	return [
 		{"t": "THE GOAL", "ti": 0, "s": [["player", "You"], ["icon:door_locked", "Exit (sealed)"], ["icon:door_open", "Exit (open)"]],
-		"x": "Explore a huge station in fog of war. Collect POINTS from kills, coins and items until the points bar is full, then walk to the exit.\n\nTap a tile to walk there. You stop when something new appears. The map in the corner remembers what you have seen."},
-		{"t": "CLASSES", "ti": 0, "s": [["pcls:scout", "Scout"], ["pcls:brute", "Brute"], ["pcls:mystic", "Mystic"], ["pcls:gambler", "Gambler"], ["pcls:gunslinger", "Gunslinger"]],
-		"x": "Pick a class at the start of a run:\n\nScout: +10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.\nBrute: +2 starting levels and +1 armour, but 10 less air. Starts with a Bomb.\nMystic: a shield every floor and +1 tool slot. Starts with a Shadow Cloak.\nGambler: begins with 2 random relics (maybe cursed!) and sees 4 relic cards instead of 3.\nGunslinger: starts with a Blaster Pistol and 2 Zap Rods, but is frail: 4 less health and 10 less air.\n\nLocked classes are unlocked in the SHOP."},
-		{"t": "CLASS POWERS", "ti": 0, "s": [["pcls:scout", "Deep Breath"], ["pcls:brute", "Iron Stance"], ["pcls:mystic", "Hex Pulse"], ["pcls:gambler", "Reshuffle"], ["pcls:gunslinger", "Ricochet"]],
-		"x": "Every class has one ACTIVE power: the coloured button right of your tool bar. It shows READY or the steps left to recharge.\n\nScout, Deep Breath: +10 air, next 8 steps cost no air.\nBrute, Iron Stance: blocks the next 2 hits, +3 attack until your next kill.\nMystic, Hex Pulse: stuns enemies within 3 tiles for 3 steps (not bosses or turrets).\nGambler, Reshuffle: rerolls all your tools.\nGunslinger, Ricochet: your next shot bounces to a second enemy within 3 tiles (needs a ranged weapon).\n\nRecharge: 40 / 30 / 35 / 50 / 25 steps, in that order."},
-		{"t": "AIR", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["use:crystal", "Air canister"], ["icon:spikes", "Spikes"]], "s2": [["icon:medstation", "Medical station"], ["use:nano", "Nano Injector"]],
-		"x": "Every step costs 1 air. At 0 air you die. Spikes hurt your health instead.\n\nO2 stations refill you completely, as often as you like. (The Recycler skill's healing there works 3 times per floor, and only when you are hurt.) They are spread far apart: use them as bases and explore outward. Air pods and canisters top you up on the road. Leftover air when you leave turns into bonus coins.\n\nMedical stations (green cross) heal you for coins: step on one (or tap it) to open its menu and pick how much to heal. Nano Injectors heal you fully for free."},
-		{"t": "COMBAT", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
-		"x": "Walk into a monster to trade one round of blows: you hit for your ATK, then it hits back. Tap it again to keep fighting, or retreat.\n\nThe badge estimates the fight: green is easy, amber costs a lot of health, red will probably kill you. Crits double your damage.\n\nA killing blow does not move you onto the tile: press again to step there. Defeated enemies leave a corpse behind."},
-		{"t": "RANGED WEAPONS", "ti": 1, "s": [["icon:crate_weapon", "Blaster"], ["mon:1:3:none:g", "Target"]],
-		"x": "Ranged weapons (blasters, crossbows, rifles) shoot a monster in a straight, clear line up to their range when you tap it. An orange tint and reticle show what you can hit.\n\nEach shot costs air (shown in the weapon description, more for better weapons).\n\nShot monsters charge you at full speed (hunters are normally half speed), and a monster right next to you still hits back.\n\nThe Gunslinger's Ricochet power makes your next shot bounce to a second enemy."},
-		{"t": "TURRETS", "ti": 1, "s": [["tur:0:0:3", "Sentry"], ["tur:0:1:2", "Cannon"], ["tur:1:0:0", "Thorn"], ["tur:2:1:1", "Rocket"]],
-		"x": "From floor 2, turrets stand in rooms. They never move, but each faces one direction and shoots 5 tiles down that lane. The tinted tiles show where it can hit you.\n\nSentries fire every step. Cannons fire every other step: the label says reload or fires. They hit for the same damage as a monster of their level. Walk out of the lane, or hit them to destroy them. Other monsters block their shots."},
-		{"t": "HAZARDS", "ti": 0, "s": [["haz:arc", "Arc plate"], ["haz:breach", "Breach"], ["haz:toxic", "Toxic"], ["haz:slick", "Slick"]],
-		"x": "Every world has its own floor hazards, shown on the tile.\n\nStation: Arc plates shock you only while lit (they flicker each step). Breach vents cost 8 air.\n\nJungle: Toxic pools poison you for 4 steps (cure with a Nano Injector or medical station). Slick patches send you sliding in a straight line until something blocks you, even into other hazards.\n\nBombs clear hazards."},
-		{"t": "MORE HAZARDS", "ti": 2, "s": [["haz:mine", "Mine"], ["haz:alarm", "Alarm"], ["haz:warp", "Warp pad"], ["haz:shard", "Shard"]],
-		"x": "Smugglers: Mines blow up for big damage (and hurt monsters nearby). Alarm gates wake nearby monsters into hunters.\n\nCrystal Deep: Warp pads fling you across the cave. Crystal shards cut you and cost extra air.\n\nBombs clear hazards, so keep one for a nasty corridor."},
-		{"t": "HEALTH AND DEFENCE", "ti": 1, "s": [["item:hp", "Medkit"], ["item:armor", "Armour plate"], ["item:shield", "Shield"]],
-		"x": "HP is your health: reach 0 and you die. A medkit heals 40%.\n\nArmour reduces every hit you take by its value (always at least 1). Each plate you find adds +1 permanently.\n\nShield is a separate bar that soaks damage before your HP does."},
-		{"t": "LEVELS AND XP", "ti": 1, "s": [["item:pot", "Potion"], ["item:big", "Overcharged"], ["use:draught", "Elixir"], ["icon:vault", "Vault"]],
-		"x": "Kills, potions, elixirs and vaults give XP. Each level adds attack and max health, and your level stays with you for the whole run.\n\nEvery 3rd level you also earn a SKILL POINT (a gold +1 SKILL POINT pops up). Spend it in the SKILL WEB.\n\nMonsters grow stronger with depth, so keep levelling and upgrade your gear to keep up."},
-		{"t": "SKILL WEB", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Offense"], ["skn:2", "Ranged"], ["skn:3", "Fortune"], ["skn:4", "Tactics"], ["skn:5", "Oxygen"]],
-		"x": "Tap SKILLS at the top of the screen (it turns gold when you have points). The web has six branches of six nodes, and every node has two ranks that get stronger.\n\nYou earn 1 point every 3 levels. A normal node costs 1 point per rank. The first node of each branch is always open; any other node opens once a node next to it has a rank. The outer KEY node costs 2 points and needs the node before it at rank 2.\n\nTap a node to read it, then tap BUY. RESPEC takes every point back for coins (100, plus 20 per point spent): tap it twice to confirm."},
-		{"t": "SKILL BRANCHES", "ti": 0, "s": [["skn:0", "Vitality"], ["skn:1", "Offense"], ["skn:2", "Ranged"], ["skn:3", "Fortune"], ["skn:4", "Tactics"], ["skn:5", "Oxygen"]],
-		"x": "Vitality: max health, armour, shield, medkits, thorns, Last Stand.\n\nOffense: melee attack, crit chance and damage, lifesteal, finishers, Berserker.\n\nRanged: ranged damage, max ammo, ammo drops, range, ranged crits, free shots.\n\nFortune: coin value, gear drops, cheaper shops, coins per kill, potions, lucky XP.\n\nTactics: dodge, opening strikes, free steps after kills, tool slots, free tools, Phoenix.\n\nOxygen: more air, cheaper steps, bigger air pods, air from kills, healing O2 stations, Second Wind."},
-		{"t": "ENEMIES", "ti": 2, "s": [["mon:2:4:hunter:a", "Hunter !"], ["mon:2:3:thief:g", "Thief $"], ["mon:2:5:elite:a", "Elite star"], ["boss:2", "Boss"]],
-		"x": "Hunters (red !) chase you at half your speed: beat them or outrun them.\nThieves ($) steal coins when you stand beside them. Beat one to take them back.\nElites (gold star) give extra XP and may drop gear.\nShooters (gun icon) keep their distance, line up with you and fire down a lane: break the line or rush them.\nEvery 5th floor a boss guards the exit. It drops gear, coins and a tool."},
-		{"t": "AFFIXES", "ti": 2, "s": [["aff:plated", "Plated"], ["aff:regen", "Regenerating"], ["aff:leech", "Leeching"], ["aff:spiny", "Spiny"]],
-		"x": "On deeper floors some monsters carry an AFFIX: a name tag on the sprite. They are tougher but give more XP and may drop gear.\n\nPLATED: takes 2+ less damage from every hit.\nREGEN: heals 2 health every step.\nLEECH: heals itself when it hits you.\nSPINY: reflects damage back at you."},
-		{"t": "MORE AFFIXES", "ti": 2, "s": [["aff:frenzy", "Frenzied"], ["aff:volatile", "Bomb"], ["aff:evasive", "Evasive"], ["aff:warded", "Immune"]],
-		"x": "FRENZY: hits much harder below half health and glows red. Finish it fast.\n\nBOMB: explodes when killed, hurting you if you are beside it. Shoot it from range.\n\nEVASIVE: 20% chance to dodge your attacks.\n\nIMMUNE: immune to burn, poison and stun, so trait builds do nothing to it."},
-		{"t": "GEAR", "ti": 2, "s": [["icon:crate_weapon", "Weapon"], ["icon:crate_helmet", "Helmet"], ["icon:crate_armour", "Armour"], ["icon:crate_boots", "Boots"]], "s2": [["icon:crate_trinket", "Trinket"], ["icon:merchant", "Outfitter"]],
-		"x": "Crates hold gear for five slots. Pick one up to add it to your PACK, then equip it from the BAG for bonuses like attack, armour, crit, sight or extra air. What you equip shows on your astronaut.\n\nWalk onto the SHOP stall (the Outfitter) to buy gear and tools with coins or sell what you do not need. The pack holds 12 items.\n\nEnemies with a two-letter badge and elites drop gear more often."},
-		{"t": "WEAPON TRAITS", "ti": 0, "s": [["icon:crate_weapon", "Weapon"], ["use:bomb", "Fire"], ["haz:arc", "Shock"], ["haz:toxic", "Toxic"], ["haz:slick", "Cryo"]],
-		"x": "Weapons can roll random TRAITS: special effects you can read in the BAG under GEAR. One weapon can carry several.\n\nFire: Ignite burns, Volatile makes kills explode.\nShock: Static stuns, Arc Chain jumps to a second enemy.\nCryo: Frostbite freezes, Shatter hits stunned or frozen enemies harder.\nToxic: Toxin stacks poison, Plague spreads it when they die.\n\nBurning, poisoned, stunned and frozen enemies show small marks."},
-		{"t": "MORE TRAITS", "ti": 0, "s": [["icon:crate_weapon", "Weapon"], ["item:hp", "Blood"], ["item:big", "Streaks"]],
-		"x": "Blood: Siphon and Bloodlust heal you, Executioner finishes weak enemies.\nStreaks: Rampage, Rhythm, Marked and Deadly Crits reward hitting without being hurt.\nBasic: Brutal, Ambush, Keen Edge, Cleave, Pierce, Overkill, Bounty, Spiked, Duelist and Efficient Rounds.\n\nThe Basic traits are always open. Fire, Shock, Cryo, Toxic, Blood and Streak traits come from SHOP packs. Immune enemies ignore all status effects."},
-		{"t": "RELICS", "ti": 0, "s": [],
-		"x": "After each floor you pick one of three relics (the Gambler sees four). A relic lasts the whole run, and you can skip a choice for a few coins. Some are cursed: strong, but they cost you.\n\nMany relics belong to a family: fire, shock, cryo, toxic, blood, crit and more. They power up weapon traits of the same family. Pyromaniac makes burns last longer and hurt double. Storm Capacitor lets Arc Chain hit three enemies.\n\nSome pairs give an extra SYNERGY bonus when you own both, like Pyromaniac with Storm Capacitor. The Relic Cache pack adds more relics."},
-		{"t": "TOOLS", "ti": 0, "s": [["use:bomb", "Bomb"], ["use:blink", "Blink Scroll"], ["use:cloak", "Shadow Cloak"], ["use:zap", "Zap Rod"], ["use:magnet", "Magnet"]], "s2": [["use:crystal", "Air canister"], ["use:draught", "Elixir"], ["use:nano", "Nano Injector"], ["use:cell", "Shield Cell"], ["use:scan", "Scanner"]],
-		"x": "Tools live in the bar under the map. Tap one to use it. Bomb blasts nearby walls and monsters, Blink teleports, Cloak makes you invisible for 16 steps or until you attack, Zap damages a monster, Magnet pulls in coins, Canister restores air, Elixir gives XP, Nano Injector heals fully, Shield Cell refills your shield, Scanner reveals the map.\n\nAlso: Plating Kit (+1 armour) and Ration Pack (heals 40%, +15 air). Newer tools: Decoy Beacon (monsters chase it), Foam Canister (smothers hazards), Frost Charge (stuns nearby enemies), Grapple Hook (zip along a straight line), Mirror Shard (reflects the next hit) and Rewind Device (back 8 steps). A key opens a vault. Tools are used up; your class power recharges."},
-		{"t": "THE BAG", "ti": 0, "s": [["item:lamp", "Scanner"], ["item:coin", "Coin"]],
-		"x": "Tap BAG (top right) to see everything: STATS, TOOLS, RELICS, GEAR and PACK, each with a description. You can also leave the match from there with BACK TO MENU. The SKILLS button sits beside it.\n\nScanners reveal the map around you. After each floor you pick a relic that lasts the run, and your coins are banked to spend in the SHOP."},
-		_tut_shop_page(),
-		_tut_saves_page(),
+		"x": "Collect POINTS from kills, coins and items until the bar is full, then walk to the exit.\n\nTap a tile to walk there, or swipe to step. You stop when something new appears."},
+		{"t": "CONTROLS", "ti": 0, "s": [["use:blink", "Tool"], ["pcls:scout", "Power"], ["icon:crate_weapon", "Weapon"]],
+		"x": "Tools: tap one to select it, tap again to use it. The CANCEL bar backs out.\n\nThe coloured button is your class power. It recharges as you walk.\n\nThe round button swaps melee and ranged. With a ranged weapon, tap a monster in a clear line to shoot it."},
+		{"t": "FIGHTING", "ti": 1, "s": [["player", "You"], ["mon:1:3:none:g", "Easy"], ["mon:1:5:none:a", "Costly"], ["mon:1:8:none:r", "Deadly"]],
+		"x": "Walk into a monster to trade blows. Tap again to keep fighting, or retreat.\n\nThe badge shows the cost: green is easy, amber hurts, red will probably kill you.\n\nHunters (!) chase you, thieves ($) steal coins, turrets shoot down a lane."},
+		{"t": "AIR AND HEALTH", "ti": 0, "s": [["icon:pod", "Air pod"], ["icon:station", "O2 station"], ["item:hp", "Medkit"], ["icon:medstation", "Medical"]],
+		"x": "Every step costs 1 air. At 0 air you die. O2 stations refill you fully: use them as bases and explore outward.\n\nAt 0 health you die too. Medkits and medical stations heal you. Armour cuts every hit, and a shield soaks damage first."},
+		{"t": "LEVELS AND GEAR", "ti": 1, "s": [["item:pot", "XP"], ["skn:0", "Skills"], ["icon:crate_weapon", "Gear"], ["icon:merchant", "Outfitter"]],
+		"x": "Kills give XP and levels. Every 3rd level gives a skill point: tap SKILLS to spend it.\n\nTap BAG to equip gear from crates, and to read your tools and relics. Outfitter stalls sell gear for coins.\n\nAfter each floor you pick a relic that lasts the run."},
+		{"t": "WATCH OUT", "ti": 2, "s": [["haz:arc", "Hazards"], ["aff:plated", "Tagged"], ["boss:2", "Boss"]],
+		"x": "Hazards are drawn on the tile and differ by world. Bombs clear them.\n\nMonsters with a name tag (Plated, Regen, Leech...) are tougher but give better loot.\n\nBosses guard some exits. Beat them for gear and coins."},
+		_tut_need_page(),
 	]
 
 
 func _tut_tabs(i: int) -> Rect2:
-	return Rect2(40 + i * 330, 186, 310, 50)
+	return Rect2(40 + i * 220, 186, 200, 56)
 
 
 func _tut_icon(spec: String, ctr: Vector2, s: float, ti: int) -> void:
@@ -3933,11 +3928,13 @@ func _tut_layout(pg: Dictionary) -> Dictionary:
 
 
 func _draw_tut(acc: Color) -> void:
-	_txt("HOW TO PLAY", Vector2(0, 150), 52, acc)
-	var names := ["PUZZLE", "ADVENTURE"]
-	for i in 2:
+	_txt("NEED TO KNOW", Vector2(0, 150), 52, acc)
+	var names := ["PUZZLE", "ADVENTURE", "PRACTICE"]
+	for i in (3 if tut_back == MODE else 2):
 		var tr := _tut_tabs(i)
 		var tc := Color("ffd84f") if i == tut_mode else Color(1, 1, 1, 0.5)
+		if i == 2:
+			tc = Color("6dff9a")
 		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == tut_mode else 0.06))
 		draw_rect(tr, tc, false, 2.0)
 		_ctext(names[i], tr.get_center(), 24, tc)
@@ -3970,8 +3967,12 @@ func _tut_input(p: Vector2) -> void:
 		tut_back = MODE
 		_sfx("ui")
 		return
-	for i in 2:
+	for i in 3:
 		if _tut_tabs(i).has_point(p):
+			if i == 2:
+				if tut_back == MODE:
+					_tut_map_start()
+				return
 			tut_mode = i
 			tut_page = 0
 			_sfx("ui")
@@ -4538,11 +4539,18 @@ func _draw_overlay(acc: Color) -> void:
 			_txt(xfer_msg, Vector2(0, 252), 24, Color("6dff9a"))
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)
 	elif state == DEAD:
-		_txt(over_title, Vector2(0, 540), 64, Color("ff5d5d"))
-		var ly := 620
+		_txt(over_title, Vector2(0, 430), 64, Color("ff5d5d"))
+		var ly := 510
+		var li := 0
 		for line in over_sub.split("\n"):
-			_txt(line, Vector2(0, ly), 28, Color.WHITE)
-			ly += 42
+			var lc := Color.WHITE
+			if li == 0:
+				lc = Color("ffb0a0")
+			elif line.contains("NEW BEST"):
+				lc = Color("ffd84f")
+			_txt(line, Vector2(0, ly), 28, lc)
+			ly += 46
+			li += 1
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
 		_button(btn_shop, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 	elif state == CLEAR:
@@ -4689,7 +4697,7 @@ func _draw_overlay(acc: Color) -> void:
 # ---------- ADVENTURE MODE (sprawling map, fog of war, points gate, air) ----------
 
 func adv_vis_r() -> int:
-	return 4 + relic_n("lantern") + relic_n("ember") + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight"))
+	return 4 + relic_n("lantern") + relic_n("ember") + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight")) - (1 if _world_rule() == "glare" else 0)
 
 
 func adv_oxy_max() -> float:
@@ -4814,6 +4822,177 @@ func _arena_spawn_shards(n: int) -> void:
 		kinds[sc] = "shard"
 		mon_hp[sc] = 1
 		_fx_ring(Vector2(sc), Color("b48cff"), 1.6, 0.5, 4.0)
+
+
+func _adv_gen_tutorial() -> void:
+	AW = 15
+	AH = 15
+	adv_open.resize(AW * AH)
+	adv_open.fill(0)
+	adv_seen.resize(AW * AH)
+	adv_seen.fill(0)
+	adv_rooms.clear()
+	mons.clear()
+	elite.clear()
+	items.clear()
+	spikes.clear()
+	haz.clear()
+	tur.clear()
+	corpses.clear()
+	coin_at.clear()
+	walls.clear()
+	portals.clear()
+	kinds.clear()
+	thief_held.clear()
+	vaults.clear()
+	stations.clear()
+	meds.clear()
+	merchants.clear()
+	mon_hp.clear()
+	affix.clear()
+	mstat.clear()
+	for r in [Rect2i(3, 11, 9, 3), Rect2i(3, 6, 9, 3), Rect2i(3, 1, 9, 3)]:
+		adv_rooms.append(r)
+		for x in range(r.position.x, r.end.x):
+			for y in range(r.position.y, r.end.y):
+				adv_open[_ai(Vector2i(x, y))] = 1
+	for cy in [4, 5, 9, 10]:
+		adv_open[_ai(Vector2i(7, cy))] = 1
+	start = Vector2i(7, 13)
+	pos = start
+	stairs = Vector2i(7, 1)
+	boss_floor = false
+	boss_cell = Vector2i(-1, -1)
+	adv_req = 3
+	adv_pts_total = 6
+	mons[Vector2i(7, 7)] = 1
+	mons[Vector2i(7, 3)] = 1
+	items[Vector2i(7, 2)] = "use_zap"
+	stations[Vector2i(4, 2)] = true
+	for cc in [Vector2i(5, 12), Vector2i(9, 12), Vector2i(7, 11)]:
+		coin_at[cc] = true
+
+
+func _tut_map_start() -> void:
+	tut_prev_cls = cls
+	tut_prev_save_off = save_off
+	save_off = true
+	tutorial = true
+	tut_zone = -1
+	cls = "scout"
+	mode = "adv"
+	_new_run(1)
+	relics.clear()
+	equip.clear()
+	equip["ranged"] = "blaster"
+	bag.clear()
+	inv.clear()
+	inv.append("blink")
+	ammo = ammo_max()
+	ranged_mode = false
+	coins = 0
+	_adv_snapshot()
+	_adv_begin()
+	_tut_hint()
+	_sfx("big")
+
+
+func _tut_map_end(done: bool) -> void:
+	tutorial = false
+	save_off = tut_prev_save_off
+	cls = tut_prev_cls
+	walk.clear()
+	aim = -1
+	tool_sel = -1
+	state = MODE
+	if done:
+		xfer_msg = "Tutorial complete! You are ready to play"
+		xfer_t = t
+
+
+const TUT_HINTS := [
+	"Tap any tile to walk there, or swipe to step one tile. Walk up the corridor.",
+	"A monster! Walk into it to fight. The round button swaps melee and ranged: tap a monster in a clear line to shoot.",
+	"Tools: tap one in the bar to select it, tap again to use it. The CANCEL bar backs out.",
+	"O2 station: walk onto it to refill your air. Air drops with every step.",
+	"Exit open! Points unlock it. Walk to the gate at the top to finish.",
+]
+
+
+func _tut_hint() -> void:
+	var z := 0
+	if pos.y <= 8:
+		z = 1
+	if pos.y <= 5:
+		z = 2
+	if absi(pos.x - 4) + absi(pos.y - 2) <= 2:
+		z = 3
+	if adv_pts >= adv_req and pos.y <= 3:
+		z = 4
+	if z == tut_zone:
+		return
+	tut_zone = z
+	msg = String(TUT_HINTS[z])
+
+
+const WORLD_RULES := ["leak", "spore", "black", "glare"]
+const WORLD_RULE_TEXT := {
+	"leak": "Vacuum leaks: corridors drain extra air. Rooms are safe.",
+	"spore": "Spore bursts: every 30 steps you are briefly poisoned.",
+	"black": "Black market: more merchants, but more thieves.",
+	"glare": "Crystal glare: you see 1 tile less, but kills give +25% XP.",
+}
+var guide_seen: Dictionary = {}
+
+
+func _world_rule() -> String:
+	if mode != "adv" or tutorial or arena or themes.is_empty():
+		return ""
+	return String(WORLD_RULES[tidx() % WORLD_RULES.size()])
+
+
+func _adv_in_room(c: Vector2i) -> bool:
+	for rm in adv_rooms:
+		if (rm as Rect2i).has_point(c):
+			return true
+	return false
+
+
+func _guide_on() -> bool:
+	return mode == "adv" and not tutorial and not arena and floor_n == 1 and adv_best == 0
+
+
+func _guide_say(k: String, text: String) -> bool:
+	if guide_seen.has(k):
+		return false
+	guide_seen[k] = true
+	msg = text
+	return true
+
+
+func _guide_tick() -> void:
+	if not _guide_on() or state != PLAY:
+		return
+	if adv_pts >= adv_req and _guide_say("exit", "Exit unlocked! Walk to the exit gate to finish the floor."):
+		return
+	if hp * 3 < hp_cap() and _guide_say("lowhp", "Low health! Pick up health items, and check a monster's fight cost before you fight it."):
+		return
+	if oxy < oxy_max * 0.5 and _guide_say("air", "Half your air is gone. Walk onto an O2 station to refill it, or grab an air pod."):
+		return
+	if skill_pts > 0 and _guide_say("skill", "You have a skill point! Tap SKILLS to spend it."):
+		return
+	for dx in range(-3, 4):
+		for dy in range(-3, 4):
+			var gc := pos + Vector2i(dx, dy)
+			if not items.has(gc):
+				continue
+			var gk := String(items[gc])
+			if gk == "shrine" and _guide_say("shrine", "A shrine: pay a slice of health for a big burst of XP."):
+				return
+			if gk == "idol" and _guide_say("idol", "A Golden Idol: pure coins and points. Safe to grab."):
+				return
+	if inv.size() > 0 and _guide_say("tool", "You hold a tool. Tap it in the bar to select it, tap again to use it."):
+		return
 
 
 func _adv_gen_arena() -> void:
@@ -5104,6 +5283,9 @@ func _arena_selftest() -> int:
 func _adv_gen() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = adv_seed
+	if tutorial:
+		_adv_gen_tutorial()
+		return
 	if arena:
 		_adv_gen_arena()
 		return
@@ -5146,6 +5328,9 @@ func _adv_gen() -> void:
 			for xx in range(r.position.x, r.end.x):
 				for yy in range(r.position.y, r.end.y):
 					adv_open[_ai(Vector2i(xx, yy))] = 1
+	var rdeg: Array[int] = []
+	rdeg.resize(adv_rooms.size())
+	rdeg.fill(0)
 	for i in range(1, adv_rooms.size()):
 		var a: Rect2i = adv_rooms[i]
 		var bj := 0
@@ -5156,11 +5341,15 @@ func _adv_gen() -> void:
 				bd = dd
 				bj = j
 		_adv_corridor(_rc(a), _rc(adv_rooms[bj]), rng.randf() < 0.5)
+		rdeg[i] += 1
+		rdeg[bj] += 1
 	for k in 2 + floor_n / 4:
 		var i2 := rng.randi_range(0, adv_rooms.size() - 1)
 		var j2 := rng.randi_range(0, adv_rooms.size() - 1)
 		if i2 != j2:
 			_adv_corridor(_rc(adv_rooms[i2]), _rc(adv_rooms[j2]), rng.randf() < 0.5)
+			rdeg[i2] += 1
+			rdeg[j2] += 1
 	start = _rc(adv_rooms[0])
 	pos = start
 	var dist := _adv_bfs(start)
@@ -5293,7 +5482,7 @@ func _adv_gen() -> void:
 		if cc2.x >= 0:
 			items[cc2] = "gear_" + _adv_roll_gear(rng)
 			pts += 2
-	if rng.randf() < 0.6 and adv_rooms.size() > 3:
+	if rng.randf() < (0.9 if _world_rule() == "black" else 0.6) and adv_rooms.size() > 3:
 		var mi := rng.randi_range(1, adv_rooms.size() - 1)
 		if mi != far:
 			var mcell2 := _adv_pick(rng, adv_rooms[mi], true, taken)
@@ -5328,6 +5517,23 @@ func _adv_gen() -> void:
 				vaults[vc] = true
 				pts += 12
 				gain += 1
+	var de_n := 0
+	for de_i in range(1, adv_rooms.size()):
+		if de_n >= 2:
+			break
+		if de_i == far or rdeg[de_i] != 1 or rng.randf() > 0.7:
+			continue
+		var de_c := _adv_pick(rng, adv_rooms[de_i], true, taken)
+		if de_c.x < 0:
+			continue
+		items[de_c] = "idol" if rng.randf() < 0.4 else "shrine"
+		pts += 2
+		de_n += 1
+		if floor_n >= 3 and rng.randf() < 0.6:
+			var de_g := _adv_pick(rng, adv_rooms[de_i], true, taken)
+			if de_g.x >= 0:
+				mons[de_g] = 1
+				mon_cells.append(de_g)
 	if floor_n >= 2 and adv_rooms.size() > 2:
 		var hids: Array = HAZ_IDS[tidx()]
 		var corr: Array[Vector2i] = []
@@ -5395,7 +5601,7 @@ func _adv_gen() -> void:
 		mons[mcell] = lv2
 		if floor_n >= 2 and rng.randf() < 0.25:
 			kinds[mcell] = "hunter"
-		elif floor_n >= 3 and rng.randf() < 0.15:
+		elif floor_n >= 3 and rng.randf() < (0.3 if _world_rule() == "black" else 0.15):
 			kinds[mcell] = "thief"
 		elif floor_n >= 3 and rng.randf() < 0.14:
 			kinds[mcell] = "shooter"
@@ -5446,7 +5652,7 @@ func _ranged_atk() -> int:
 
 
 func ammo_max() -> int:
-	return 12 + 4 * int(pk.get("ammo", 0)) + int(sk("ammomax"))
+	return 12 + 4 * int(pk.get("ammo", 0)) + int(sk("ammomax")) + 4 * up("belt") + (4 if cls == "gunslinger" else 0)
 
 
 func _is_frenzied(c: Vector2i) -> bool:
@@ -6697,7 +6903,7 @@ func _adv_snapshot() -> void:
 		"coin_at": coin_at.duplicate(), "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
 		"vaults": vaults.duplicate(), "inv": inv.duplicate(), "coins": coins,
 		"level": level, "xp": xp, "hp_max": hp_max, "armor": armor, "sh": sh,
-		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(), "skills": skills.duplicate(), "skill_pts": skill_pts, "ammo": ammo, "pk": pk.duplicate(),
+		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(), "skills": skills.duplicate(), "skill_pts": skill_pts, "ammo": ammo, "pk": pk.duplicate(), "run_kills": run_kills,
 	}
 
 
@@ -6743,6 +6949,7 @@ func _adv_reset() -> void:
 	skills = saved.get("skills", {}).duplicate()
 	skill_pts = int(saved.get("skill_pts", 0))
 	ammo = int(saved.get("ammo", ammo))
+	run_kills = int(saved.get("run_kills", run_kills))
 	pk = saved.get("pk", {}).duplicate()
 	_adv_begin()
 
@@ -6765,7 +6972,7 @@ func _adv_init_run() -> void:
 	bag.clear()
 	if cls == "gunslinger":
 		equip["ranged"] = "blaster"
-	ammo = 0
+	ammo = ammo_max() if cls == "gunslinger" else 0
 	ranged_mode = false
 	for i in up("kit"):
 		var kid := _adv_roll_gear(null, -1)
@@ -6848,6 +7055,9 @@ func _adv_begin() -> void:
 		msg = "BOSS FLOOR: the %s guards the exit" % cur_theme()["boss"]
 	else:
 		msg = "Explore! Collect %d points to unlock the %s" % [adv_req, cur_theme()["gate"]]
+		var wr := _world_rule()
+		if wr != "" and floor_n % 3 == 1:
+			msg = "%s  Collect %d points to unlock the %s" % [String(WORLD_RULE_TEXT[wr]), adv_req, cur_theme()["gate"]]
 
 
 func _adv_next() -> void:
@@ -6956,6 +7166,7 @@ func _adv_path(target: Vector2i) -> Array[Vector2i]:
 
 
 func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
+	run_kills += 1
 	var back := 0
 	if thief_held.has(nc):
 		back = int(thief_held[nc])
@@ -6974,6 +7185,8 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	if sk("airkill") > 0.0 and oxy < oxy_max:
 		oxy = minf(oxy_max, oxy + sk("airkill"))
 	var mult := 1.0 + 0.5 * relic_n("blade")
+	if _world_rule() == "glare":
+		mult += 0.25
 	if was_elite:
 		mult += 1.0 + 0.5 * relic_n("slayer")
 	if is_boss:
@@ -7083,6 +7296,16 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			msg = "Something blocks the way"
 			_sfx("blocked")
 			return
+		if ranged_mode and not shooting and _weapon_range() > 0:
+			if ammo > 0:
+				_adv_shoot(nc)  # ranged out: the attack is a shot (ranged damage)
+				return
+			# out of ammo: auto-press the swap button and attack in melee
+			wbox_from = ranged_mode
+			wbox_t0 = Time.get_ticks_msec()
+			ranged_mode = false
+			_sfx("ui")
+			_pop(pos, "MELEE", Color("ff8a4f"))
 		var res := _adv_fight(nc)
 		if res == 0:
 			return
@@ -7180,7 +7403,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			_pop(nc, "BOUNTY", Color("ffc93c"))
 			snd = "coin"
 		elif kind == "idol":
-			var iv := 8 * coin_val()
+			var iv := 8  # flat: the extra-coin bonus does not apply to idols
 			coins += iv
 			adv_pts += 6
 			msg = "Golden Idol! +%d coins" % iv
@@ -7304,6 +7527,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		oxy -= extra
 	else:
 		oxy -= (1.0 - (gear("airsave") + sk("airsave")) / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	if _world_rule() == "leak" and not _adv_in_room(pos):
+		oxy -= 0.25
 	if moved and corpses.has(pos) and relic_n("gravedigger") > 0 and not bool(corpses[pos].get("looted", false)):
 		corpses[pos]["looted"] = true
 		var lc := 2 * relic_n("gravedigger") * coin_val()
@@ -7341,6 +7566,11 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	_adv_update_vis()
 	if spike_dmg > 0 and not _adv_spike_hurt(spike_dmg):
 		return
+	if _world_rule() == "spore" and adv_steps % 30 == 0:
+		poison_n = maxi(poison_n, 3)
+		poison_d = maxi(poison_d, 1)
+		msg = "Spore burst! You are poisoned for a few steps"
+		_pop(pos, "SPORES", Color("b6ff6a"))
 	if poison_n > 0:
 		poison_n -= 1
 		if not _adv_env_hurt(poison_d, "Poison! You lose %d health", "You succumbed to poison", "poison"):
@@ -7394,6 +7624,10 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		snd = ""
 	if moved and merchants.has(pos) and state == PLAY:
 		_adv_open_trade(pos)
+	if tutorial and state == PLAY:
+		_tut_hint()
+	elif state == PLAY:
+		_guide_tick()
 	if snd != "":
 		if snd == "step" and oxy < 20.0:
 			snd = "tick"
@@ -7859,6 +8093,9 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 
 
 func _adv_clear() -> void:
+	if tutorial:
+		_tut_map_end(true)
+		return
 	_lb_note(floor_n, false)
 	walk.clear()
 	aim = -1
@@ -7888,23 +8125,26 @@ func _adv_aim_valid(id: String, c: Vector2i) -> bool:
 	if id == "decoy":
 		return dd <= 6 and _aopen(c) and not mons.has(c) and not vaults.has(c) and c != pos
 	if id == "grapple":
-		return dd <= 7 and _grapple_ok(c)
+		return _grapple_ok(c)
 	return false
 
 
+# Any seen tile on a straight line from you picks that direction; the hook flies until it hits an enemy or wall.
 func _grapple_ok(c: Vector2i) -> bool:
 	var d := c - pos
 	if (d.x != 0 and d.y != 0) or (d.x == 0 and d.y == 0):
 		return false
-	if not _aopen(c) or mons.has(c) or vaults.has(c):
-		return false
-	var n := maxi(absi(d.x), absi(d.y))
-	var st := Vector2i(signi(d.x), signi(d.y))
-	for i in range(1, n):
-		var m := pos + st * i
-		if not _aopen(m) or mons.has(m) or vaults.has(m):
-			return false
-	return true
+	var dv := Vector2i(signi(d.x), signi(d.y))
+	return _grapple_hit(dv) - dv != pos
+
+
+func _grapple_hit(dv: Vector2i) -> Vector2i:
+	var c := pos
+	for i in 80:
+		c += dv
+		if not _ain(c) or not _aopen(c) or mons.has(c) or vaults.has(c):
+			return c
+	return c
 
 
 func _adv_aim_any(id: String) -> bool:
@@ -8246,10 +8486,13 @@ func _adv_aim_apply(c: Vector2i) -> void:
 		_sfx("lamp")
 		return
 	if id == "grapple":
+		var gdv := Vector2i(signi(c.x - pos.x), signi(c.y - pos.y))
+		var ghit := _grapple_hit(gdv)
 		_sfx("warp")
-		_fx_ring(vis_pos, Color("c9d3f0"), 1.0, 0.4, 4.0)
-		msg = "Grapple! Zipped across"
-		_adv_step(c, true)
+		fx.append({"k": "rope", "a": Vector2(pos), "b": Vector2(ghit), "t0": t, "life": 0.5})
+		_fx_burst(Vector2(ghit), Color("c9d3f0"), 8, 2.4, 0.4, 4.0)
+		msg = "Grapple! Hooked %s and pulled in" % ("an enemy" if mons.has(ghit) else "the wall")
+		_adv_step(ghit - gdv, true)
 		return
 	if id == "blink":
 		_sfx("warp")
@@ -8353,6 +8596,7 @@ func _adv_input(p: Vector2) -> void:
 		_sfx("blocked")
 		return
 	walk = path
+	walk_t = 0.11  # first step fires on the next frame instead of waiting out the step timer
 
 
 func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color) -> void:
@@ -8835,7 +9079,7 @@ func _adv_badges() -> void:
 		bx += 66.0
 
 func _inv_tab_rect(i: int) -> Rect2:
-	return Rect2(40 + i * 130, 186, 122, 50)
+	return Rect2(40 + i * 130, 186, 122, 56)
 
 
 func _gear_btn_rect(i: int) -> Rect2:
@@ -8843,7 +9087,7 @@ func _gear_btn_rect(i: int) -> Rect2:
 
 
 func _pack_rect(k: int, which: int) -> Rect2:
-	return Rect2(430 + which * 120, 262 + k * 100 + 8 + 16, 110, 52)
+	return Rect2(430 + which * 128, 272 + k * 130 + 12, 120, 96)
 
 
 func _inv_use_rect(i: int) -> Rect2:
@@ -8864,6 +9108,8 @@ func _menu_leave() -> void:
 		walk.clear()
 		aim = -1
 		_save_run()
+		if tutorial:
+			_tut_map_end(false)
 		state = MODE
 		_sfx("ui")
 	else:
@@ -8899,6 +9145,11 @@ func _inv_input(p: Vector2) -> void:
 			inv_scroll = 0.0
 			_sfx("ui")
 			return
+	if inv_tab == 0 and btn_inmore.has_point(p):
+		inv_more = not inv_more
+		inv_scroll = 0.0
+		_sfx("ui")
+		return
 	if inv_tab == 1:
 		for i in inv.size():
 			if _inv_use_rect(i).has_point(p):
@@ -8906,7 +9157,7 @@ func _inv_input(p: Vector2) -> void:
 				_adv_use_slot(i)
 				return
 	elif inv_tab == 2:
-		var pages := maxi(1, (_owned_relics().size() + 8) / 9)
+		var pages := maxi(1, (_owned_relics().size() + 5) / 6)
 		if btn_ipv.has_point(p):
 			inv_page = (inv_page + pages - 1) % pages
 			_sfx("ui")
@@ -9006,9 +9257,9 @@ func _inv_extra_rows() -> Array:
 
 func _draw_inv(acc: Color) -> void:
 	var armed := t - menu_armed < 3.0
-	_button(btn_invmenu, "TAP AGAIN: LEAVE" if armed else "BACK TO MENU", Color("ff8a8a") if armed else acc, 17)
-	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 17)
-	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 17)
+	_button(btn_invmenu, "TAP AGAIN: LEAVE" if armed else "BACK TO MENU", Color("ff8a8a") if armed else acc, 18)
+	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 18)
+	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 18)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
 	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR", "PACK"]
 	for i in 5:
@@ -9016,7 +9267,7 @@ func _draw_inv(acc: Color) -> void:
 		var tc := Color("ffd84f") if i == inv_tab else Color(1, 1, 1, 0.5)
 		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == inv_tab else 0.06))
 		draw_rect(tr, tc, false, 2.0)
-		_ctext(tabs[i], tr.get_center(), 19, tc)
+		_ctext(tabs[i], tr.get_center(), 20, tc)
 	if inv_tab == 0:
 		var rows := [
 			["LEVEL", "%d" % level, "Each level adds attack and max health."],
@@ -9028,23 +9279,30 @@ func _draw_inv(acc: Color) -> void:
 			["AIR", "%d / %d" % [int(ceil(oxy)), int(oxy_max)], "Walking costs air. O2 stations refill it."],
 			["POINTS", "%d / %d" % [adv_pts, adv_req], "Reach the total to unlock the exit. Coins: %d" % coins],
 		]
-		var allrows: Array = [["#CORE"]] + rows + _inv_extra_rows()
+		rows.append(["COINS", "%d" % coins, ""])
+		var allrows: Array = rows
+		if inv_more:
+			allrows = [["#CORE"]] + rows + _inv_extra_rows()
 		var vt := 276.0
-		var vb := 1100.0
+		var vb := 1050.0
 		var yy := vt - inv_scroll
 		var total := 0.0
 		for r in allrows:
 			var hdr := String(r[0]).begins_with("#")
-			var hh := 48.0 if hdr else 80.0
+			var hh := 48.0 if hdr else (80.0 if inv_more else 66.0)
 			if yy >= vt - 2.0 and yy + hh <= vb + 2.0:
 				if hdr:
 					_txt(String(r[0]).substr(1), Vector2(50, yy + 34), 24, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 					draw_line(Vector2(40, yy + 42), Vector2(680, yy + 42), Color(1, 0.85, 0.3, 0.35), 2.0)
 				else:
-					draw_rect(Rect2(40, yy, 640, 72), Color(1, 1, 1, 0.05))
-					_txt(String(r[0]), Vector2(60, yy + 30), 22, Color(1, 1, 1, 0.65), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-					_txt(String(r[1]), Vector2(360, yy + 32), 28, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_RIGHT)
-					_txt(String(r[2]), Vector2(60, yy + 60), 18, Color(1, 1, 1, 0.55), 610.0, HORIZONTAL_ALIGNMENT_LEFT)
+					draw_rect(Rect2(40, yy, 640, 72 if inv_more else 58), Color(1, 1, 1, 0.05))
+					if inv_more:
+						_txt(String(r[0]), Vector2(60, yy + 30), 22, Color(1, 1, 1, 0.65), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+						_txt(String(r[1]), Vector2(360, yy + 32), 28, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_RIGHT)
+						_txt(String(r[2]), Vector2(60, yy + 60), 18, Color(1, 1, 1, 0.55), 610.0, HORIZONTAL_ALIGNMENT_LEFT)
+					else:
+						_txt(String(r[0]), Vector2(60, yy + 38), 26, Color(1, 1, 1, 0.75), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+						_txt(String(r[1]), Vector2(360, yy + 40), 34, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_RIGHT)
 			yy += hh
 			total += hh
 		inv_scroll_max = maxf(0.0, total - (vb - vt))
@@ -9053,7 +9311,8 @@ func _draw_inv(acc: Color) -> void:
 			var bh := (vb - vt) * (vb - vt) / total
 			var by := vt + (vb - vt - bh) * inv_scroll / inv_scroll_max
 			draw_rect(Rect2(690, by, 6, bh), Color(1, 1, 1, 0.35))
-			_txt("drag to scroll", Vector2(0, 1128), 16, Color(1, 1, 1, 0.4))
+			_txt("drag to scroll", Vector2(0, 1134), 16, Color(1, 1, 1, 0.4))
+		_button(btn_inmore, "FEWER STATS" if inv_more else "ALL STATS", Color("ffd84f"), 22)
 	elif inv_tab == 1:
 		_txt("Tools also sit on the bar at the bottom of the screen.", Vector2(0, 268), 20, Color(1, 1, 1, 0.55))
 		if inv.is_empty():
@@ -9070,22 +9329,22 @@ func _draw_inv(acc: Color) -> void:
 			_button(_inv_use_rect(i), "USE", col, 24)
 	elif inv_tab == 2:
 		var owned := _owned_relics()
-		var pages := maxi(1, (owned.size() + 8) / 9)
+		var pages := maxi(1, (owned.size() + 5) / 6)
 		if owned.is_empty():
 			_txt("No relics yet. Pick one after clearing a floor.", Vector2(0, 520), 26, Color(1, 1, 1, 0.5))
-		for k in 9:
-			var idx := inv_page * 9 + k
+		for k in 6:
+			var idx := inv_page * 6 + k
 			if idx >= owned.size():
 				break
 			var d: Dictionary = owned[idx]
-			var y := 262.0 + k * 86.0
+			var y := 262.0 + k * 130.0
 			var cursed := d.has("curse")
 			var col := Color("ff6a5c") if cursed else acc
-			draw_rect(Rect2(40, y, 640, 78), Color(col.r, col.g, col.b, 0.1))
-			draw_rect(Rect2(40, y, 640, 78), col, false, 2.0)
+			draw_rect(Rect2(40, y, 640, 120), Color(col.r, col.g, col.b, 0.1))
+			draw_rect(Rect2(40, y, 640, 120), col, false, 2.0)
 			var n := relic_n(String(d["id"]))
-			_txt(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else "") + ("   CURSED" if cursed else ""), Vector2(58, y + 32), 26, col, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(_atext(String(d["id"]), String(d["desc"])), Vector2(58, y + 62), 19, Color(1, 1, 1, 0.75), 610.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else "") + ("   CURSED" if cursed else ""), Vector2(58, y + 40), 30, col, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_para(_atext(String(d["id"]), String(d["desc"])), Vector2(58, y + 76), 21, Color(1, 1, 1, 0.8), 610.0)
 		if pages > 1:
 			_button(btn_ipv, "< PREV", acc, 22)
 			_button(btn_inx, "NEXT >", acc, 22)
@@ -9130,17 +9389,17 @@ func _draw_inv(acc: Color) -> void:
 				break
 			var gd2: Dictionary = gear_defs[gb(String(bag[idx]))]
 			var gc := _gear_col(String(gd2["slot"]))
-			var y2 := 262.0 + k * 100.0 + 8.0
-			draw_rect(Rect2(40, y2, 640, 90), Color(gc.r, gc.g, gc.b, 0.08))
-			draw_rect(Rect2(40, y2, 640, 90), Color(gc.r, gc.g, gc.b, 0.6), false, 2.0)
-			_spr(_gear_tex(String(bag[idx])), Vector2(88, y2 + 45), 62.0)
-			_txt(String(gd2["name"]), Vector2(128, y2 + 32), 24, _tier_col(int(gd2["tier"])), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(gd2["slot"]).to_upper(), Vector2(128, y2 + 54), 15, gc, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+			var y2 := 272.0 + k * 130.0
+			draw_rect(Rect2(40, y2, 640, 120), Color(gc.r, gc.g, gc.b, 0.08))
+			draw_rect(Rect2(40, y2, 640, 120), Color(gc.r, gc.g, gc.b, 0.6), false, 2.0)
+			_spr(_gear_tex(String(bag[idx])), Vector2(92, y2 + 60), 72.0)
+			_txt(String(gd2["name"]), Vector2(140, y2 + 38), 28, _tier_col(int(gd2["tier"])), 280.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(String(gd2["slot"]).to_upper(), Vector2(140, y2 + 66), 18, gc, 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 			if gtr(String(bag[idx])).size() > 0:
-				_txt(gtrait_line(String(bag[idx])), Vector2(200, y2 + 54), 14, Color("ffd84f"), 230.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(_gear_desc(gd2), Vector2(128, y2 + 78), 15, Color(1, 1, 1, 0.7), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_button(Rect2(430, y2 + 16, 110, 52), "EQUIP", gc, 20)
-			_button(Rect2(550, y2 + 16, 110, 52), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 18)
+				_txt(gtrait_line(String(bag[idx])), Vector2(230, y2 + 66), 16, Color("ffd84f"), 190.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(_gear_desc(gd2), Vector2(140, y2 + 98), 18, Color(1, 1, 1, 0.75), 280.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_button(_pack_rect(k, 0), "EQUIP", gc, 24)
+			_button(_pack_rect(k, 1), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 20)
 		if pages2 > 1:
 			_button(btn_ipv, "< PREV", acc, 22)
 			_button(btn_inx, "NEXT >", acc, 22)
@@ -9391,6 +9650,141 @@ func _draw_selftest() -> void:
 	print("DRAW TEST DONE")
 
 
+func _batch_selftest() -> int:
+	var bad := 0
+	var sv_ups := ups.duplicate()
+	var sv_best := adv_best
+	var sv_bank := bank
+	var sv_off := save_off
+	var sv_relics := relics.duplicate()
+	var sv_items := items.duplicate()
+	var sv_inv := inv.duplicate()
+	var sv_floor := floor_n
+	var sv_level := level
+	var sv_hp := hp
+	var sv_oxy := oxy
+	var sv_pts := adv_pts
+	var sv_req := adv_req
+	var sv_sp := skill_pts
+	save_off = true
+	mode = "adv"
+	tutorial = false
+	arena = false
+	# ammo belt
+	ups["belt"] = 0
+	var a0 := ammo_max()
+	ups["belt"] = 2
+	if ammo_max() != a0 + 8:
+		print("FAIL ammo belt")
+		bad += 1
+	ups["belt"] = 0
+	# world rule per floor
+	var want := {1: "leak", 4: "spore", 7: "black", 10: "glare", 13: "leak"}
+	for wf in want:
+		floor_n = int(wf)
+		if _world_rule() != String(want[wf]):
+			print("FAIL world rule floor %d" % int(wf))
+			bad += 1
+	arena = true
+	floor_n = 3
+	if _world_rule() != "":
+		print("FAIL world rule in arena")
+		bad += 1
+	arena = false
+	# every rule floor generates a fully reachable level (shrines, idols, guards included)
+	for gf in [1, 4, 7, 10, 16]:
+		for gs in 6:
+			floor_n = gf
+			adv_seed = gf * 101 + gs * 17 + 3
+			_adv_init_run()
+			_adv_gen()
+			var gd := _adv_bfs(start)
+			for gc in items:
+				if not gd.has(gc):
+					print("FAIL unreachable item floor %d seed %d" % [gf, adv_seed])
+					bad += 1
+			for gm in mons:
+				if gm != stairs and not gd.has(gm):
+					print("FAIL unreachable monster floor %d seed %d" % [gf, adv_seed])
+					bad += 1
+			if not _adv_in_room(start):
+				print("FAIL start not in a room")
+				bad += 1
+	# leak rule: a corridor cell is outside every room
+	var corr_found := false
+	for cy in AH:
+		for cx in AW:
+			var cc := Vector2i(cx, cy)
+			if _aopen(cc) and not _adv_in_room(cc):
+				corr_found = true
+				break
+		if corr_found:
+			break
+	if not corr_found:
+		print("FAIL no corridor cell found")
+		bad += 1
+	# guided first floor: each hint shows once
+	floor_n = 1
+	adv_best = 0
+	guide_seen.clear()
+	state = PLAY
+	items.clear()
+	inv.clear()
+	skill_pts = 0
+	hp = hp_cap()
+	oxy = oxy_max
+	adv_req = 1
+	adv_pts = 5
+	_guide_tick()
+	if not msg.contains("Exit unlocked"):
+		print("FAIL guide exit hint")
+		bad += 1
+	msg = "zzz"
+	_guide_tick()
+	if msg != "zzz":
+		print("FAIL guide hint repeated")
+		bad += 1
+	adv_best = 3
+	guide_seen.clear()
+	msg = "zzz"
+	_guide_tick()
+	if msg != "zzz":
+		print("FAIL guide shown after a floor was cleared")
+		bad += 1
+	# death screen text
+	adv_best = 0
+	guide_seen.clear()
+	floor_n = 4
+	level = 5
+	run_kills = 7
+	coins = 3
+	run_banked = 0
+	relics.clear()
+	_die("Test cause")
+	if state != DEAD or not over_sub.contains("Kills 7") or not over_sub.contains("NEW BEST") or not over_sub.contains("Floor 4") or not over_sub.contains("Level 5") or not over_sub.begins_with("Test cause"):
+		print("FAIL death screen text: " + over_sub)
+		bad += 1
+	state = PLAY
+	run_kills = 0
+	# restore what this test touched
+	ups = sv_ups
+	adv_best = sv_best
+	bank = sv_bank
+	save_off = sv_off
+	relics = sv_relics
+	items = sv_items
+	inv = sv_inv
+	floor_n = sv_floor
+	level = sv_level
+	hp = sv_hp
+	oxy = sv_oxy
+	adv_pts = sv_pts
+	adv_req = sv_req
+	skill_pts = sv_sp
+	print("batch selftest bad=%d" % bad)
+	return bad
+
+
 func _adv_selftest() -> void:
 	var bad := 0
 	mode = "adv"
@@ -9613,6 +10007,7 @@ func _adv_selftest() -> void:
 	bad += _arena_selftest()
 	bad += _trait_selftest()
 	bad += _skill_selftest()
+	bad += _batch_selftest()
 	print("ADV TEST DONE bad=%d" % bad)
 
 

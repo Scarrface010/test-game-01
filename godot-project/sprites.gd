@@ -2,6 +2,8 @@ extends RefCounted
 # Procedural pixel-art generator for Pocket Station. Everything is drawn into small
 # Images with a tiny raster toolkit (shapes, shading pass, outline pass) and cached.
 
+const G64 := preload("res://gear64.gd")
+
 var themes: Array = []
 var cache: Dictionary = {}
 
@@ -893,6 +895,13 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	if front != null:
 		base.blend_rect(front, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 	for slot in ["armour", "boots", "trinket", "helmet"]:
+		var gid := String(eq.get(slot, ""))
+		if slot != "trinket" and G64.SPEC.has(gid):
+			var cv6 := Cv.new(64, 64)
+			G64.draw(cv6, slot, gid, dir)
+			cv6.outline(Color("0a0d1a"))
+			base.blend_rect(cv6.img, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+			continue
 		var art := _art(eq, slot)
 		if art.is_empty():
 			continue
@@ -1325,6 +1334,10 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 	var key := "gearicon_" + id
 	if cache.has(key):
 		return cache[key]
+	if slot != "weapon" and slot != "trinket" and G64.SPEC.has(id):
+		var gi := _gear_icon64(id, slot)
+		cache[key] = gi
+		return gi
 	var cv := Cv.new(32, 32)
 	var ol := Color("0e1322")
 	if not ART.has(id):
@@ -1357,6 +1370,21 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 	var t := cv.tex()
 	cache[key] = t
 	return t
+
+
+# Inventory icon for helmets, body armour and boots: the piece as worn (front view), cropped around its slot
+func _gear_icon64(id: String, slot: String) -> ImageTexture:
+	var img: Image = player(Color("4fd1ff"), "", 0, 0, {slot: id}).get_image()
+	var rect := Rect2i(6, 0, 52, 40)
+	if slot == "armour":
+		rect = Rect2i(8, 32, 48, 24)
+	elif slot == "boots":
+		rect = Rect2i(12, 48, 40, 16)
+	var sub: Image = img.get_region(rect)
+	var side := maxi(rect.size.x, rect.size.y)
+	var sq := Image.create(side, side, false, Image.FORMAT_RGBA8)
+	sq.blit_rect(sub, Rect2i(0, 0, rect.size.x, rect.size.y), Vector2i((side - rect.size.x) / 2, (side - rect.size.y) / 2))
+	return ImageTexture.create_from_image(sq)
 
 
 # ---------------------------------------------------------------- corpses
