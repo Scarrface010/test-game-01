@@ -143,6 +143,7 @@ const PACKS := {
 	"p_relic": {"t": [], "r": ["deadeye", "efficient", "plating", "hazmat", "gravedigger", "thornmail", "scrapper"]},
 }
 var shop_page := 0
+var shop_tab := 0   # 0 characters, 1 relics, 2 permanent upgrades
 var mode := "puzzle"
 var adv_best := 0
 var AW := 40
@@ -179,6 +180,9 @@ var inv_tab := 3   # 3 = CHARACTER (default bag tab); 0 stats, 1 tools, 2 relics
 var inv_page := 0
 var chr_sel := -1  # pack index being previewed on the character tab
 var chr_dir := 0   # facing of the character model (0 front, 3 side, 1 back)
+var chr_drag := false   # a touch started inside the scrollable pack list
+var chr_moved := false
+var chr_press := Vector2.ZERO
 var equip: Dictionary = {}
 var ammo := 0
 var ranged_mode := false
@@ -205,6 +209,13 @@ var meds: Dictionary = {}   # medical stations: cell -> true
 var adv_names := {
 	"slowdark": "Deep Lungs", "lantern": "Wide Scanner", "ember": "Overclock Scanner",
 	"iron": "Iron Lungs", "oil": "Air Filter", "crystal": "Air Canister",
+}
+const CLASS_BLURB := {
+	"scout": "Quick on his feet: great for exploring.",
+	"brute": "Hardy and strong: best for head-on combat.",
+	"mystic": "Shielded and resourceful: steady and safe.",
+	"gambler": "Lives on luck: risky relics, big rewards.",
+	"gunslinger": "Deadly at range, but fragile up close.",
 }
 var adv_mini: ImageTexture
 var btn_modeback := Rect2(20, 76, 160, 44)
@@ -275,7 +286,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 26
+const BUILD := 27
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -301,9 +312,9 @@ var adv_text := {
 	"syn_slowdark_lantern": "Scanner pulses reach even further",
 	"syn_skeleton_boots": "The exit needs another 4 fewer points",
 	"syn_phoenix_aegis": "Phoenix revive also gives +1 level", "gate": "The exit needs 4 fewer points per level",
-	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and a Time Crystal.",
+	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and an Air Canister.",
 	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
-	"cls_gunslinger": "Starts with a Blaster Pistol and 2 Zap Rods, but is frail: 4 less health and 10 less air.",
+	"cls_gunslinger": "Starts with a Blaster Pistol (full ammo, +4 max ammo) and 2 Zap Rods, but is frail: 4 less health and 10 less air.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
 	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
 	"phoenix": "Survive one death: restores full health and air",
@@ -1680,8 +1691,33 @@ func _shop_rect(i: int) -> Rect2:
 	return Rect2(50, 350 + i * 108, 620, 98)
 
 
+const SHOP_TABS := ["CHARACTERS", "RELICS", "UPGRADES"]
+const SHOP_RELIC_IDS := ["p_elem", "p_blood", "p_combo", "p_relic", "head", "ash"]
+
+
+func _shop_tab_of(id: String) -> int:
+	if id.begins_with("c_"):
+		return 0
+	if SHOP_RELIC_IDS.has(id):
+		return 1
+	return 2
+
+
+# indices into shop_defs shown on the current tab
+func _shop_list() -> Array:
+	var out: Array = []
+	for i in shop_defs.size():
+		if _shop_tab_of(String(shop_defs[i]["id"])) == shop_tab:
+			out.append(i)
+	return out
+
+
+func _shop_tab_rect(i: int) -> Rect2:
+	return Rect2(50 + i * 210, 302, 200, 40)
+
+
 func _shop_pages() -> int:
-	return (shop_defs.size() + 5) / 6
+	return maxi(1, (_shop_list().size() + 5) / 6)
 
 
 func _class_rect(i: int) -> Rect2:
@@ -2478,7 +2514,27 @@ func _new_run(start_floor := 1) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if state == INV and inv_tab == 0:
+	if state == INV and inv_tab == 3 and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			chr_drag = event.position.y >= CHR_LIST_TOP and event.position.y <= CHR_LIST_BOT
+			if chr_drag:
+				chr_press = event.position
+				chr_moved = false
+				inv_vel = 0.0
+				return
+		elif chr_drag:
+			chr_drag = false
+			if Time.get_ticks_msec() / 1000.0 - inv_mv_t > 0.1:
+				inv_vel = 0.0
+			if not chr_moved:
+				_chr_input(chr_press)
+			return
+	if state == INV and (inv_tab == 0 or (inv_tab == 3 and chr_drag)):
+		if inv_tab == 3 and event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+			if event.position.distance_to(chr_press) > 14.0:
+				chr_moved = true
+			if not chr_moved:
+				return
 		if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
 			var now_s := Time.get_ticks_msec() / 1000.0
 			var mdt := maxf(now_s - inv_mv_t, 0.008)
@@ -2528,11 +2584,6 @@ func _gui_input(event: InputEvent) -> void:
 	var p: Vector2 = tap_pos if tap_pos.x >= 0.0 else event.position
 	press_p = p
 	press_t = t
-	if btn_sound.has_point(p):
-		snd_on = not snd_on
-		_apply_sound()
-		_sfx("ui")
-		return
 	if state == PLAY and mode == "puzzle" and btn_menu.has_point(p):
 		_menu_leave()
 		return
@@ -2609,6 +2660,7 @@ func _gui_input(event: InputEvent) -> void:
 		if btn_cpick.has_point(p):
 			if not class_open(String(class_defs[cls_page]["id"])):
 				shop_return = CLASS
+				shop_tab = 0
 				shop_page = 0
 				state = SHOP
 				_sfx("ui")
@@ -2680,6 +2732,12 @@ func _gui_input(event: InputEvent) -> void:
 			state = shop_return
 			_sfx("ui")
 			return
+		for ti in SHOP_TABS.size():
+			if _shop_tab_rect(ti).has_point(p):
+				shop_tab = ti
+				shop_page = 0
+				_sfx("ui")
+				return
 		if btn_prev.has_point(p):
 			shop_page = (shop_page + _shop_pages() - 1) % _shop_pages()
 			_sfx("ui")
@@ -2688,12 +2746,13 @@ func _gui_input(event: InputEvent) -> void:
 			shop_page = (shop_page + 1) % _shop_pages()
 			_sfx("ui")
 			return
+		var slist := _shop_list()
 		for i in 6:
 			var idx := shop_page * 6 + i
-			if idx >= shop_defs.size():
+			if idx >= slist.size():
 				break
 			if _shop_rect(i).has_point(p):
-				var d: Dictionary = shop_defs[idx]
+				var d: Dictionary = shop_defs[int(slist[idx])]
 				var lv: int = up(String(d["id"]))
 				var costs: Array = d["costs"]
 				if lv < costs.size() and bank >= int(costs[lv]):
@@ -2754,7 +2813,7 @@ func _process(dt: float) -> void:
 		modulate.a = 1.0
 	_anim_update(dt)
 	if inv_vel != 0.0:
-		if state == INV and inv_tab == 0:
+		if state == INV and (inv_tab == 0 or inv_tab == 3):
 			inv_scroll += inv_vel * dt
 			inv_vel *= exp(-dt * 3.5)
 			if inv_scroll <= 0.0 or inv_scroll >= inv_scroll_max:
@@ -3475,6 +3534,8 @@ func _layout_buttons() -> void:
 	var h := 64.0 if set_big == 0 else 74.0
 	var w := 116.0 if set_big == 0 else 128.0
 	btn_sound = Rect2(10, 4, w, h)
+	btn_invmenu = btn_sound   # bag "menu" and class "< mode" take the sound button's spot and size
+	btn_modeback = btn_sound
 	btn_inv = Rect2(710.0 - w, 4, w, h)
 	btn_menu = btn_inv
 	btn_reset = btn_inv
@@ -3495,6 +3556,11 @@ func _cancel_rect() -> Rect2:
 
 
 func _settings_input(p: Vector2) -> void:
+	if btn_sound.has_point(p):
+		snd_on = not snd_on
+		_apply_sound()
+		_sfx("ui")
+		return
 	if btn_sv_back.has_point(p):
 		state = set_ret
 		set_ret = MODE
@@ -3533,6 +3599,7 @@ func _settings_input(p: Vector2) -> void:
 
 
 func _draw_settings(acc: Color) -> void:
+	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 	_txt("SETTINGS", Vector2(0, 200), 60, acc)
 	_txt("Saved on this device", Vector2(0, 252), 24, Color(1, 1, 1, 0.7))
 	var labels := [
@@ -3554,7 +3621,7 @@ func _draw_settings(acc: Color) -> void:
 		"Crisp keeps sprite pixels sharp. Smooth blends them.",
 		"30 saves battery. 60 is smoother.",
 		"Screen shake on hits and blasts.",
-		"Music volume. SOUND ON/OFF on the menu still mutes everything.",
+		"Music volume. SOUND ON/OFF (top left) mutes everything.",
 		"Volume of sound effects.",
 		"Short buzzes on hits, kills, big moments and button taps (phones only).",
 		"Large makes the top buttons and the tool, power and weapon buttons bigger.",
@@ -4186,7 +4253,6 @@ func _draw() -> void:
 		_draw_overlay(acc)
 		return
 	# HUD
-	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 	if state == PLAY:
 		var marm := t - menu_armed < 3.0
 		_button(btn_menu, "SURE?" if marm else "MENU", Color("ff8a8a") if marm else acc)
@@ -4640,7 +4706,7 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_back, "LEAVE", acc, 28)
 	elif state == CLASS:
 		_txt("CHOOSE YOUR CLASS", Vector2(0, 180), 52, acc)
-		_button(btn_modeback, "< MODE", acc, 20)
+		_button(btn_modeback, "< MODE", acc)
 		_txt("%s   Best: %d floors   Bank: %d coins" % ["ADVENTURE" if mode == "adv" else "PUZZLE", adv_best if mode == "adv" else best, bank], Vector2(0, 230), 24, Color(1, 1, 1, 0.6))
 		var cd: Dictionary = class_defs[cls_page]
 		var ccol: Color = cd["col"]
@@ -4651,17 +4717,24 @@ func _draw_overlay(acc: Color) -> void:
 		draw_rect(card, Color(cc.r, cc.g, cc.b, 0.12))
 		draw_rect(card, cc, false, 3.0)
 		_ctext(String(cd["name"]).to_upper(), Vector2(360, 318), 44, cc)
-		_spr(spr_gen.player(ccol, cid, 0, 0, {}), Vector2(360, 452), 220, Color.WHITE if copen else Color(0.45, 0.45, 0.5, 0.9))
+		# idle animation: gentle breathing squash and sway
+		var isy := 1.0 + 0.03 * sin(t * 2.6)
+		var isx := 1.0 + (1.0 - isy) * 0.8
+		var ipx := 200.0
+		_spr_ex(spr_gen.player(ccol, cid, 0, 0, {}), Vector2(360, 446 - (isy - 1.0) * ipx * 0.5), ipx, Color.WHITE if copen else Color(0.45, 0.45, 0.5, 0.9), 1.0, 0.02 * sin(t * 1.3), isx, isy)
 		if copen:
-			var dk := int(cd["per"])
-			var dtxt := "DARK NORMAL"
-			if dk > 0:
-				dtxt = "DARK SLOWER +%d" % dk
-			elif dk < 0:
-				dtxt = "DARK FASTER %d" % dk
-			_txt("START LV %d" % (START_LEVEL + int(cd["lvl"])), Vector2(124, 604), 22, Color("ffd84f"), 230.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(dtxt, Vector2(346, 604), 22, Color("7fd8ff"), 250.0, HORIZONTAL_ALIGNMENT_RIGHT)
-			_para_fit(_atext("cls_" + cid, String(cd["desc"])), Vector2(124, 650), 20, Color.WHITE, 472.0, 5)
+			_txt(String(CLASS_BLURB.get(cid, "")), Vector2(100, 578), 22, cc, 520.0)
+			var dtxt := ""
+			if mode != "adv":
+				var dk := int(cd["per"])
+				dtxt = "DARK NORMAL"
+				if dk > 0:
+					dtxt = "DARK SLOWER +%d" % dk
+				elif dk < 0:
+					dtxt = "DARK FASTER %d" % dk
+			_txt("START LV %d" % (START_LEVEL + int(cd["lvl"])), Vector2(124, 620), 22, Color("ffd84f"), 230.0, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt(dtxt, Vector2(346, 620), 22, Color("7fd8ff"), 250.0, HORIZONTAL_ALIGNMENT_RIGHT)
+			_para_fit(_atext("cls_" + cid, String(cd["desc"])), Vector2(124, 664), 20, Color.WHITE, 472.0, 5)
 			_txt("POWER", Vector2(124, 806), 18, ccol, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para_fit(_act_desc(cid), Vector2(124, 830), 17, Color(1, 1, 1, 0.8), 472.0, 3)
 			_txt("KIT", Vector2(124, 928), 18, ccol, 60.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -4683,12 +4756,21 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP:
 		_txt("SHOP", Vector2(0, 230), 56, Color("ffc93c"))
-		_txt("Bank: %d coins      Page %d / %d" % [bank, shop_page + 1, _shop_pages()], Vector2(0, 290), 26, Color.WHITE)
+		_txt("Bank: %d coins      Page %d / %d" % [bank, shop_page + 1, _shop_pages()], Vector2(0, 280), 24, Color.WHITE)
+		for ti in SHOP_TABS.size():
+			var tr2 := _shop_tab_rect(ti)
+			var tc2 := Color("ffc93c") if ti == shop_tab else Color(1, 1, 1, 0.5)
+			draw_rect(tr2, Color(tc2.r, tc2.g, tc2.b, 0.16 if ti == shop_tab else 0.06))
+			draw_rect(tr2, tc2, false, 2.0)
+			_ctext(String(SHOP_TABS[ti]), tr2.get_center(), 18, tc2)
+		var slist := _shop_list()
+		if slist.is_empty():
+			_txt("Nothing here yet. More coming soon!", Vector2(0, 560), 26, Color(1, 1, 1, 0.5))
 		for i in 6:
 			var idx := shop_page * 6 + i
-			if idx >= shop_defs.size():
+			if idx >= slist.size():
 				break
-			var d2: Dictionary = shop_defs[idx]
+			var d2: Dictionary = shop_defs[int(slist[idx])]
 			var rr2 := _shop_rect(i)
 			var lv: int = up(String(d2["id"]))
 			var costs: Array = d2["costs"]
@@ -4707,7 +4789,6 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_prev, "< PREV", acc, 24)
 		_button(btn_next, "NEXT >", acc, 24)
 		_button(btn_back, "BACK", acc, 26)
-	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 
 
 # ---------- ADVENTURE MODE (sprawling map, fog of war, points gate, air) ----------
@@ -4959,6 +5040,26 @@ const WORLD_RULE_TEXT := {
 	"glare": "Crystal glare: you see 1 tile less, but kills give +25% XP.",
 }
 var guide_seen: Dictionary = {}
+var banner_rule := ""
+var banner_t0 := -100.0
+const WORLD_BANNER_TIME := 10.0
+const WORLD_RULE_COL := {"leak": Color("7fd8ff"), "spore": Color("b6ff6a"), "black": Color("ffc93c"), "glare": Color("e6c8ff")}
+
+
+# warning banner shown for ~10 s at the top of the map when a new world's rule starts
+func _draw_world_banner() -> void:
+	if banner_rule == "" or state != PLAY:
+		return
+	var age := t - banner_t0
+	if age < 0.0 or age > WORLD_BANNER_TIME:
+		return
+	var a := clampf(minf(age / 0.3, (WORLD_BANNER_TIME - age) / 1.0), 0.0, 1.0)
+	var col: Color = WORLD_RULE_COL[banner_rule]
+	var r := Rect2(24, 330, 672, 124)
+	draw_rect(r, Color(0.02, 0.03, 0.07, 0.88 * a))
+	draw_rect(r, Color(col.r, col.g, col.b, a), false, 3.0)
+	_txt("WORLD RULE", Vector2(r.position.x, r.position.y + 36), 28, Color(col.r, col.g, col.b, a), r.size.x)
+	_para(String(WORLD_RULE_TEXT[banner_rule]), Vector2(r.position.x + 20, r.position.y + 66), 22, Color(1, 1, 1, a), r.size.x - 40.0)
 
 
 func _world_rule() -> String:
@@ -7074,6 +7175,13 @@ func _adv_begin() -> void:
 		var wr := _world_rule()
 		if wr != "" and floor_n % 3 == 1:
 			msg = "%s  Collect %d points to unlock the %s" % [String(WORLD_RULE_TEXT[wr]), adv_req, cur_theme()["gate"]]
+	# banner at the top of the map on the first floor of each themed world
+	var wrb := _world_rule()
+	if wrb != "" and floor_n % 3 == 1 and not arena:
+		banner_rule = wrb
+		banner_t0 = t
+	else:
+		banner_rule = ""
 
 
 func _adv_next() -> void:
@@ -7367,7 +7475,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				snd = "pot"
 			else:
 				items[nc] = kind
-				msg = "Inventory full! Use a tool first"
+				msg = "Inventory full! Select a tool and tap DROP to swap"
 				snd = "blocked"
 		elif kind == "key":
 			keys += 1
@@ -8539,7 +8647,55 @@ func _adv_swipe(d: Vector2) -> void:
 		_adv_input(_actr(sc))
 
 
+# DROP button shown beside the description of a selected tool
+func _drop_rect() -> Rect2:
+	var cr := _cancel_rect()
+	return Rect2(cr.end.x - 152.0, cr.position.y + 4.0, 148.0, cr.size.y - 8.0)
+
+
+# drop tool i on the tile you stand on; if a tool already lies here (you walked onto it with a full bag) they swap
+func _adv_drop_tool(i: int) -> void:
+	if i < 0 or i >= inv.size():
+		return
+	var id: String = inv[i]
+	tool_sel = -1
+	if items.has(pos) and String(items[pos]).begins_with("use_"):
+		var fid := String(items[pos]).substr(4)
+		inv.remove_at(i)
+		if _give_use(fid):
+			items[pos] = "use_" + id
+			msg = "Swapped %s for %s" % [_use_name(id), _use_name(fid)]
+			_pop(pos, _use_name(fid), use_defs[fid]["col"])
+			_sfx("pot")
+		else:
+			inv.insert(i, id)
+			msg = "Could not swap"
+			_sfx("blocked")
+		return
+	var dest := Vector2i(-9, -9)
+	if not items.has(pos):
+		dest = pos
+	else:
+		for dv in TDIRS:
+			var nc: Vector2i = pos + dv
+			if _aopen(nc) and not items.has(nc) and not mons.has(nc) and not vaults.has(nc) and not merchants.has(nc):
+				dest = nc
+				break
+	if dest.x < -1:
+		msg = "No room to drop it here"
+		_sfx("blocked")
+		return
+	inv.remove_at(i)
+	items[dest] = "use_" + id
+	msg = "Dropped %s" % _use_name(id)
+	_pop(pos, "DROPPED", Color("ffb347"))
+	_sfx("ui")
+
+
 func _adv_input(p: Vector2) -> void:
+	if tool_sel >= 0 and aim < 0 and _drop_rect().has_point(p):
+		_adv_drop_tool(tool_sel)
+		return
 	if (tool_sel >= 0 or aim >= 0) and _cancel_rect().has_point(p):
 		tool_sel = -1
 		aim = -1
@@ -8988,7 +9144,6 @@ func _adv_draw() -> void:
 			draw_rect(Rect2(mm.position.x + 3 + mdc.x * msc - 1, mm.position.y + 3 + mdc.y * msc - 1, 4, 4), Color("6dff9a"))
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
 	# HUD
-	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 	_button(btn_inv, "BAG", acc)
 	_button(btn_skill, "SKILLS", Color("ffd84f") if skill_pts > 0 else acc, 19)
 	if skill_pts > 0:
@@ -9058,9 +9213,13 @@ func _adv_draw() -> void:
 		var cnr := _cancel_rect()
 		_panel(cnr, Color("ff8a8a"), 0.18, false)
 		_para_fit(msg, Vector2(cnr.position.x + 14, cnr.position.y + 26), 20, Color.WHITE, 520.0, 2)
-		_txt("TAP HERE TO CANCEL", Vector2(cnr.end.x - 170, cnr.position.y + 36), 14, Color("ff8a8a"), 160.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		if tool_sel >= 0 and aim < 0:
+			_button(_drop_rect(), "DROP", Color("ffb347"), 22)
+		else:
+			_txt("TAP HERE TO CANCEL", Vector2(cnr.end.x - 170, cnr.position.y + 36), 14, Color("ff8a8a"), 160.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	else:
 		_txt(msg, Vector2(0, 1074), 24, Color.WHITE, 720.0)
+	_draw_world_banner()
 	if state == PLAY and hp > 0:
 		if low:
 			_edge_glow(Color("3d9bff"), clampf(1.0 - oxy / (oxy_max * 0.25), 0.0, 1.0))
@@ -9118,16 +9277,26 @@ func _chr_slot_rect(i: int) -> Rect2:
 	return Rect2(40 if i < 3 else 540, 266 + (i % 3) * 104, 140, 96)
 
 
+const CHR_LIST_TOP := 592.0
+const CHR_LIST_BOT := 1062.0
+
+
+# k = index in the pack; rows scroll with inv_scroll
 func _chr_row_rect(k: int) -> Rect2:
-	return Rect2(40, 596 + k * 110, 640, 102)
+	return Rect2(40, 596 + k * 110 - inv_scroll, 640, 102)
 
 
 func _chr_equip_rect(k: int) -> Rect2:
-	return Rect2(548, 596 + k * 110 + 8, 124, 42)
+	return Rect2(548, 596 + k * 110 - inv_scroll + 8, 124, 42)
 
 
 func _chr_sell_rect(k: int) -> Rect2:
-	return Rect2(548, 596 + k * 110 + 54, 124, 38)
+	return Rect2(548, 596 + k * 110 - inv_scroll + 54, 124, 38)
+
+
+func _chr_row_visible(k: int) -> bool:
+	var r := _chr_row_rect(k)
+	return r.position.y >= CHR_LIST_TOP and r.end.y <= CHR_LIST_BOT
 
 
 # the character model, optionally wearing a pack item (preview) in place of what is equipped
@@ -9158,42 +9327,29 @@ func _chr_input(p: Vector2) -> void:
 			else:
 				_sfx("blocked")
 			return
-	var pages := maxi(1, (bag.size() + 3) / 4)
-	pack_page = mini(pack_page, pages - 1)
-	if btn_ipv.has_point(p):
-		pack_page = (pack_page + pages - 1) % pages
-		chr_sel = -1
-		_sfx("ui")
-		return
-	if btn_inx.has_point(p):
-		pack_page = (pack_page + 1) % pages
-		chr_sel = -1
-		_sfx("ui")
-		return
-	for k in 4:
-		var idx := pack_page * 4 + k
-		if idx >= bag.size():
-			break
+	for k in bag.size():
+		if not _chr_row_visible(k):
+			continue
 		if _chr_equip_rect(k).has_point(p):
-			_adv_equip(bag[idx])
+			_adv_equip(bag[k])
 			chr_sel = -1
 			_sfx("shield")
 			return
 		if _chr_sell_rect(k).has_point(p):
-			coins += gprice(String(bag[idx])) / 2
-			bag.remove_at(idx)
+			coins += gprice(String(bag[k])) / 2
+			bag.remove_at(k)
 			chr_sel = -1
 			_sfx("coin")
 			return
 		if _chr_row_rect(k).has_point(p):
-			chr_sel = -1 if chr_sel == idx else idx
+			chr_sel = -1 if chr_sel == k else k
 			_sfx("ui")
 			return
 
 
 func _draw_char_tab(acc: Color) -> void:
-	var pages := maxi(1, (bag.size() + 3) / 4)
-	pack_page = mini(pack_page, pages - 1)
+	inv_scroll_max = maxf(0.0, bag.size() * 110.0 - (CHR_LIST_BOT - 596.0 + 8.0))
+	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
 	if chr_sel >= bag.size():
 		chr_sel = -1
 	var prev := String(bag[chr_sel]) if chr_sel >= 0 else ""
@@ -9225,14 +9381,13 @@ func _draw_char_tab(acc: Color) -> void:
 	_ctext("PACK  %d / %d     tap an item to preview it" % [bag.size(), BAG_MAX], Vector2(360, 584), 18, Color(1, 1, 1, 0.6))
 	if bag.is_empty():
 		_ctext("Your pack is empty.", Vector2(360, 800), 26, Color(1, 1, 1, 0.5))
-	for k in 4:
-		var idx := pack_page * 4 + k
-		if idx >= bag.size():
-			break
+	for idx in bag.size():
+		if not _chr_row_visible(idx):
+			continue
 		var bid := String(bag[idx])
 		var gd2: Dictionary = gear_defs[gb(bid)]
 		var gc := _gear_col(String(gd2["slot"]))
-		var rr := _chr_row_rect(k)
+		var rr := _chr_row_rect(idx)
 		var sel := idx == chr_sel
 		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.22 if sel else 0.08))
 		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.95 if sel else 0.55), false, 3.0 if sel else 2.0)
@@ -9242,12 +9397,15 @@ func _draw_char_tab(acc: Color) -> void:
 		if gtr(bid).size() > 0:
 			_txt(gtrait_line(bid), rr.position + Vector2(190, 56), 14, Color("ffd84f"), 240.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_txt(_gear_desc(gd2), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_button(_chr_equip_rect(k), "EQUIP", gc, 22)
-		_button(_chr_sell_rect(k), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 18)
-	if pages > 1:
-		_button(btn_ipv, "< PREV", acc, 22)
-		_button(btn_inx, "NEXT >", acc, 22)
-		_ctext("Page %d / %d" % [pack_page + 1, pages], Vector2(360, 1098), 18, Color(1, 1, 1, 0.55))
+		_button(_chr_equip_rect(idx), "EQUIP", gc, 22)
+		_button(_chr_sell_rect(idx), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 18)
+	if inv_scroll_max > 0.0:
+		var tot := bag.size() * 110.0
+		var vh := CHR_LIST_BOT - CHR_LIST_TOP
+		var bh := vh * vh / tot
+		var by := CHR_LIST_TOP + (vh - bh) * inv_scroll / inv_scroll_max
+		draw_rect(Rect2(692, by, 6, bh), Color(1, 1, 1, 0.35))
+		_ctext("drag to scroll", Vector2(360, 1100), 16, Color(1, 1, 1, 0.4))
 
 
 func _inv_use_rect(i: int) -> Rect2:
@@ -9388,7 +9546,7 @@ func _inv_extra_rows() -> Array:
 
 func _draw_inv(acc: Color) -> void:
 	var armed := t - menu_armed < 3.0
-	_button(btn_invmenu, "TAP AGAIN: LEAVE" if armed else "BACK TO MENU", Color("ff8a8a") if armed else acc, 18)
+	_button(btn_invmenu, "SURE?" if armed else "MENU", Color("ff8a8a") if armed else acc)
 	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 18)
 	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 18)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
