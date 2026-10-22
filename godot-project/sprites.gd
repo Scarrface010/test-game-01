@@ -887,6 +887,8 @@ const WGRIP := {0: [Vector2(9.0, 23.0), Vector2(-0.22, -0.97), 1.35], 1: [Vector
 func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
 	if not PCOL.has(dir):
 		return null
+	if ResourceLoader.exists(PBASE_HI):
+		return _player_hi(accent, cls, frame, dir, eq)
 	var bt: ImageTexture = _atlas_cell(PBASE, PCOL[dir], 0, 64)
 	if bt == null or bt.get_image().is_invisible():
 		return null
@@ -946,6 +948,141 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 		var sway := 0 if (frame == 0 or dir == 3) else (2 if frame == 1 else -2)
 		base.blend_rect(hi_helm, Rect2i(0, 0, PS, PS), Vector2i(sway, 0))
 	return ImageTexture.create_from_image(base)
+
+
+# ---- proportioned body (art/player_base_hi.png: 3 cells of 128x176, cols front, back, side)
+# Output is a 176x176 square (figure centred), so it draws in the same rect as the old 128px texture.
+const PBASE_HI := "res://art/player_base_hi.png"
+const HI_HELM := "res://art/gear_hi/%s_%d.png"
+const HW := 128
+const HH := 176
+# old 64px body -> new body: [o_top, o_neck, o_feet, o_hx0, o_hx1, o_bx0, o_bx1, n_top, n_neck, n_feet, n_hx0, n_hx1, n_bx0, n_bx1]
+const HIMAP := {
+	0: [4, 33, 61, 8, 55, 10, 50, 16, 67, 173, 23, 104, 22, 103],
+	1: [4, 33, 61, 8, 55, 16, 50, 16, 68, 173, 31, 95, 23, 103],
+	3: [4, 33, 61, 8, 54, 14, 50, 16, 66, 173, 26, 99, 20, 99],
+}
+const HI_LEG_TOP := 142
+
+
+func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
+	var sheet: Image = (load(PBASE_HI) as Texture2D).get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var base: Image = sheet.get_region(Rect2i(PCOL[dir] * HW, 0, HW, HH))
+	if dir != 1:
+		_tint_visor(base, accent)
+	var m: Array = HIMAP[dir]
+	# everything drawn for the old 64px body goes on one 64px layer, then is remapped onto the new body
+	var ov := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	var front := _class_deco(accent, cls, dir, false)
+	if front != null:
+		ov.blend_rect(front, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+	var hi_helm: Image = null
+	for slot in ["armour", "boots", "trinket", "helmet"]:
+		var gid := String(eq.get(slot, ""))
+		if slot == "helmet" and gid != "" and ResourceLoader.exists(HI_HELM % [gid, dir]):
+			hi_helm = (load(HI_HELM % [gid, dir]) as Texture2D).get_image()
+			hi_helm.convert(Image.FORMAT_RGBA8)
+			continue
+		var gpath := "res://art/gear/%s_%d.png" % [gid, dir]
+		if slot != "trinket" and gid != "" and ResourceLoader.exists(gpath):
+			var gt: Texture2D = load(gpath) as Texture2D
+			if gt != null:
+				var gim: Image = gt.get_image()
+				gim.convert(Image.FORMAT_RGBA8)
+				ov.blend_rect(gim, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+				continue
+		if slot != "trinket" and G64.SPEC.has(gid):
+			var cv6 := Cv.new(64, 64)
+			G64.draw(cv6, slot, gid, dir)
+			cv6.outline(Color("0a0d1a"))
+			ov.blend_rect(cv6.img, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+			continue
+		var art := _art(eq, slot)
+		if art.is_empty():
+			continue
+		var cv := Cv.new(32, 32)
+		_draw_gear(cv, slot, art, dir)
+		cv.outline(Color("0a0d1a"))
+		var g: Image = cv.img.duplicate()
+		g.resize(64, 64, Image.INTERPOLATE_NEAREST)
+		_blit_fit(ov, g, GFIT[slot][dir])
+	var wa := _art(eq, "weapon")
+	if not wa.is_empty():
+		var wc := Cv.new(32, 32)
+		var wg: Array = WGRIP[dir]
+		_weapon(wc, wa, wg[0], wg[1], wg[2])
+		wc.outline(Color("0a0d1a"))
+		var wi: Image = wc.img.duplicate()
+		wi.resize(64, 64, Image.INTERPOLATE_NEAREST)
+		ov.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+	base.blend_rect(_map_old(ov, m), Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	if hi_helm != null and hi_helm.get_width() == HW and hi_helm.get_height() == HH:
+		base.blend_rect(hi_helm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	base = _walk_frame_hi(base, frame, dir)
+	var behind := _class_deco(accent, cls, dir, true)
+	if behind != null:
+		var bh := _map_old(behind, m)
+		bh.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+		base = bh
+	var out := Image.create(HH, HH, false, Image.FORMAT_RGBA8)
+	out.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i((HH - HW) / 2, 0))
+	return ImageTexture.create_from_image(out)
+
+
+# remap a layer drawn for the old 64px body onto the 128x176 body: head band and body band scale separately
+func _map_old(src: Image, m: Array) -> Image:
+	var dst := Image.create(HW, HH, false, Image.FORMAT_RGBA8)
+	var hsx := float(m[4] - m[3]) / float(m[11] - m[10])
+	var hsy := float(m[1] - m[0]) / float(m[8] - m[7])
+	var bsx := float(m[6] - m[5]) / float(m[13] - m[12])
+	var bsy := float(m[2] - m[1]) / float(m[9] - m[8])
+	for y in HH:
+		for x in HW:
+			var u: int
+			var v: int
+			if y < m[8]:
+				u = int(floor(m[3] + (x - m[10]) * hsx))
+				v = int(floor(m[0] + (y - m[7]) * hsy))
+			else:
+				u = int(floor(m[5] + (x - m[12]) * bsx))
+				v = int(floor(m[1] + (y - m[8]) * bsy))
+			if u < 0 or v < 0 or u >= 64 or v >= 64:
+				continue
+			var c := src.get_pixel(u, v)
+			if c.a >= 0.5:
+				dst.set_pixel(x, y, c)
+	return dst
+
+
+# walk cycle for the new body: same as _walk_frame at 2x (legs below HI_LEG_TOP)
+func _walk_frame_hi(im: Image, frame: int, dir: int) -> Image:
+	if frame == 0:
+		return im
+	var out := Image.create(HW, HH, false, Image.FORMAT_RGBA8)
+	var left := frame == 1
+	var sway := 0 if dir == 3 else (2 if left else -2)
+	for y in HH:
+		for x in HW:
+			var c := im.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			if y < HI_LEG_TOP:
+				var nx := x + sway
+				if nx >= 0 and nx < HW:
+					out.set_pixel(nx, y, c)
+				continue
+			var lift := (x < HW / 2) == left
+			var ny := y
+			var nx2 := x
+			if dir == 3:
+				nx2 = x + (-4 if lift else 4)
+				ny = y - (4 if lift else 0)
+			elif lift:
+				ny = y - 5
+			if nx2 >= 0 and nx2 < HW and ny >= 0:
+				out.set_pixel(nx2, ny, c)
+	return out
 
 
 # class decorations drawn in 64px space; behind=true is the layer under the body (mystic cloak)
@@ -1065,8 +1202,8 @@ func _blit_fit(dst: Image, src: Image, f: Array) -> void:
 # recolour the cyan visor of the base body to the class accent colour, keeping its shading
 func _tint_visor(im: Image, accent: Color) -> void:
 	var sat := maxf(accent.s, 0.45)
-	for y in 64:
-		for x in 64:
+	for y in im.get_height():
+		for x in im.get_width():
 			var c := im.get_pixel(x, y)
 			if c.a < 0.5:
 				continue
