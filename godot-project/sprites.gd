@@ -871,6 +871,8 @@ func player(accent: Color, cls: String, frame: int = 0, dir: int = 0, eq: Dictio
 # ---- AI base body (art/player_base64.png: cols front, back, side) + procedural gear overlays
 const PBASE := "res://art/player_base64.png"
 const PCOL := {0: 0, 1: 1, 3: 2}
+const PS := 128   # player texture size
+const HI_GEAR := "res://art/gear128/%s_%d.png"
 # Fit of the 32px gear art (already 2x'd to 64px) onto the chibi body: [pivot_x, pivot_y, scale_x, scale_y, shift_x, shift_y]
 const GFIT := {
 	"helmet": {0: [32, 17, 1.15, 1.0, 0, 8], 1: [32, 17, 1.15, 1.0, 0, 8], 3: [33, 17, 1.15, 1.0, -1, 8]},
@@ -894,8 +896,13 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	var front := _class_deco(accent, cls, dir, false)
 	if front != null:
 		base.blend_rect(front, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+	var hi_helm: Image = null
 	for slot in ["armour", "boots", "trinket", "helmet"]:
 		var gid := String(eq.get(slot, ""))
+		if slot == "helmet" and gid != "" and ResourceLoader.exists(HI_GEAR % [gid, dir]):
+			hi_helm = (load(HI_GEAR % [gid, dir]) as Texture2D).get_image()
+			hi_helm.convert(Image.FORMAT_RGBA8)
+			continue
 		var gpath := "res://art/gear/%s_%d.png" % [gid, dir]
 		if slot != "trinket" and gid != "" and ResourceLoader.exists(gpath):
 			var gt: Texture2D = load(gpath) as Texture2D
@@ -933,6 +940,11 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 		var wi: Image = wc.img.duplicate()
 		wi.resize(64, 64, Image.INTERPOLATE_NEAREST)
 		base.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+	# player textures are 128px: the 64px body is upscaled, 128px helmets (art/gear128) go on top
+	base.resize(PS, PS, Image.INTERPOLATE_NEAREST)
+	if hi_helm != null and hi_helm.get_width() == PS:
+		var sway := 0 if (frame == 0 or dir == 3) else (2 if frame == 1 else -2)
+		base.blend_rect(hi_helm, Rect2i(0, 0, PS, PS), Vector2i(sway, 0))
 	return ImageTexture.create_from_image(base)
 
 
@@ -1383,11 +1395,12 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 # Inventory icon for helmets, body armour and boots: the piece as worn (front view), cropped around its slot
 func _gear_icon64(id: String, slot: String) -> ImageTexture:
 	var img: Image = player(Color("4fd1ff"), "", 0, 0, {slot: id}).get_image()
-	var rect := Rect2i(6, 0, 52, 40)
+	var k := maxi(1, img.get_width() / 64)
+	var rect := Rect2i(6 * k, 0, 52 * k, 40 * k)
 	if slot == "armour":
-		rect = Rect2i(8, 32, 48, 24)
+		rect = Rect2i(8 * k, 32 * k, 48 * k, 24 * k)
 	elif slot == "boots":
-		rect = Rect2i(12, 48, 40, 16)
+		rect = Rect2i(12 * k, 48 * k, 40 * k, 16 * k)
 	var sub: Image = img.get_region(rect)
 	var side := maxi(rect.size.x, rect.size.y)
 	var sq := Image.create(side, side, false, Image.FORMAT_RGBA8)
