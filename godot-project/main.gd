@@ -253,6 +253,15 @@ var tut_back := MODE
 var tutorial := false
 var tut_zone := -1
 var tut_prev_cls := "scout"
+# hidden gear test room: tap the SETTINGS title 5 times to unlock its button
+var testroom := false
+var test_pending := false
+var test_unlocked := false
+var set_taps := 0
+var set_tap_t := -10.0
+var test_prev_save_off := false
+const BTN_TEST := Rect2(110, 1196, 500, 64)
+const SET_TITLE := Rect2(160, 150, 400, 80)
 var tut_prev_save_off := false
 var inv_more := false
 var btn_inmore := Rect2(190, 1062, 340, 58)
@@ -286,7 +295,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 31
+const BUILD := 32
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1530,7 +1539,7 @@ func _thief_check() -> void:
 
 
 func _die(why: String) -> void:
-	if tutorial:
+	if tutorial or testroom:
 		hp = hp_cap()
 		oxy = oxy_max
 		msg = "Knocked out! Tutorial: you are back on your feet"
@@ -2645,6 +2654,7 @@ func _gui_input(event: InputEvent) -> void:
 	if state == CLASS:
 		if btn_modeback.has_point(p):
 			state = MODE
+			test_pending = false
 			_sfx("ui")
 			return
 		if btn_cl_l.has_point(p):
@@ -2667,6 +2677,9 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			cls = String(class_defs[cls_page]["id"])
 			_sfx("big")
+			if test_pending:
+				_test_room_start()
+				return
 			_new_run()
 			return
 		if btn_shop2.has_point(p):
@@ -3556,6 +3569,20 @@ func _cancel_rect() -> Rect2:
 
 
 func _settings_input(p: Vector2) -> void:
+	if SET_TITLE.has_point(p) and not test_unlocked:
+		set_taps = set_taps + 1 if t - set_tap_t < 1.5 else 1
+		set_tap_t = t
+		if set_taps >= 5:
+			test_unlocked = true
+			_sfx("big")
+		return
+	if test_unlocked and BTN_TEST.has_point(p):
+		test_pending = true
+		mode = "adv"
+		set_ret = MODE
+		state = CLASS
+		_sfx("big")
+		return
 	if btn_sound.has_point(p):
 		snd_on = not snd_on
 		_apply_sound()
@@ -3631,6 +3658,8 @@ func _draw_settings(acc: Color) -> void:
 		_button(r, String(labels[i]), Color("c9d3f0"), 24)
 		_txt(String(hints[i]), Vector2(0, r.end.y + 20), 16, Color(1, 1, 1, 0.55))
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
+	if test_unlocked:
+		_button(BTN_TEST, "TEST ROOM (all gear)", Color("ff8af0"), 26)
 
 
 func _para_fit(s: String, p: Vector2, size: int, col: Color, w: float, max_lines: int) -> void:
@@ -4994,6 +5023,60 @@ func _tut_map_start() -> void:
 	_sfx("big")
 
 
+func _adv_gen_test() -> void:
+	AW = 9
+	AH = 9
+	adv_open.resize(AW * AH)
+	adv_open.fill(0)
+	adv_seen.resize(AW * AH)
+	adv_seen.fill(1)
+	adv_rooms.clear()
+	for dd in [mons, elite, items, spikes, haz, tur, corpses, coin_at, walls, portals, kinds, thief_held, vaults, stations, meds, merchants, mon_hp, affix, mstat]:
+		dd.clear()
+	var r := Rect2i(3, 3, 3, 3)
+	adv_rooms.append(r)
+	for x in range(3, 6):
+		for y in range(3, 6):
+			adv_open[_ai(Vector2i(x, y))] = 1
+	adv_open[_ai(Vector2i(4, 2))] = 1
+	start = Vector2i(4, 4)
+	pos = start
+	stairs = Vector2i(4, 2)
+	boss_floor = false
+	boss_cell = Vector2i(-1, -1)
+	adv_req = 999
+	adv_pts_total = 0
+	stations[Vector2i(3, 5)] = true
+
+
+func _test_room_start() -> void:
+	test_pending = false
+	test_prev_save_off = save_off
+	save_off = true
+	testroom = true
+	mode = "adv"
+	_new_run(1)
+	bag.clear()
+	var ids: Array = gear_defs.keys()
+	ids.sort()
+	for id in ids:
+		bag.append(String(id))
+	ammo = ammo_max()
+	hp = hp_cap()
+	_adv_snapshot()
+	msg = "TEST ROOM: open your bag to try every item. MENU leaves."
+	inv_tab = 3
+	state = INV
+
+
+func _test_room_end() -> void:
+	testroom = false
+	save_off = test_prev_save_off
+	walk.clear()
+	aim = -1
+	bag.clear()
+
+
 func _tut_map_end(done: bool) -> void:
 	tutorial = false
 	save_off = tut_prev_save_off
@@ -5063,7 +5146,7 @@ func _draw_world_banner() -> void:
 
 
 func _world_rule() -> String:
-	if mode != "adv" or tutorial or arena or themes.is_empty():
+	if mode != "adv" or tutorial or testroom or arena or themes.is_empty():
 		return ""
 	return String(WORLD_RULES[tidx() % WORLD_RULES.size()])
 
@@ -5402,6 +5485,9 @@ func _adv_gen() -> void:
 	rng.seed = adv_seed
 	if tutorial:
 		_adv_gen_tutorial()
+		return
+	if testroom:
+		_adv_gen_test()
 		return
 	if arena:
 		_adv_gen_arena()
@@ -9428,6 +9514,8 @@ func _menu_leave() -> void:
 		_save_run()
 		if tutorial:
 			_tut_map_end(false)
+		if testroom:
+			_test_room_end()
 		state = MODE
 		_sfx("ui")
 	else:
