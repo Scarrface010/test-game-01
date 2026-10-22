@@ -896,6 +896,14 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 		base.blend_rect(front, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 	for slot in ["armour", "boots", "trinket", "helmet"]:
 		var gid := String(eq.get(slot, ""))
+		var gpath := "res://art/gear/%s_%d.png" % [gid, dir]
+		if slot != "trinket" and gid != "" and ResourceLoader.exists(gpath):
+			var gt: Texture2D = load(gpath) as Texture2D
+			if gt != null:
+				var gim: Image = gt.get_image()
+				gim.convert(Image.FORMAT_RGBA8)
+				base.blend_rect(gim, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+				continue
 		if slot != "trinket" and G64.SPEC.has(gid):
 			var cv6 := Cv.new(64, 64)
 			G64.draw(cv6, slot, gid, dir)
