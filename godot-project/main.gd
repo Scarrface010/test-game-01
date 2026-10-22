@@ -175,8 +175,10 @@ var gear_defs: Dictionary = {}
 var merchants: Dictionary = {}
 var trade_cell := Vector2i(-1, -1)
 var pack_page := 0
-var inv_tab := 0
+var inv_tab := 3   # 3 = CHARACTER (default bag tab); 0 stats, 1 tools, 2 relics
 var inv_page := 0
+var chr_sel := -1  # pack index being previewed on the character tab
+var chr_dir := 0   # facing of the character model (0 front, 3 side, 1 back)
 var equip: Dictionary = {}
 var ammo := 0
 var ranged_mode := false
@@ -273,7 +275,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 25
+const BUILD := 26
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1246,9 +1248,21 @@ func _pvf() -> Vector2:
 	return vis_pos
 
 
+const POP_GAP := 0.45   # delay between floating texts on one tile
+const POP_LIFE := 1.5   # how long a floating text lasts
+
+
 func _pop(c: Vector2i, text: String, col: Color) -> void:
-	pops.append({"p": _cell_rect(c).get_center(), "cell": c, "s": text, "c": col, "t": t})
+	# pops on the same tile come out one after another instead of all at once
+	var start := t
+	for q in pops:
+		if q["cell"] == c:
+			start = maxf(start, float(q["t"]) + POP_GAP)
+	pops.append({"p": _cell_rect(c).get_center(), "cell": c, "s": text, "c": col, "t": start})
 	var cf := Vector2(c)
+	if text.ends_with("AMMO"):
+		_fx_burst(cf, Color("ffc24f"), 10, 3.0, 0.5, 5.0)
+		_fx_ring(cf, Color("ffc24f"), 0.8, 0.4, 4.0, maxf(0.0, start - t))
 	if text == "VAULT!":
 		_fx_burst(cf, Color("ffd84f"), 24, 4.2, 0.8, 6.0)
 		_fx_ring(cf, Color("ffd84f"), 1.1, 0.5, 4.0)
@@ -2777,7 +2791,7 @@ func _process(dt: float) -> void:
 			_save_run()
 	var i := pops.size() - 1
 	while i >= 0:
-		if t - float(pops[i]["t"]) > 0.9:
+		if t - float(pops[i]["t"]) > POP_LIFE:
 			pops.remove_at(i)
 		i -= 1
 	queue_redraw()
@@ -4355,10 +4369,12 @@ func _draw() -> void:
 	# floating pops
 	for pp in pops:
 		var age: float = t - float(pp["t"])
+		if age < 0.0:
+			continue
 		var pcol: Color = pp["c"]
-		pcol.a = 1.0 - age / 0.9
+		pcol.a = clampf((POP_LIFE - age) / 0.5, 0.0, 1.0)
 		var pp_pos: Vector2 = pp["p"]
-		_ctext(pp["s"], pp_pos + Vector2(0, -cell * 0.3 - age * 50.0), 26, pcol)
+		_ctext(pp["s"], pp_pos + Vector2(0, -cell * 0.3 - age * 40.0), 26, pcol)
 	_map_end()
 	# tool slots
 	for i in slots_n():
@@ -7177,9 +7193,11 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	if bounty_n > 0 and was_elite:
 		bounty_n -= 1
 		bounty_hit = true
+	var ammo_got := 0
 	if _weapon_range() > 0 and ammo < ammo_max() and randf() < (0.8 if was_elite else 0.5) + sk("ammodrop") / 100.0:
 		var ag := 1 + (randi() % 2)
 		ammo = mini(ammo_max(), ammo + ag)
+		ammo_got = ag
 		_pop(nc, "+%d AMMO" % ag, Color("ffc24f"))
 	mom_steps += int(sk("momentum"))
 	if sk("airkill") > 0.0 and oxy < oxy_max:
@@ -7206,6 +7224,8 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	msg = "Defeated %s! +%d XP" % [nm, xg]
 	if back > 0:
 		msg += "  (+%d coins back)" % back
+	if ammo_got > 0:
+		msg += "  +%d ammo" % ammo_got
 	_pop(nc, "+%d XP" % xg, Color("6dff9a"))
 	_adv_gain_xp(xg)
 	var kh := int(gear("killheal"))
@@ -8544,7 +8564,9 @@ func _adv_input(p: Vector2) -> void:
 		state = INV
 		walk.clear()
 		aim = -1
-		inv_tab = 0
+		inv_tab = 3
+		chr_sel = -1
+		pack_page = 0
 		inv_page = 0
 		inv_scroll = 0.0
 		_sfx("ui")
@@ -8932,10 +8954,12 @@ func _adv_draw() -> void:
 	_fx_draw()
 	for pp in pops:
 		var age: float = t - float(pp["t"])
+		if age < 0.0:
+			continue
 		var pcol: Color = pp["c"]
-		pcol.a = 1.0 - age / 0.9
+		pcol.a = clampf((POP_LIFE - age) / 0.5, 0.0, 1.0)
 		var pc2: Vector2 = _actr(pp["cell"])
-		_ctext(pp["s"], pc2 + Vector2(0, -AC * 0.3 - age * 50.0), 26, pcol)
+		_ctext(pp["s"], pc2 + Vector2(0, -AC * 0.3 - age * 40.0), 26, pcol)
 	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
@@ -9078,16 +9102,152 @@ func _adv_badges() -> void:
 		_ctext(String(it[1]), Vector2(br.position.x + 31, br.end.y - 16), 22, bcol)
 		bx += 66.0
 
+const INV_TABS := [3, 0, 1, 2]   # display order -> inv_tab id: CHARACTER, STATS, TOOLS, RELICS
+const CHR_SLOTS := ["helmet", "armour", "boots", "weapon", "ranged", "trinket"]
+
+
 func _inv_tab_rect(i: int) -> Rect2:
-	return Rect2(40 + i * 130, 186, 122, 56)
+	return Rect2(40 + i * 164, 186, 156, 56)
 
 
-func _gear_btn_rect(i: int) -> Rect2:
-	return Rect2(540, 262 + i * 98 + 20, 120, 50)
+func _chr_model_rect() -> Rect2:
+	return Rect2(196, 262, 328, 306)
 
 
-func _pack_rect(k: int, which: int) -> Rect2:
-	return Rect2(430 + which * 128, 272 + k * 130 + 12, 120, 96)
+func _chr_slot_rect(i: int) -> Rect2:
+	return Rect2(40 if i < 3 else 540, 266 + (i % 3) * 104, 140, 96)
+
+
+func _chr_row_rect(k: int) -> Rect2:
+	return Rect2(40, 596 + k * 110, 640, 102)
+
+
+func _chr_equip_rect(k: int) -> Rect2:
+	return Rect2(548, 596 + k * 110 + 8, 124, 42)
+
+
+func _chr_sell_rect(k: int) -> Rect2:
+	return Rect2(548, 596 + k * 110 + 54, 124, 38)
+
+
+# the character model, optionally wearing a pack item (preview) in place of what is equipped
+func _chr_tex(prev: String) -> ImageTexture:
+	var eq: Dictionary = {}
+	for sl in equip:
+		eq[sl] = gb(String(equip[sl]))
+	var psl := ""
+	if prev != "":
+		psl = String(gear_defs[gb(prev)]["slot"])
+		eq[psl] = gb(prev)
+	var show_rng := psl == "ranged" or (ranged_mode and psl != "weapon")
+	if show_rng and eq.has("ranged"):
+		eq["weapon"] = eq["ranged"]
+	return spr_gen.player((cdef()["col"] as Color), cls, 0, chr_dir, eq)
+
+
+func _chr_input(p: Vector2) -> void:
+	if _chr_model_rect().has_point(p):
+		chr_dir = {0: 3, 3: 1, 1: 0}.get(chr_dir, 0)
+		_sfx("ui")
+		return
+	for i in 6:
+		if _chr_slot_rect(i).has_point(p):
+			if _adv_unequip(String(CHR_SLOTS[i])):
+				chr_sel = -1
+				_sfx("ui")
+			else:
+				_sfx("blocked")
+			return
+	var pages := maxi(1, (bag.size() + 3) / 4)
+	pack_page = mini(pack_page, pages - 1)
+	if btn_ipv.has_point(p):
+		pack_page = (pack_page + pages - 1) % pages
+		chr_sel = -1
+		_sfx("ui")
+		return
+	if btn_inx.has_point(p):
+		pack_page = (pack_page + 1) % pages
+		chr_sel = -1
+		_sfx("ui")
+		return
+	for k in 4:
+		var idx := pack_page * 4 + k
+		if idx >= bag.size():
+			break
+		if _chr_equip_rect(k).has_point(p):
+			_adv_equip(bag[idx])
+			chr_sel = -1
+			_sfx("shield")
+			return
+		if _chr_sell_rect(k).has_point(p):
+			coins += gprice(String(bag[idx])) / 2
+			bag.remove_at(idx)
+			chr_sel = -1
+			_sfx("coin")
+			return
+		if _chr_row_rect(k).has_point(p):
+			chr_sel = -1 if chr_sel == idx else idx
+			_sfx("ui")
+			return
+
+
+func _draw_char_tab(acc: Color) -> void:
+	var pages := maxi(1, (bag.size() + 3) / 4)
+	pack_page = mini(pack_page, pages - 1)
+	if chr_sel >= bag.size():
+		chr_sel = -1
+	var prev := String(bag[chr_sel]) if chr_sel >= 0 else ""
+	var psl := String(gear_defs[gb(prev)]["slot"]) if prev != "" else ""
+	var mr := _chr_model_rect()
+	draw_rect(mr, Color(1, 1, 1, 0.04))
+	draw_rect(mr, Color(1, 1, 1, 0.18), false, 2.0)
+	_spr(_chr_tex(prev), mr.get_center() + Vector2(0, -4), 272.0)
+	_ctext("PREVIEW: tap EQUIP to wear it" if prev != "" else "tap the model to turn it", Vector2(mr.get_center().x, mr.end.y - 14), 15, Color("ffd84f") if prev != "" else Color(1, 1, 1, 0.4))
+	var wid := String(equip.get("ranged" if ranged_mode and _weapon_range() > 0 else "weapon", ""))
+	if wid != "" and gtr(wid).size() > 0:
+		_ctext(gtrait_line(wid), Vector2(mr.get_center().x, mr.position.y + 16), 14, Color("ffd84f"))
+	for i in 6:
+		var slot := String(CHR_SLOTS[i])
+		var r := _chr_slot_rect(i)
+		var col := _gear_col(slot)
+		var hl := psl == slot
+		draw_rect(r, Color(col.r, col.g, col.b, 0.22 if hl else 0.08))
+		draw_rect(r, Color(col.r, col.g, col.b, 0.95 if hl else 0.55), false, 2.0)
+		_ctext(slot.to_upper(), r.position + Vector2(70, 14), 14, col)
+		var gid := String(equip.get(slot, ""))
+		if gid == "":
+			_ctext("empty", r.position + Vector2(70, 54), 20, Color(1, 1, 1, 0.35))
+		else:
+			var gd: Dictionary = gear_defs[gb(gid)]
+			_spr(_gear_tex(gid), r.position + Vector2(70, 40), 44.0)
+			_ctext(String(gd["name"]), r.position + Vector2(70, 72), 14, _tier_col(int(gd["tier"])))
+			_ctext("tap: remove", r.position + Vector2(70, 88), 12, Color(1, 1, 1, 0.4))
+	_ctext("PACK  %d / %d     tap an item to preview it" % [bag.size(), BAG_MAX], Vector2(360, 584), 18, Color(1, 1, 1, 0.6))
+	if bag.is_empty():
+		_ctext("Your pack is empty.", Vector2(360, 800), 26, Color(1, 1, 1, 0.5))
+	for k in 4:
+		var idx := pack_page * 4 + k
+		if idx >= bag.size():
+			break
+		var bid := String(bag[idx])
+		var gd2: Dictionary = gear_defs[gb(bid)]
+		var gc := _gear_col(String(gd2["slot"]))
+		var rr := _chr_row_rect(k)
+		var sel := idx == chr_sel
+		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.22 if sel else 0.08))
+		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.95 if sel else 0.55), false, 3.0 if sel else 2.0)
+		_spr(_gear_tex(bid), rr.position + Vector2(50, 51), 64.0)
+		_txt(String(gd2["name"]), rr.position + Vector2(98, 32), 24, _tier_col(int(gd2["tier"])), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt(String(gd2["slot"]).to_upper(), rr.position + Vector2(98, 56), 16, gc, 90.0, HORIZONTAL_ALIGNMENT_LEFT)
+		if gtr(bid).size() > 0:
+			_txt(gtrait_line(bid), rr.position + Vector2(190, 56), 14, Color("ffd84f"), 240.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt(_gear_desc(gd2), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_button(_chr_equip_rect(k), "EQUIP", gc, 22)
+		_button(_chr_sell_rect(k), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 18)
+	if pages > 1:
+		_button(btn_ipv, "< PREV", acc, 22)
+		_button(btn_inx, "NEXT >", acc, 22)
+		_ctext("Page %d / %d" % [pack_page + 1, pages], Vector2(360, 1098), 18, Color(1, 1, 1, 0.55))
 
 
 func _inv_use_rect(i: int) -> Rect2:
@@ -9137,9 +9297,10 @@ func _inv_input(p: Vector2) -> void:
 		state = PLAY
 		_sfx("ui")
 		return
-	for i in 5:
+	for i in 4:
 		if _inv_tab_rect(i).has_point(p):
-			inv_tab = i
+			inv_tab = int(INV_TABS[i])
+			chr_sel = -1
 			inv_page = 0
 			pack_page = 0
 			inv_scroll = 0.0
@@ -9164,38 +9325,8 @@ func _inv_input(p: Vector2) -> void:
 		elif btn_inx.has_point(p):
 			inv_page = (inv_page + 1) % pages
 			_sfx("ui")
-	elif inv_tab == 3:
-		for i in GEAR_SLOTS.size():
-			if _gear_btn_rect(i).has_point(p):
-				if _adv_unequip(String(GEAR_SLOTS[i])):
-					_sfx("ui")
-				else:
-					_sfx("blocked")
-				return
-	elif inv_tab == 4:
-		var pages2 := maxi(1, (bag.size() + 5) / 6)
-		pack_page = mini(pack_page, pages2 - 1)
-		if btn_ipv.has_point(p):
-			pack_page = (pack_page + pages2 - 1) % pages2
-			_sfx("ui")
-			return
-		if btn_inx.has_point(p):
-			pack_page = (pack_page + 1) % pages2
-			_sfx("ui")
-			return
-		for k in 6:
-			var idx := pack_page * 6 + k
-			if idx >= bag.size():
-				break
-			if _pack_rect(k, 0).has_point(p):
-				_adv_equip(bag[idx])
-				_sfx("shield")
-				return
-			if _pack_rect(k, 1).has_point(p):
-				coins += gprice(String(bag[idx])) / 2
-				bag.remove_at(idx)
-				_sfx("coin")
-				return
+	elif inv_tab >= 3:
+		_chr_input(p)
 
 
 func _inv_extra_rows() -> Array:
@@ -9261,11 +9392,12 @@ func _draw_inv(acc: Color) -> void:
 	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 18)
 	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 18)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
-	var tabs := ["STATS", "TOOLS", "RELICS", "GEAR", "PACK"]
-	for i in 5:
+	var tabs := ["CHARACTER", "STATS", "TOOLS", "RELICS"]
+	for i in 4:
 		var tr := _inv_tab_rect(i)
-		var tc := Color("ffd84f") if i == inv_tab else Color(1, 1, 1, 0.5)
-		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == inv_tab else 0.06))
+		var cur := int(INV_TABS[i]) == mini(inv_tab, 3)
+		var tc := Color("ffd84f") if cur else Color(1, 1, 1, 0.5)
+		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if cur else 0.06))
 		draw_rect(tr, tc, false, 2.0)
 		_ctext(tabs[i], tr.get_center(), 20, tc)
 	if inv_tab == 0:
@@ -9349,60 +9481,8 @@ func _draw_inv(acc: Color) -> void:
 			_button(btn_ipv, "< PREV", acc, 22)
 			_button(btn_inx, "NEXT >", acc, 22)
 			_txt("Page %d / %d" % [inv_page + 1, pages], Vector2(0, 1106), 20, Color(1, 1, 1, 0.55))
-	elif inv_tab == 3:
-		for i in GEAR_SLOTS.size():
-			var slot := String(GEAR_SLOTS[i])
-			var y := 262.0 + i * 98.0
-			var col := _gear_col(slot)
-			draw_rect(Rect2(40, y, 640, 90), Color(col.r, col.g, col.b, 0.08))
-			draw_rect(Rect2(40, y, 640, 90), Color(col.r, col.g, col.b, 0.6), false, 2.0)
-			_txt(slot.to_upper(), Vector2(58, y + 26), 18, col, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
-			var gid := String(equip.get(slot, ""))
-			if gid == "":
-				_txt("Empty", Vector2(58, y + 62), 26, Color(1, 1, 1, 0.4), 400.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt("Find gear in crates or buy it from an outfitter", Vector2(58, y + 84), 16, Color(1, 1, 1, 0.4), 470.0, HORIZONTAL_ALIGNMENT_LEFT)
-			else:
-				var gd: Dictionary = gear_defs[gb(gid)]
-				_spr(_gear_tex(gid), Vector2(96, y + 58), 52.0)
-				if gtr(gid).size() > 0:
-					_txt(gtrait_line(gid), Vector2(240, y + 26), 15, Color("ffd84f"), 430.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt(String(gd["name"]), Vector2(140, y + 58), 26, _tier_col(int(gd["tier"])), 390.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt(_gear_desc(gd), Vector2(140, y + 82), 16, Color(1, 1, 1, 0.7), 390.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_button(_gear_btn_rect(i), "REMOVE", col, 20)
-		var wl := wtr()
-		if wl.size() > 0:
-			var gy := 870.0
-			_txt("WEAPON TRAITS", Vector2(58, gy), 20, Color("ffd84f"), 400.0, HORIZONTAL_ALIGNMENT_LEFT)
-			for k in wl.size():
-				var td: Dictionary = TRAIT_DEFS[wl[k]]
-				_txt(String(td["n"]), Vector2(58, gy + 32 + k * 60), 22, Color.WHITE, 260.0, HORIZONTAL_ALIGNMENT_LEFT)
-				_txt(String(td["d"]), Vector2(58, gy + 56 + k * 60), 16, Color(1, 1, 1, 0.65), 620.0, HORIZONTAL_ALIGNMENT_LEFT)
 	else:
-		var pages2 := maxi(1, (bag.size() + 5) / 6)
-		pack_page = mini(pack_page, pages2 - 1)
-		_txt("Pack: %d / %d     Selling gives half the price" % [bag.size(), BAG_MAX], Vector2(0, 258), 20, Color(1, 1, 1, 0.6))
-		if bag.is_empty():
-			_txt("Your pack is empty.", Vector2(0, 520), 26, Color(1, 1, 1, 0.5))
-		for k in 6:
-			var idx := pack_page * 6 + k
-			if idx >= bag.size():
-				break
-			var gd2: Dictionary = gear_defs[gb(String(bag[idx]))]
-			var gc := _gear_col(String(gd2["slot"]))
-			var y2 := 272.0 + k * 130.0
-			draw_rect(Rect2(40, y2, 640, 120), Color(gc.r, gc.g, gc.b, 0.08))
-			draw_rect(Rect2(40, y2, 640, 120), Color(gc.r, gc.g, gc.b, 0.6), false, 2.0)
-			_spr(_gear_tex(String(bag[idx])), Vector2(92, y2 + 60), 72.0)
-			_txt(String(gd2["name"]), Vector2(140, y2 + 38), 28, _tier_col(int(gd2["tier"])), 280.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(String(gd2["slot"]).to_upper(), Vector2(140, y2 + 66), 18, gc, 100.0, HORIZONTAL_ALIGNMENT_LEFT)
-			if gtr(String(bag[idx])).size() > 0:
-				_txt(gtrait_line(String(bag[idx])), Vector2(230, y2 + 66), 16, Color("ffd84f"), 190.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_txt(_gear_desc(gd2), Vector2(140, y2 + 98), 18, Color(1, 1, 1, 0.75), 280.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_button(_pack_rect(k, 0), "EQUIP", gc, 24)
-			_button(_pack_rect(k, 1), "SELL %d" % (int(gd2["price"]) / 2), Color("ffc93c"), 20)
-		if pages2 > 1:
-			_button(btn_ipv, "< PREV", acc, 22)
-			_button(btn_inx, "NEXT >", acc, 22)
+		_draw_char_tab(acc)
 	_button(btn_icl, "CLOSE", acc, 26)
 
 
