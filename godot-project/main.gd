@@ -13,9 +13,12 @@ enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TU
 const GEAR_SLOTS := ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]
 
 const BAG_MAX := 12
-const AC := 72.0
+const ADV_ZOOM := 88.0
+var AC := 88.0   # adventure cell size on screen (arena floors keep 72)
+var adv_ex := 0.0   # extra view height on tall phones, adventure only
+var MAPB := 1030.0   # bottom edge of the adventure map window
 const AMX := 360.0
-const AMY := 674.0
+var AMY := 674.0
 
 var themes: Array = []
 var font: Font = ThemeDB.fallback_font
@@ -295,7 +298,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 36
+const BUILD := 37
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1762,7 +1765,7 @@ func _market_rect(i: int) -> Rect2:
 func _slot_rect(i: int) -> Rect2:
 	if mode == "adv":
 		var sz := _slot_sz()
-		return Rect2(712.0 - (slots_n() - i) * (sz + 8.0), 1100, sz, sz)
+		return Rect2(712.0 - (slots_n() - i) * (sz + 8.0), 1100.0 + adv_ex, sz, sz)
 	return Rect2(40 + i * 118, 982, 108, 62)
 
 
@@ -1857,7 +1860,7 @@ func _act_rect() -> Rect2:
 	if mode == "adv":
 		var ah := _row2_h()
 		var ax1 := 616.0 if _weapon_range() > 0 else 704.0
-		return Rect2(424, 1198, ax1 - 424.0 - 4.0, ah)
+		return Rect2(424, 1198.0 + adv_ex, ax1 - 424.0 - 4.0, ah)
 	var sy := 982.0
 	var x0 := 40.0 + slots_n() * 118.0
 	if 616.0 - x0 >= 110.0:
@@ -2577,7 +2580,7 @@ func _gui_input(event: InputEvent) -> void:
 		# Adventure map: swipe to step, tap to walk (a tap is decided on release)
 		elif state == PLAY and mode == "adv":
 			if event.pressed:
-				if event.position.y > 318.0 and event.position.y < 1030.0:
+				if event.position.y > 318.0 and event.position.y < MAPB:
 					swipe_on = true
 					swipe_start = event.position
 					return
@@ -2813,6 +2816,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func _process(dt: float) -> void:
 	t += dt
+	_adv_layout()
 	if state != last_state:
 		last_state = state
 		state_t = t
@@ -2879,7 +2883,7 @@ func _wp(cf: Vector2) -> Vector2:
 
 func _fx_band() -> Rect2:
 	if mode == "adv":
-		return Rect2(0, 318, 720, 712)
+		return Rect2(0, 318, 720, MAPB - 318.0)
 	return Rect2(GX, GY, N * cell, N * cell)
 
 
@@ -3526,7 +3530,26 @@ func _edge_glow(col: Color, k: float) -> void:
 	var pulse := 0.5 + 0.5 * sin(t * (4.0 + 5.0 * k))
 	for i in 7:
 		var a := (0.30 + 0.25 * pulse) * (1.0 - float(i) / 7.0) * (0.5 + 0.5 * k)
-		draw_rect(Rect2(i * 7 + 3, i * 7 + 3, 720 - i * 14 - 6, 1280 - i * 14 - 6), Color(col.r, col.g, col.b, a), false, 7.0)
+		draw_rect(Rect2(i * 7 + 3, i * 7 + 3, 720 - i * 14 - 6, 1280.0 + adv_ex - i * 14 - 6), Color(col.r, col.g, col.b, a), false, 7.0)
+
+
+# Adventure on a tall phone: grow the view downward so the top HUD sits at the very top of the display and the
+# bottom HUD at the very bottom; the extra height goes to the map window.
+func _adv_layout() -> void:
+	var w := get_window()
+	var ex := 0.0
+	if w != null and state == PLAY and mode == "adv" and set_fit == 0 and w.size.x > 0:
+		var vh := 720.0 * float(w.size.y) / float(w.size.x)
+		if vh > 1290.0:
+			ex = floorf(minf(vh - 1280.0, 760.0))
+	if w != null and set_fit == 0:
+		var want := Window.CONTENT_SCALE_ASPECT_EXPAND if ex > 0.0 else Window.CONTENT_SCALE_ASPECT_KEEP
+		if w.content_scale_aspect != want:
+			w.content_scale_aspect = want
+	adv_ex = ex
+	MAPB = 1030.0 + ex
+	AMY = 674.0 + ex * 0.5
+	AC = 72.0 if arena else ADV_ZOOM
 
 
 func _apply_display() -> void:
@@ -3565,7 +3588,7 @@ func _row2_h() -> float:
 
 
 func _cancel_rect() -> Rect2:
-	return Rect2(16, 1032, 688, 62)
+	return Rect2(16, 1032.0 + adv_ex, 688, 62)
 
 
 func _settings_input(p: Vector2) -> void:
@@ -8837,7 +8860,7 @@ func _adv_input(p: Vector2) -> void:
 				msg = "%s: %s" % [_use_name(inv[i]), String(use_defs[inv[i]]["desc"])]
 				_sfx("ui")
 			return
-	if p.y < 318.0 or p.y > 1030.0:
+	if p.y < 318.0 or p.y > MAPB:
 		return
 	var c := Vector2i(int(floor(cam.x + (p.x - AMX) / AC + 0.5)), int(floor(cam.y + (p.y - AMY) / AC + 0.5)))
 	if aim >= 0:
@@ -9076,19 +9099,21 @@ func _adv_draw() -> void:
 	var th := cur_theme()
 	var acc: Color = th["accent"]
 	var names: Array = th["mons"]
-	draw_rect(Rect2(0, 0, 720, 1280), th["dark"])
+	draw_rect(Rect2(0, 0, 720, 1280.0 + adv_ex), th["dark"])
 	_map_begin()
 	var mlist: Array = []
 	var wall_set: Array = _wall_set(ti)
-	var x0 := int(floor(cam.x)) - 6
-	var y0 := int(floor(cam.y)) - 6
-	for cx in range(x0, x0 + 14):
-		for cy in range(y0, y0 + 14):
+	var rx := int(ceil(360.0 / AC)) + 1
+	var ry := int(ceil((MAPB - 318.0) * 0.5 / AC)) + 2
+	var x0 := int(floor(cam.x)) - rx
+	var y0 := int(floor(cam.y)) - ry
+	for cx in range(x0, x0 + 2 * rx + 2):
+		for cy in range(y0, y0 + 2 * ry + 2):
 			var c := Vector2i(cx, cy)
 			if not _aseen(c):
 				continue
 			var ctr := _actr(c)
-			if ctr.y < 260.0 or ctr.y > 1100.0 or ctr.x < -60.0 or ctr.x > 780.0:
+			if ctr.y < 260.0 or ctr.y > MAPB + 70.0 or ctr.x < -60.0 or ctr.x > 780.0:
 				continue
 			var r := Rect2(ctr - Vector2(AC, AC) * 0.5, Vector2(AC, AC))
 			var vis := adv_vis.has(c)
@@ -9171,7 +9196,7 @@ func _adv_draw() -> void:
 	mlist.sort_custom(func(a, b): return a[1].y < b[1].y)
 	for mm2 in mlist:
 		_adv_draw_mon(mm2[0], mm2[1], ti, names, acc)
-	_amb_draw(Rect2(0, 318, 720, 712), ti)
+	_amb_draw(Rect2(0, 318, 720, MAPB - 318.0), ti)
 	if aim >= 0 and aim < inv.size():
 		var aid: String = inv[aim]
 		for dx in range(-8, 9):
@@ -9192,7 +9217,7 @@ func _adv_draw() -> void:
 		draw_arc(prc, AC * 0.52, 0, TAU, 28, Color(0.7, 0.72, 0.9, 0.5), 2.0)
 	if scan_steps > 0:
 		draw_arc(prc, AC * (1.0 + 0.4 * sin(t * 6.0)), 0, TAU, 32, Color(1, 0.9, 0.6, 0.4), 2.0)
-	_draw_player(prc, AC * 0.78)
+	_draw_player(prc, AC * 0.9)
 	_fx_draw()
 	for pp in pops:
 		var age: float = t - float(pp["t"])
@@ -9205,16 +9230,16 @@ func _adv_draw() -> void:
 	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
-	draw_rect(Rect2(0, 1030, 720, 250), th["bg"])
+	draw_rect(Rect2(0, MAPB, 720, 250), th["bg"])
 	draw_line(Vector2(0, 318), Vector2(720, 318), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
-	draw_line(Vector2(0, 1030), Vector2(720, 1030), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
+	draw_line(Vector2(0, MAPB), Vector2(720, MAPB), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
 	for s in stars:
-		if float(s[1]) < 318.0 or float(s[1]) > 1030.0:
+		if float(s[1]) < 318.0 or float(s[1]) > MAPB:
 			var a := 0.12 + 0.28 * (0.5 + 0.5 * sin(t * 1.5 + float(s[2])))
 			var sz: float = s[3]
 			draw_rect(Rect2(float(s[0]), float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	# minimap
-	var mm := Rect2(574, 888, 134, 134)
+	var mm := Rect2(574, 888.0 + adv_ex, 134, 134)
 	draw_rect(mm, Color(0, 0, 0, 0.7))
 	draw_rect(mm, Color(acc.r, acc.g, acc.b, 0.6), false, 2.0)
 	if adv_mini != null:
@@ -9258,7 +9283,7 @@ func _adv_draw() -> void:
 	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
 	if _weapon_range() > 0:
 		var md := _row2_h()
-		btn_mode = Rect2(700.0 - md, 1198, md, md)
+		btn_mode = Rect2(700.0 - md, 1198.0 + adv_ex, md, md)
 		var mcol := Color("ffc24f") if ranged_mode else Color("ff8a4f")
 		draw_circle(btn_mode.get_center(), md * 0.5, Color(0.03, 0.04, 0.08, 0.94))
 		draw_circle(btn_mode.get_center(), md * 0.5, Color(mcol.r, mcol.g, mcol.b, 0.2))
@@ -9304,7 +9329,7 @@ func _adv_draw() -> void:
 		else:
 			_txt("TAP HERE TO CANCEL", Vector2(cnr.end.x - 170, cnr.position.y + 36), 14, Color("ff8a8a"), 160.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	else:
-		_txt(msg, Vector2(0, 1074), 24, Color.WHITE, 720.0)
+		_txt(msg, Vector2(0, 1074.0 + adv_ex), 24, Color.WHITE, 720.0)
 	_draw_world_banner()
 	if state == PLAY and hp > 0:
 		if low:
@@ -9333,7 +9358,7 @@ func _adv_badges() -> void:
 	for it in items:
 		if bx + 62.0 > 420.0:
 			break
-		var br := Rect2(bx, 1198, 62, h)
+		var br := Rect2(bx, 1198.0 + adv_ex, 62, h)
 		var bcol: Color = it[2]
 		_panel(br, bcol, 0.1, false)
 		var kind := String(it[0])
