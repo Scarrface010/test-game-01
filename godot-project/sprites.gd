@@ -954,6 +954,7 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 # Output is a 176x176 square (figure centred), so it draws in the same rect as the old 128px texture.
 const PBASE_HI := "res://art/player_base_hi.png"
 const HI_HELM := "res://art/gear_hi/%s_%d.png"
+const HI_WPN := "res://art/gear_hi/w_%s_%d.png"
 const HW := 128
 const HH := 176
 # old 64px body -> new body: [o_top, o_neck, o_feet, o_hx0, o_hx1, o_bx0, o_bx1, n_top, n_neck, n_feet, n_hx0, n_hx1, n_bx0, n_bx1]
@@ -1012,8 +1013,13 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 		var g: Image = cv.img.duplicate()
 		g.resize(64, 64, Image.INTERPOLATE_NEAREST)
 		_blit_fit(ov, g, GFIT[slot][dir])
+	var wid := String(eq.get("weapon", ""))
+	var hi_wpn: Image = null
+	if wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
+		hi_wpn = (load(HI_WPN % [wid, dir]) as Texture2D).get_image()
+		hi_wpn.convert(Image.FORMAT_RGBA8)
 	var wa := _art(eq, "weapon")
-	if not wa.is_empty():
+	if hi_wpn == null and not wa.is_empty():
 		var wc := Cv.new(32, 32)
 		var wg: Array = WGRIP[dir]
 		_weapon(wc, wa, wg[0], wg[1], wg[2])
@@ -1024,6 +1030,8 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	base.blend_rect(_map_old(ov, m), Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if hi_arm != null and hi_arm.get_width() == HW and hi_arm.get_height() == HH:
 		base.blend_rect(hi_arm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	if hi_wpn != null and hi_wpn.get_width() == HW and hi_wpn.get_height() == HH:
+		base.blend_rect(hi_wpn, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if hi_helm != null and hi_helm.get_width() == HW and hi_helm.get_height() == HH:
 		base.blend_rect(hi_helm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	base = _walk_frame_hi(base, frame, dir)
