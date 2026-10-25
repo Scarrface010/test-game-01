@@ -278,6 +278,7 @@ var set_res := 0
 var set_fit := 0
 var view3d := 0   # Phase 3: 0 = 2D map, 1 = 3D map
 var w3d: SubViewport = null
+var proj3d := false   # true while drawing 2D overlays on the 3D view (_wp projects through the 3D camera)
 var set_fps := 60
 var set_filt := 1
 var set_ret := 8
@@ -318,7 +319,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 43
+const BUILD := 44
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2912,6 +2913,8 @@ func _process(dt: float) -> void:
 # ---------- animation layer ----------
 
 func _wp(cf: Vector2) -> Vector2:
+	if proj3d:
+		return w3d.proj(cf, 0.5)
 	if mode == "adv":
 		return Vector2(AMX + (cf.x - cam.x) * AC, AMY + (cf.y - cam.y) * AC)
 	return Vector2(GX + (cf.x + 0.5) * cell, GY + (cf.y + 0.5) * cell)
@@ -9115,6 +9118,38 @@ func _draw_pod(ctr: Vector2, s: float) -> void:
 	_spr(spr_gen.icon("pod"), ctr, s)
 
 
+# 3D view: health bars, effects and pop-ups drawn on top, placed through the 3D camera.
+func _draw_3d_overlay() -> void:
+	proj3d = true
+	for c in mons:
+		if not adv_vis.has(c) or String(kinds.get(c, "")) == "shard":
+			continue
+		var big: bool = boss_floor and c == boss_cell
+		var top: Vector2 = w3d.proj(Vector2(c) + _mon_off(c) / cell, 1.6 if big else 1.15)
+		var hpn := mon_hp_now(c)
+		var bw := AC * 0.6
+		var bx := top.x - bw * 0.5
+		draw_rect(Rect2(bx - 1, top.y - 1, bw + 2, 10), Color(0, 0, 0, 0.75))
+		draw_rect(Rect2(bx, top.y, bw * clampf(float(hpn) / float(mon_hp_max(c)), 0.0, 1.0), 8), Color("e8505b"))
+		var oc := _adv_outcome(c)
+		var bp := top + Vector2(bw * 0.5 + 12.0, 4.0)
+		draw_circle(bp, 13.0, Color("0a0c14"))
+		draw_circle(bp, 11.0, Color("49d17a") if oc == 0 else (Color("ffb02e") if oc == 1 else Color("ef4b55")))
+		_ctext(str(_mon_level(c)), bp, 15, Color.WHITE)
+		if elite.has(c):
+			_star(top + Vector2(-bw * 0.5 - 12.0, 4.0), 11.0, Color("ffd84f"))
+	_fx_draw()
+	for pp in pops:
+		var age: float = t - float(pp["t"])
+		if age < 0.0:
+			continue
+		var pcol: Color = pp["c"]
+		pcol.a = clampf((POP_LIFE - age) / 0.5, 0.0, 1.0)
+		var pc3: Vector2 = w3d.proj(Vector2(pp["cell"]), 1.0)
+		_ctext(pp["s"], pc3 + Vector2(0, -age * 40.0), 26, pcol)
+	proj3d = false
+
+
 func _adv_draw() -> void:
 	var ti := tidx()
 	var th := cur_theme()
@@ -9250,6 +9285,7 @@ func _adv_draw() -> void:
 		_ctext(pp["s"], pc2 + Vector2(0, -AC * 0.3 - age * 40.0), 26, pcol)
 	if view3d == 1 and w3d != null:
 		draw_texture_rect(w3d.get_texture(), Rect2(0, 318, 720, MAPB - 318.0), false)
+		_draw_3d_overlay()
 	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])

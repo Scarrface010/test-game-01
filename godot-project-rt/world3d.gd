@@ -198,3 +198,197 @@ func sync(dt: float) -> void:
 	var target := Vector3(fp.x, 0.0, fp.y)
 	cam3d.position = target + Vector3(0.0, 9.0, 5.5)
 	cam3d.look_at(target, Vector3.UP)
+	_sync_things()
+
+
+# Screen point (main.gd canvas) for a tile-space position at height h.
+func proj(cf: Vector2, h: float) -> Vector2:
+	return cam3d.unproject_position(Vector3(cf.x, h, cf.y)) + Vector2(0, 318)
+
+
+# ---------- enemies and items (pooled, rebuilt each frame from main's dictionaries) ----------
+var pools := {}   # kind -> Array[Node3D]
+var used := {}    # kind -> int
+
+
+func _pool(kind: String) -> Node3D:
+	if not pools.has(kind):
+		pools[kind] = []
+	var n: int = used.get(kind, 0)
+	used[kind] = n + 1
+	var arr: Array = pools[kind]
+	if n < arr.size():
+		arr[n].visible = true
+		return arr[n]
+	var nd := _make(kind)
+	root3d.add_child(nd)
+	arr.append(nd)
+	return nd
+
+
+func _mi(mesh: Mesh, c: Color, p: Vector3, parent: Node3D, outline := true) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = _toon(c, outline, 0.03)
+	mi.position = p
+	parent.add_child(mi)
+	return mi
+
+
+func _box(x: float, y: float, z: float) -> BoxMesh:
+	var b := BoxMesh.new()
+	b.size = Vector3(x, y, z)
+	return b
+
+
+func _ball(r: float) -> SphereMesh:
+	var s := SphereMesh.new()
+	s.radius = r
+	s.height = r * 2.0
+	s.radial_segments = 16
+	s.rings = 8
+	return s
+
+
+func _cyl(r: float, h: float, top := -1.0) -> CylinderMesh:
+	var c := CylinderMesh.new()
+	c.top_radius = r if top < 0.0 else top
+	c.bottom_radius = r
+	c.height = h
+	c.radial_segments = 16
+	return c
+
+
+func _eyes(parent: Node3D, y: float, z: float, sp: float) -> void:
+	for sx in [-1.0, 1.0]:
+		_mi(_ball(0.07), Color.WHITE, Vector3(sx * sp, y, z), parent, false)
+		_mi(_ball(0.035), Color("101018"), Vector3(sx * sp, y, z + 0.05), parent, false)
+
+
+# Each model has a child "b" (body, recoloured per use) and optional parts.
+func _make(kind: String) -> Node3D:
+	var nd := Node3D.new()
+	var b := Node3D.new()
+	b.name = "b"
+	nd.add_child(b)
+	match kind:
+		"mon0":   # blob
+			_mi(_ball(0.3), Color.WHITE, Vector3(0, 0.3, 0), b).name = "body"
+			_eyes(b, 0.38, 0.24, 0.1)
+		"mon1":   # walker: box body, antenna
+			_mi(_box(0.46, 0.42, 0.4), Color.WHITE, Vector3(0, 0.33, 0), b).name = "body"
+			_mi(_cyl(0.02, 0.25), Color("cccccc"), Vector3(0, 0.66, 0), b)
+			_mi(_ball(0.05), Color("ff5d5d"), Vector3(0, 0.8, 0), b, false)
+			_eyes(b, 0.38, 0.21, 0.11)
+		"mon2":   # spiker: cone
+			_mi(_cyl(0.3, 0.6, 0.04), Color.WHITE, Vector3(0, 0.3, 0), b).name = "body"
+			_eyes(b, 0.3, 0.17, 0.08)
+		"mon3":   # floater: ball with ring
+			_mi(_ball(0.24), Color.WHITE, Vector3(0, 0.5, 0), b).name = "body"
+			var ring := _mi(_cyl(0.36, 0.04), Color("ffd84f"), Vector3(0, 0.5, 0), b)
+			ring.rotation_degrees.x = 15
+			_eyes(b, 0.55, 0.2, 0.08)
+		"turret":
+			_mi(_cyl(0.3, 0.3), Color.WHITE, Vector3(0, 0.15, 0), b).name = "body"
+			_mi(_ball(0.2), Color("8890a8"), Vector3(0, 0.38, 0), b)
+			var gun := _mi(_cyl(0.06, 0.4), Color("40465a"), Vector3(0, 0.4, 0.2), b)
+			gun.rotation_degrees.x = 90
+		"coin":
+			var cn := _mi(_cyl(0.16, 0.05), Color("ffc93c"), Vector3(0, 0.35, 0), b)
+			cn.rotation_degrees.x = 90
+		"key":
+			_mi(_cyl(0.1, 0.05), Color("ffd84f"), Vector3(0, 0.45, 0), b).rotation_degrees.x = 90
+			_mi(_box(0.05, 0.05, 0.28), Color("ffd84f"), Vector3(0, 0.45, 0.16), b)
+		"crate":
+			_mi(_box(0.42, 0.36, 0.42), Color("b07a45"), Vector3(0, 0.18, 0), b)
+			_mi(_box(0.44, 0.06, 0.44), Color("7a4f2a"), Vector3(0, 0.3, 0), b, false)
+		"hp":
+			_mi(_ball(0.16), Color("ff5d6a"), Vector3(0, 0.35, 0), b)
+			_mi(_cyl(0.05, 0.08), Color("eeeeee"), Vector3(0, 0.52, 0), b)
+		"armor":
+			_mi(_box(0.34, 0.36, 0.1), Color("9fb2cc"), Vector3(0, 0.38, 0), b)
+		"item":
+			_mi(_ball(0.15), Color("c38aff"), Vector3(0, 0.38, 0), b).name = "body"
+		"vault":
+			_mi(_box(0.6, 0.45, 0.45), Color("d9a93a"), Vector3(0, 0.23, 0), b)
+			_mi(_box(0.62, 0.08, 0.47), Color("8a6420"), Vector3(0, 0.36, 0), b, false)
+		"station":
+			_mi(_cyl(0.25, 0.9), Color("7fd8ff"), Vector3(0, 0.45, 0), b)
+			_mi(_ball(0.16), Color("e8fbff"), Vector3(0, 0.98, 0), b, false)
+		"med":
+			_mi(_box(0.5, 0.5, 0.3), Color("eef5f0"), Vector3(0, 0.25, 0), b)
+			_mi(_box(0.3, 0.09, 0.02), Color("39c36a"), Vector3(0, 0.3, 0.16), b, false)
+			_mi(_box(0.09, 0.3, 0.02), Color("39c36a"), Vector3(0, 0.3, 0.16), b, false)
+		"merchant":
+			_mi(_cyl(0.22, 0.7, 0.12), Color("9a6bff"), Vector3(0, 0.35, 0), b)
+			_mi(_ball(0.17), Color("ffd9b0"), Vector3(0, 0.82, 0), b)
+			_mi(_cyl(0.24, 0.2, 0.0), Color("6a3fd0"), Vector3(0, 1.02, 0), b)
+		"spikes":
+			for i in 4:
+				_mi(_cyl(0.07, 0.22, 0.0), Color("b8bcc8"), Vector3((i % 2 - 0.5) * 0.3, 0.12, (i / 2 - 0.5) * 0.3), b, false)
+		"haz":
+			_mi(_cyl(0.42, 0.03), Color("ff8a3a"), Vector3(0, 0.07, 0), b, false).name = "body"
+	return nd
+
+
+func _sync_things() -> void:
+	for k in used:
+		used[k] = 0
+	var th: Dictionary = m.cur_theme()
+	var acc: Color = th["accent"]
+	var tt: float = m.t
+	var px: Vector2 = m.rt_fp
+	var cl: float = m.cell
+	for c in m.mons:
+		if not m.adv_vis.has(c) or String(m.kinds.get(c, "")) == "shard":
+			continue
+		var is_boss: bool = m.boss_floor and c == m.boss_cell
+		var kind := "turret" if m.tur.has(c) else "mon%d" % (int(m.mons[c]) % 4)
+		var nd := _pool(kind)
+		var off: Vector2 = Vector2(c) + m._mon_off(c) / cl
+		nd.position = Vector3(off.x, 0.0, off.y)
+		var sc := 1.6 if is_boss else 1.0
+		nd.scale = Vector3.ONE * sc
+		var to := Vector3(px.x, 0.0, px.y) - nd.position
+		if to.length() > 0.05:
+			nd.rotation.y = atan2(to.x, to.z)
+		var b: Node3D = nd.get_node("b")
+		b.position.y = absf(sin(tt * 5.0 + c.x + c.y)) * 0.06
+		var col := acc.lerp(Color.from_hsv(fposmod(float(m.mons[c]) * 0.13, 1.0), 0.6, 0.95), 0.45)
+		if m.elite.has(c):
+			col = col.lerp(Color("ffd84f"), 0.35)
+		if m.mon_hit.has(c) and tt - float(m.mon_hit[c][0]) < 0.12:
+			col = Color(1.0, 0.35, 0.35)
+		var body := b.get_node_or_null("body")
+		if body:
+			body.material_override.set_shader_parameter("col", col)
+	for c in m.items:
+		if not m._aseen(c):
+			continue
+		var k2: String = m.items[c]
+		var kind2 := "item"
+		if k2 == "key":
+			kind2 = "key"
+		elif k2.begins_with("gear_"):
+			kind2 = "crate"
+		elif k2 == "hp" or k2 == "armor":
+			kind2 = k2
+		_place(_pool(kind2), c, tt, true)
+	for c in m.coin_at:
+		if m._aseen(c):
+			_place(_pool("coin"), c, tt, true)
+	for pair in [["vault", m.vaults], ["station", m.stations], ["med", m.meds], ["merchant", m.merchants], ["spikes", m.spikes], ["haz", m.haz]]:
+		for c in pair[1]:
+			if m._aseen(c):
+				_place(_pool(pair[0]), c, tt, false)
+	for k in pools:
+		var arr: Array = pools[k]
+		for i in range(used.get(k, 0), arr.size()):
+			arr[i].visible = false
+
+
+func _place(nd: Node3D, c: Vector2i, tt: float, spin: bool) -> void:
+	nd.position = Vector3(c.x, 0.0, c.y)
+	if spin:
+		nd.rotation.y = tt * 2.0 + c.x
+		nd.get_node("b").position.y = sin(tt * 3.0 + c.x * 1.7 + c.y) * 0.05
