@@ -298,7 +298,7 @@ var press_p := Vector2(-999, -999)
 const RT_STEP := 0.16  # seconds per tile while the stick is held
 const RT_TICK := 0.4  # world tick: enemies act, air drains, timed effects count down
 const RT_ATK := 0.45  # player attack cooldown (melee and shots)
-const RT_MON_ATK := 1.0  # how often a regular enemy next to you strikes
+const RT_MON_ATK := 0.6  # how often a regular enemy next to you strikes
 var rt_tick := false
 var joy_on := false
 var joy_dir := Vector2i.ZERO
@@ -316,7 +316,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 41
+const BUILD := 42
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3111,7 +3111,7 @@ func _draw_player(prc: Vector2, sz: float) -> void:
 	var sy := 1.0 + 0.025 * sin(t * 2.6)
 	var lean := 0.0
 	if moving:
-		fr = 1 + int(walk_phase) % 2
+		fr = 10 + int(fposmod(walk_phase, 2.0) * 4.0) % 8
 		var sn := absf(sin(walk_phase * PI))
 		hop = sn * sz * 0.1
 		sy = 1.0 + 0.06 * sn - 0.05 * (1.0 - sn)
@@ -9428,7 +9428,7 @@ func _rt_glide(dt: float) -> void:
 	if gone > 0.0005:
 		rt_move_t = t
 		rt_vx = v.x
-		walk_phase += gone * 2.2  # about one stride per tile
+		walk_phase += gone * 0.8  # slower stride at full speed
 	var nc := Vector2i(roundi(rt_fp.x), roundi(rt_fp.y))
 	if nc != pos:
 		_adv_step(nc, true)

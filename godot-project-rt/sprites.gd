@@ -1127,8 +1127,8 @@ func _walk_frame_hi(im: Image, frame: int, dir: int) -> Image:
 	if frame == 0:
 		return im
 	var out := Image.create(HW, HH, false, Image.FORMAT_RGBA8)
-	var left := frame == 1
-	var sway := 0 if dir == 3 else (2 if left else -2)
+	var s := sin(float(frame - 10) / 8.0 * TAU) if frame >= 10 else (1.0 if frame == 1 else -1.0)
+	var sway := 0 if dir == 3 else roundi(2.0 * s)
 	for y in HH:
 		for x in HW:
 			var c := im.get_pixel(x, y)
@@ -1139,14 +1139,14 @@ func _walk_frame_hi(im: Image, frame: int, dir: int) -> Image:
 				if nx >= 0 and nx < HW:
 					out.set_pixel(nx, y, c)
 				continue
-			var lift := (x < HW / 2) == left
+			var k := s if x < HW / 2 else -s  # this leg's share of the stride
 			var ny := y
 			var nx2 := x
 			if dir == 3:
-				nx2 = x + (-4 if lift else 4)
-				ny = y - (4 if lift else 0)
-			elif lift:
-				ny = y - 5
+				nx2 = x - roundi(4.0 * k)
+				ny = y - roundi(4.0 * maxf(k, 0.0))
+			else:
+				ny = y - roundi(5.0 * maxf(k, 0.0))
 			if nx2 >= 0 and nx2 < HW and ny >= 0:
 				out.set_pixel(nx2, ny, c)
 	return out
