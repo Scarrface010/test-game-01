@@ -307,11 +307,16 @@ var joy_t := 0.0
 var rt_world_t := 0.0
 var rt_atk_t := 0.0
 var rt_mon_t := {}
+const RT_SPEED := 5.0  # tiles per second at full stick
+const RT_R := 0.32  # player collision half-size in tiles
+var rt_fp := Vector2.ZERO  # smooth player position (tile units)
+var rt_move_t := -9.0  # last time the stick actually moved the player
+var rt_vx := 0.0
 var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 40
+const BUILD := 41
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3099,7 +3104,7 @@ func _mon_off(c: Vector2i) -> Vector2:
 
 
 func _draw_player(prc: Vector2, sz: float) -> void:
-	var moving := vis_pos.distance_to(Vector2(pos)) > 0.05
+	var moving := t - rt_move_t < 0.1 or (t - rt_move_t > 0.3 and vis_pos.distance_to(Vector2(pos)) > 0.05 and rt_fp.distance_to(Vector2(pos)) < 0.01)
 	var fr := 0
 	var hop := 0.0
 	var wob := 0.0
@@ -3111,7 +3116,7 @@ func _draw_player(prc: Vector2, sz: float) -> void:
 		hop = sn * sz * 0.1
 		sy = 1.0 + 0.06 * sn - 0.05 * (1.0 - sn)
 		wob = sin(walk_phase * PI) * 0.05
-		lean = clampf(Vector2(pos).x - vis_pos.x, -1.0, 1.0) * 0.1
+		lean = (rt_vx if t - rt_move_t < 0.1 else clampf(Vector2(pos).x - vis_pos.x, -1.0, 1.0)) * 0.1
 	var sx := 1.0 + (1.0 - sy) * 0.8
 	var feet := -(sy - 1.0) * sz * 0.5
 	var tex := _player_tex(fr)
@@ -3359,6 +3364,8 @@ func _anim_update(dt: float) -> void:
 	if themes.is_empty():
 		return
 	var tgt := Vector2(pos)
+	if mode == "adv" and rt_fp.distance_to(tgt) < 0.75:
+		tgt = rt_fp
 	if anim_floor != floor_n or anim_mode != mode:
 		anim_floor = floor_n
 		anim_mode = mode
@@ -7843,6 +7850,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		_adv_hunters()
 		if state == PLAY:
 			_rt_strikes()
+		if state == PLAY:
+			_rt_roam()
 		if state != PLAY:
 			return
 		_adv_shooters()
@@ -9339,6 +9348,8 @@ func _adv_draw() -> void:
 
 
 func _rt_update(dt: float) -> void:
+	if Vector2i(roundi(rt_fp.x), roundi(rt_fp.y)) != pos:
+		rt_fp = Vector2(pos)
 	rt_world_t += dt
 	if rt_world_t >= RT_TICK:
 		rt_world_t = 0.0
@@ -9350,15 +9361,9 @@ func _rt_update(dt: float) -> void:
 	joy_t += dt
 	if joy_on:
 		walk.clear()
-		if joy_dir != Vector2i.ZERO and joy_t >= RT_STEP:
-			var nc := pos + joy_dir
-			if _aopen(nc) and not (mons.has(nc) and t < rt_atk_t):
-				joy_t = 0.0
-				var hit := mons.has(nc)
-				_adv_step(nc, true)
-				if hit:
-					rt_atk_t = maxf(rt_atk_t, t + RT_ATK)
-				return
+		_rt_glide(dt)
+		if state != PLAY:
+			return
 	elif walk.size() > 0:
 		if joy_t >= RT_STEP and not (mons.has(walk[0]) and t < rt_atk_t):
 			joy_t = 0.0
@@ -9378,6 +9383,88 @@ func _rt_update(dt: float) -> void:
 			rt_atk_t = t + RT_ATK
 			return
 
+
+func _rt_free(p: Vector2) -> bool:
+	for k in [Vector2(-RT_R, -RT_R), Vector2(RT_R, -RT_R), Vector2(-RT_R, RT_R), Vector2(RT_R, RT_R)]:
+		var q: Vector2 = p + k
+		var c := Vector2i(roundi(q.x), roundi(q.y))
+		if c == pos:
+			continue
+		if not _aopen(c) or mons.has(c) or (vaults.has(c) and keys <= 0):
+			return false
+	return true
+
+
+func _rt_glide(dt: float) -> void:
+	if joy_v.length() < 28.0:
+		return
+	var v := joy_v / 90.0
+	if v.length() > 1.0:
+		v = v.normalized()
+	var mv := v * RT_SPEED * dt
+	var old := rt_fp
+	var bx := false
+	var by := false
+	var px := rt_fp + Vector2(mv.x, 0.0)
+	if _rt_free(px):
+		rt_fp = px
+	else:
+		bx = true
+	var py := rt_fp + Vector2(0.0, mv.y)
+	if _rt_free(py):
+		rt_fp = py
+	else:
+		by = true
+	# corner assist: blocked on the main axis -> slide toward the lane centre
+	if bx and absf(v.x) >= absf(v.y):
+		var ty := rt_fp + Vector2(0.0, clampf(roundf(rt_fp.y) - rt_fp.y, -absf(mv.x), absf(mv.x)))
+		if _rt_free(ty):
+			rt_fp = ty
+	elif by and absf(v.y) > absf(v.x):
+		var tx := rt_fp + Vector2(clampf(roundf(rt_fp.x) - rt_fp.x, -absf(mv.y), absf(mv.y)), 0.0)
+		if _rt_free(tx):
+			rt_fp = tx
+	var gone := rt_fp.distance_to(old)
+	if gone > 0.0005:
+		rt_move_t = t
+		rt_vx = v.x
+		walk_phase += gone * 2.2  # about one stride per tile
+	var nc := Vector2i(roundi(rt_fp.x), roundi(rt_fp.y))
+	if nc != pos:
+		_adv_step(nc, true)
+		if pos != nc:
+			rt_fp = old
+
+
+func _rt_roam() -> void:
+	# regular enemies chase you when close, otherwise wander now and then
+	if arena:
+		return
+	var tgt := decoy_c if decoy_steps > 0 else pos
+	var dist := _adv_bfs(tgt, 7)
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for c in mons.keys():
+		if not mons.has(c) or tur.has(c) or _stunned(c) or (boss_floor and c == boss_cell):
+			continue
+		var kd := String(kinds.get(c, ""))
+		if kd == "hunter" or kd == "rager" or kd == "drone" or kd == "shooter":
+			continue
+		var bn: Vector2i = c
+		if dist.has(c) and cloak_steps <= 0:
+			var bd: int = dist[c]
+			if bd <= 1 or adv_steps % 2 != 0:
+				continue
+			for dv in dirs:
+				var n: Vector2i = c + dv
+				if dist.has(n) and int(dist[n]) < bd and n != pos and n != tgt and _aopen(n) and not (mons.has(n) or vaults.has(n)):
+					bd = dist[n]
+					bn = n
+		elif randf() < 0.15:
+			var n2: Vector2i = c + dirs[randi() % 4]
+			if _aopen(n2) and n2 != pos and not (mons.has(n2) or vaults.has(n2) or stairs == n2):
+				bn = n2
+		if bn != c:
+			_adv_move_mon(c, bn)
 
 func _rt_strikes() -> void:
 	var adj := {}
