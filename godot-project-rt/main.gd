@@ -276,6 +276,8 @@ var font_mode := 1
 var btn_font := Rect2(370, 1220, 300, 52)
 var set_res := 0
 var set_fit := 0
+var view3d := 0   # Phase 3: 0 = 2D map, 1 = 3D map
+var w3d: SubViewport = null
 var set_fps := 60
 var set_filt := 1
 var set_ret := 8
@@ -316,7 +318,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 42
+const BUILD := 43
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -421,6 +423,7 @@ func _ready() -> void:
 		_apply_font()
 		set_res = clampi(int(cfg.get_value("ui", "res", 0)), 0, 1)
 		set_fit = clampi(int(cfg.get_value("ui", "fit", 0)), 0, 1)
+		view3d = clampi(int(cfg.get_value("ui", "v3d", 0)), 0, 1)
 		set_fps = int(cfg.get_value("ui", "fps", 60)) if int(cfg.get_value("ui", "fps", 60)) in [30, 60, 120] else 60
 		set_filt = clampi(int(cfg.get_value("ui", "smooth", 1)), 0, 1)
 		set_shake = clampi(int(cfg.get_value("ui", "shake", 1)), 0, 1)
@@ -852,6 +855,7 @@ func _save_meta() -> void:
 	cfg.set_value("ui", "font", font_mode)
 	cfg.set_value("ui", "res", set_res)
 	cfg.set_value("ui", "fit", set_fit)
+	cfg.set_value("ui", "v3d", view3d)
 	cfg.set_value("ui", "fps", set_fps)
 	cfg.set_value("ui", "smooth", set_filt)
 	cfg.set_value("ui", "shake", set_shake)
@@ -2845,6 +2849,15 @@ func _gui_input(event: InputEvent) -> void:
 func _process(dt: float) -> void:
 	t += dt
 	_adv_layout()
+	var want3d := view3d == 1 and mode == "adv"
+	if want3d and w3d == null:
+		w3d = load("res://world3d.gd").new()
+		w3d.m = self
+		add_child(w3d)
+	if w3d != null:
+		w3d.render_target_update_mode = SubViewport.UPDATE_ALWAYS if want3d else SubViewport.UPDATE_DISABLED
+		if want3d:
+			w3d.sync(dt)
 	if state != last_state:
 		last_state = state
 		state_t = t
@@ -3113,8 +3126,8 @@ func _draw_player(prc: Vector2, sz: float) -> void:
 	if moving:
 		fr = 10 + int(fposmod(walk_phase, 2.0) * 4.0) % 8
 		var sn := absf(sin(walk_phase * PI))
-		hop = sn * sz * 0.1
-		sy = 1.0 + 0.06 * sn - 0.05 * (1.0 - sn)
+		hop = sn * sz * 0.04
+		sy = 1.0 + 0.025 * sn - 0.02 * (1.0 - sn)
 		wob = sin(walk_phase * PI) * 0.05
 		lean = (rt_vx if t - rt_move_t < 0.1 else clampf(Vector2(pos).x - vis_pos.x, -1.0, 1.0)) * 0.1
 	var sx := 1.0 + (1.0 - sy) * 0.8
@@ -3386,8 +3399,7 @@ func _anim_update(dt: float) -> void:
 	elif dist > 0.001:
 		vis_pos = vis_pos.move_toward(tgt, dt * 10.5)
 	if dist > 0.05:
-		walk_phase += dt * 9.0
-		idle_t = 0.0
+		idle_t = 0.0  # RT: walk_phase is driven by distance in the joystick move
 		if absf(d.x) > 0.02 or absf(d.y) > 0.02:
 			if absf(d.x) >= absf(d.y):
 				pdir = 3 if d.x > 0.0 else 2
@@ -3587,7 +3599,7 @@ func _apply_display() -> void:
 
 
 func _set_rect(i: int) -> Rect2:
-	return Rect2(110, 262 + i * 84, 500, 58)
+	return Rect2(110, 262 + i * 78, 500, 54)
 
 
 # Top-row buttons: 64px tall (74 with large buttons) so they are easy to hit with a thumb.
@@ -3641,7 +3653,7 @@ func _settings_input(p: Vector2) -> void:
 		set_ret = MODE
 		_sfx("ui")
 		return
-	for i in 10:
+	for i in 11:
 		if _set_rect(i).has_point(p):
 			if i == 0:
 				font_mode = (font_mode + 1) % 3
@@ -3664,9 +3676,11 @@ func _settings_input(p: Vector2) -> void:
 			elif i == 8:
 				set_vib = 1 - set_vib
 				_buzz(60)
-			else:
+			elif i == 9:
 				set_big = 1 - set_big
 				_layout_buttons()
+			else:
+				view3d = 1 - view3d
 			_apply_display()
 			_save_meta()
 			_sfx("ui")
@@ -3688,6 +3702,7 @@ func _draw_settings(acc: Color) -> void:
 		"SOUND FX: " + String(VOL_NAMES[set_sfxv]),
 		"VIBRATION: " + ("ON" if set_vib == 1 else "OFF"),
 		"BUTTONS: " + ("NORMAL" if set_big == 0 else "LARGE"),
+		"MAP VIEW: " + ("2D" if view3d == 0 else "3D (TEST)"),
 	]
 	var hints := [
 		"Pixel = retro font everywhere. Mixed = pixel titles only.",
@@ -3700,8 +3715,9 @@ func _draw_settings(acc: Color) -> void:
 		"Volume of sound effects.",
 		"Short buzzes on hits, kills, big moments and button taps (phones only).",
 		"Large makes the top buttons and the tool, power and weapon buttons bigger.",
+		"3D test view: level and player only for now.",
 	]
-	for i in 10:
+	for i in 11:
 		var r := _set_rect(i)
 		_button(r, String(labels[i]), Color("c9d3f0"), 24)
 		_txt(String(hints[i]), Vector2(0, r.end.y + 20), 16, Color(1, 1, 1, 0.55))
@@ -9232,6 +9248,8 @@ func _adv_draw() -> void:
 		pcol.a = clampf((POP_LIFE - age) / 0.5, 0.0, 1.0)
 		var pc2: Vector2 = _actr(pp["cell"])
 		_ctext(pp["s"], pc2 + Vector2(0, -AC * 0.3 - age * 40.0), 26, pcol)
+	if view3d == 1 and w3d != null:
+		draw_texture_rect(w3d.get_texture(), Rect2(0, 318, 720, MAPB - 318.0), false)
 	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
