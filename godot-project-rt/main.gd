@@ -309,7 +309,16 @@ var joy_v := Vector2.ZERO
 var joy_t := 0.0
 var rt_world_t := 0.0
 var rt_atk_t := 0.0
-var rt_mon_t := {}
+var rt_mon_t := {}  # cell -> [time, aim angle, 0 wind-up / 1 recover]
+var mon_fp := {}  # cell -> free enemy position (tiles)
+var rt_mdist := {}  # chase distances from the last world tick
+var rt_face := Vector2(0, 1)
+var rt_atk_req := false
+var rt_atk_press := -9.0
+const MON_SPEED := 4.0
+const MON_REACH := 1.1
+const RT_REACH := 1.4
+const RT_ARC := 1.15  # half-angle of the swing arc (radians)
 const RT_SPEED := 5.0  # tiles per second at full stick
 const RT_R := 0.32  # player collision half-size in tiles
 var rt_fp := Vector2.ZERO  # smooth player position (tile units)
@@ -319,7 +328,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 44
+const BUILD := 45
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2376,7 +2385,7 @@ func _load_run() -> bool:
 	walk.clear()
 	pops.clear()
 	fx.clear()
-	mon_slide.clear()
+	mon_slide.clear(); mon_fp.clear(); rt_mon_t.clear()
 	mon_hit.clear()
 	mon_lunge.clear()
 	reveal.clear()
@@ -2589,6 +2598,12 @@ func _gui_input(event: InputEvent) -> void:
 			inv_vel = 0.0
 			inv_scroll = clampf(inv_scroll + (60.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -60.0), 0.0, inv_scroll_max)
 			return
+	# attack button: a second finger can press it while the first one steers
+	if state == PLAY and mode == "adv" and event is InputEventScreenTouch and event.pressed and event.index > 0 \
+			and _rt_atk_rect().grow(24.0).has_point(event.position):
+		rt_atk_req = true
+		rt_atk_press = t
+		return
 	if state == PLAY and mode == "adv" and swipe_on and event is InputEventMouseMotion:
 		var jd: Vector2 = event.position - swipe_start
 		if jd.length() > 90.0:
@@ -2621,6 +2636,10 @@ func _gui_input(event: InputEvent) -> void:
 		# Adventure map: swipe to step, tap to walk (a tap is decided on release)
 		elif state == PLAY and mode == "adv":
 			if event.pressed:
+				if _rt_atk_rect().grow(24.0).has_point(event.position):
+					rt_atk_req = true
+					rt_atk_press = t
+					return
 				if event.position.y > 318.0 and event.position.y < MAPB:
 					swipe_on = true
 					swipe_start = event.position
@@ -3100,9 +3119,11 @@ func _p_off() -> Vector2:
 
 func _mon_off(c: Vector2i) -> Vector2:
 	var o := Vector2.ZERO
-	if mon_slide.has(c):
+	if mon_fp.has(c):
+		o += ((mon_fp[c] as Vector2) - Vector2(c)) * cell
+	elif mon_slide.has(c):
 		var sl: Array = mon_slide[c]
-		var k := clampf((t - float(sl[1])) / 0.22, 0.0, 1.0)
+		var k := clampf((t - float(sl[1])) / 0.35, 0.0, 1.0)
 		var e := k * k * (3.0 - 2.0 * k)
 		o += (sl[0] as Vector2) * (1.0 - e) * cell
 	if mon_hit.has(c):
@@ -3149,7 +3170,7 @@ func _draw_mon_sprite(c: Vector2i, ctr: Vector2, ti: int, base_lv: int, is_boss:
 	var squash := 1.0
 	if mon_slide.has(c):
 		var sl: Array = mon_slide[c]
-		var k := clampf((t - float(sl[1])) / 0.22, 0.0, 1.0)
+		var k := clampf((t - float(sl[1])) / 0.35, 0.0, 1.0)
 		if k < 1.0:
 			hop = sin(k * PI) * sz * 0.14
 			squash = 1.0 + 0.08 * sin(k * PI)
@@ -3260,6 +3281,16 @@ func _fx_draw() -> void:
 			var cc2 := _wp(f["p"])
 			draw_arc(cc2, rr, 0, TAU, 40, Color(col3.r, col3.g, col3.b, (1.0 - u) * 0.9), maxf(1.0, float(f["w"]) * (1.0 - u)))
 			draw_arc(cc2, rr * 0.82, 0, TAU, 36, Color(col3.r, col3.g, col3.b, (1.0 - u) * 0.3), 2.0)
+		elif k == "swing":
+			var col5: Color = f["col"]
+			var wn: bool = f["warn"]
+			var span := RT_ARC * 2.0 * (1.0 if wn else minf(1.0, u * 3.0))
+			var a0 := float(f["ang"]) - RT_ARC
+			var pts := PackedVector2Array()
+			for i in 13:
+				pts.append(_wp((f["p"] as Vector2) + Vector2.from_angle(a0 + span * float(i) / 12.0) * float(f["r"])))
+			var al := (0.25 + 0.25 * u) if wn else (1.0 - u)
+			draw_polyline(pts, Color(col5.r, col5.g, col5.b, al), 3.0 if wn else 2.0 + 8.0 * (1.0 - u))
 		elif k == "slash":
 			var col4: Color = f["col"]
 			var cc3 := _wp(f["p"])
@@ -3388,7 +3419,7 @@ func _anim_update(dt: float) -> void:
 		vis_pos = tgt
 		reveal.clear()
 		vfade.clear()
-		mon_slide.clear()
+		mon_slide.clear(); mon_fp.clear(); rt_mon_t.clear()
 		mon_hit.clear()
 		mon_lunge.clear()
 		fx.clear()
@@ -7868,8 +7899,6 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		_thief_check()
 		_adv_hunters()
 		if state == PLAY:
-			_rt_strikes()
-		if state == PLAY:
 			_rt_roam()
 		if state != PLAY:
 			return
@@ -7920,6 +7949,12 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 	if mode == "adv" and boss_floor and a == boss_cell:
 		boss_cell = b
 	mon_slide[b] = [Vector2(a - b), t]
+	if mon_fp.has(a):
+		mon_fp[b] = mon_fp[a]
+		mon_fp.erase(a)
+	if rt_mon_t.has(a):
+		rt_mon_t[b] = rt_mon_t[a]
+		rt_mon_t.erase(a)
 	if mon_hit.has(a):
 		mon_hit[b] = mon_hit[a]
 		mon_hit.erase(a)
@@ -9395,6 +9430,16 @@ func _adv_draw() -> void:
 			_edge_glow(Color("3d9bff"), clampf(1.0 - oxy / (oxy_max * 0.25), 0.0, 1.0))
 		if hpf <= 0.3:
 			_edge_glow(Color("ff2b3d"), clampf(1.0 - hpf / 0.3, 0.0, 1.0))
+	if state == PLAY and mode == "adv" and not ranged_mode:
+		var ar := _rt_atk_rect()
+		var ac := ar.get_center()
+		var pr := clampf(1.0 - (t - rt_atk_press) / 0.15, 0.0, 1.0)
+		var rdy := t >= rt_atk_t
+		draw_circle(ac, 60.0 - pr * 5.0, Color(1, 0.94, 0.82, 0.12 + pr * 0.25))
+		draw_arc(ac, 60.0 - pr * 5.0, 0.0, TAU, 48, Color(1, 0.94, 0.82, 0.7 if rdy else 0.3), 4.0)
+		if not rdy:
+			draw_arc(ac, 52.0, -PI * 0.5, -PI * 0.5 + TAU * (1.0 - (rt_atk_t - t) / RT_ATK), 36, Color("ffd84f"), 4.0)
+		_txt("ATK", Vector2(ar.position.x, ac.y - 14.0), 24, Color(1, 1, 1, 0.9 if rdy else 0.5), ar.size.x)
 	if joy_on and state == PLAY:
 		draw_circle(swipe_start, 90.0, Color(1, 1, 1, 0.07))
 		draw_arc(swipe_start, 90.0, 0.0, TAU, 48, Color(1, 1, 1, 0.35), 3.0)
@@ -9412,6 +9457,13 @@ func _rt_update(dt: float) -> void:
 		rt_tick = false
 		if state != PLAY:
 			return
+	_rt_mon_glide(dt)
+	_rt_strikes()
+	if rt_atk_req:
+		rt_atk_req = false
+		_rt_swing()
+	if state != PLAY:
+		return
 	joy_t += dt
 	if joy_on:
 		walk.clear()
@@ -9427,24 +9479,43 @@ func _rt_update(dt: float) -> void:
 			if hit2:
 				rt_atk_t = maxf(rt_atk_t, t + RT_ATK)
 		return
-	# auto-melee: hit an adjacent enemy whenever the cooldown is ready
+
+
+func _rt_atk_rect() -> Rect2:
+	return Rect2(720.0 - 140.0, MAPB - 140.0, 120.0, 120.0)
+
+
+func _rt_swing() -> void:
+	# attack button: an arc in front of you hits every enemy inside it
 	if ranged_mode or t < rt_atk_t or state != PLAY:
 		return
-	for dv in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		var c: Vector2i = pos + dv
-		if mons.has(c) and _aseen(c) and not _titan_immune(c):
+	rt_atk_t = t + RT_ATK
+	_fx_swing(rt_fp, rt_face.angle(), RT_REACH, Color("fff0d0"), false, 0.2)
+	var hits: Array = []
+	for c in mons.keys():
+		if not _aseen(c) or _titan_immune(c):
+			continue
+		var dv: Vector2 = (mon_fp.get(c, Vector2(c)) as Vector2) - rt_fp
+		if dv.length() <= RT_REACH and absf(angle_difference(rt_face.angle(), dv.angle())) <= RT_ARC:
+			hits.append(c)
+	for c in hits:
+		if mons.has(c) and state == PLAY:
 			_adv_step(c, true)
-			rt_atk_t = t + RT_ATK
-			return
 
 
 func _rt_free(p: Vector2) -> bool:
-	for k in [Vector2(-RT_R, -RT_R), Vector2(RT_R, -RT_R), Vector2(-RT_R, RT_R), Vector2(RT_R, RT_R)]:
+	var ks := [Vector2(-RT_R, -RT_R), Vector2(RT_R, -RT_R), Vector2(-RT_R, RT_R), Vector2(RT_R, RT_R)]
+	# enemy cells we already overlap don't block (stops getting pinned when one steps in)
+	var inside := {}
+	for k in ks:
+		var q0: Vector2 = rt_fp + k
+		inside[Vector2i(roundi(q0.x), roundi(q0.y))] = true
+	for k in ks:
 		var q: Vector2 = p + k
 		var c := Vector2i(roundi(q.x), roundi(q.y))
 		if c == pos:
 			continue
-		if not _aopen(c) or mons.has(c) or (vaults.has(c) and keys <= 0):
+		if not _aopen(c) or (mons.has(c) and not inside.has(c)) or (vaults.has(c) and keys <= 0):
 			return false
 	return true
 
@@ -9456,6 +9527,8 @@ func _rt_glide(dt: float) -> void:
 	if v.length() > 1.0:
 		v = v.normalized()
 	var mv := v * RT_SPEED * dt
+	if v.length() > 0.2:
+		rt_face = v.normalized()
 	var old := rt_fp
 	var bx := false
 	var by := false
@@ -9496,6 +9569,7 @@ func _rt_roam() -> void:
 		return
 	var tgt := decoy_c if decoy_steps > 0 else pos
 	var dist := _adv_bfs(tgt, 7)
+	rt_mdist = dist
 	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 	for c in mons.keys():
 		if not mons.has(c) or tur.has(c) or _stunned(c) or (boss_floor and c == boss_cell):
@@ -9505,14 +9579,7 @@ func _rt_roam() -> void:
 			continue
 		var bn: Vector2i = c
 		if dist.has(c) and cloak_steps <= 0:
-			var bd: int = dist[c]
-			if bd <= 1 or adv_steps % 2 != 0:
-				continue
-			for dv in dirs:
-				var n: Vector2i = c + dv
-				if dist.has(n) and int(dist[n]) < bd and n != pos and n != tgt and _aopen(n) and not (mons.has(n) or vaults.has(n)):
-					bd = dist[n]
-					bn = n
+			continue  # chasing is done smoothly in _rt_mon_glide
 		elif randf() < 0.15:
 			var n2: Vector2i = c + dirs[randi() % 4]
 			if _aopen(n2) and n2 != pos and not (mons.has(n2) or vaults.has(n2) or stairs == n2):
@@ -9520,31 +9587,90 @@ func _rt_roam() -> void:
 		if bn != c:
 			_adv_move_mon(c, bn)
 
+func _rt_mon_glide(dt: float) -> void:
+	# enemies move freely; their tile (dictionary key) follows the free position
+	for k in mon_fp.keys():
+		if not mons.has(k):
+			mon_fp.erase(k)
+	var tgt := Vector2(decoy_c) if decoy_steps > 0 else rt_fp
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for c in mons.keys():
+		if not mons.has(c):
+			continue
+		if not mon_fp.has(c):
+			mon_fp[c] = Vector2(c)
+		var f: Vector2 = mon_fp[c]
+		var goal := Vector2(c)
+		var sp := MON_SPEED
+		var kd := String(kinds.get(c, ""))
+		var winding: bool = rt_mon_t.has(c) and int(rt_mon_t[c][2]) == 0
+		var chaser: bool = not (arena or tur.has(c) or _stunned(c) or winding or (boss_floor and c == boss_cell)) \
+			and not (kd == "hunter" or kd == "rager" or kd == "drone" or kd == "shooter" or kd == "shard") \
+			and cloak_steps <= 0 and rt_mdist.has(c)
+		if chaser:
+			sp = MON_SPEED
+			var bd: int = rt_mdist[c]
+			if bd <= 2:
+				var away := f - tgt
+				goal = tgt + (away.normalized() if away.length() > 0.01 else Vector2(0, 1)) * 0.8
+			else:
+				for dv in dirs:
+					var n: Vector2i = c + dv
+					if rt_mdist.has(n) and int(rt_mdist[n]) < bd and _aopen(n) and not (mons.has(n) or vaults.has(n)):
+						bd = rt_mdist[n]
+						goal = Vector2(n)
+		var nf := f.move_toward(goal, sp * dt)
+		var nc := Vector2i(roundi(nf.x), roundi(nf.y))
+		if nc != c:
+			if _aopen(nc) and nc != pos and nc != stairs and not (mons.has(nc) or vaults.has(nc)):
+				_adv_move_mon(c, nc)
+				mon_slide.erase(nc)
+				mon_fp[nc] = nf
+			continue
+		mon_fp[c] = nf
+
+
 func _rt_strikes() -> void:
-	var adj := {}
-	for dv in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		adj[pos + dv] = true
+	# enemies wind up (aim locked), then swing an arc; step out of it to dodge
 	for k in rt_mon_t.keys():
-		if not adj.has(k) or not mons.has(k):
+		if not mons.has(k):
 			rt_mon_t.erase(k)
 	if cloak_steps > 0 or decoy_steps > 0:
+		rt_mon_t.clear()
 		return
-	for c in adj:
-		if not mons.has(c) or tur.has(c) or _stunned(c):
+	for c in mons.keys():
+		if not mons.has(c) or not mon_fp.has(c) or tur.has(c) or _stunned(c):
 			continue
 		var kd := String(kinds.get(c, ""))
-		if kd == "hunter" or kd == "rager" or kd == "drone" or kd == "shooter":
+		if kd == "hunter" or kd == "rager" or kd == "drone" or kd == "shooter" or kd == "shard":
 			continue
+		var f: Vector2 = mon_fp[c]
+		var dv := rt_fp - f
 		if not rt_mon_t.has(c):
-			rt_mon_t[c] = t + RT_MON_ATK * 0.5  # short warning before the first strike
+			if dv.length() <= MON_REACH:
+				rt_mon_t[c] = [t + RT_MON_ATK * 0.6, dv.angle(), 0]
+				_fx_swing(f, dv.angle(), MON_REACH, Color("ff5d5d"), true, RT_MON_ATK * 0.6)
 			continue
-		if t < float(rt_mon_t[c]):
+		var st: Array = rt_mon_t[c]
+		if t < float(st[0]):
 			continue
-		rt_mon_t[c] = t + RT_MON_ATK
-		mon_lunge[c] = [t, Vector2(pos - c).normalized()]
-		msg = "%s strikes!" % _adv_mname(c)
-		if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
-			return
+		if int(st[2]) == 1:
+			rt_mon_t.erase(c)
+			continue
+		var ang := float(st[1])
+		rt_mon_t[c] = [t + RT_MON_ATK * 1.2, ang, 1]
+		_fx_swing(f, ang, MON_REACH + 0.2, Color("ff7a5c"), false, 0.2)
+		mon_lunge[c] = [t, Vector2.from_angle(ang)]
+		if dv.length() <= MON_REACH + 0.25 and absf(angle_difference(ang, dv.angle())) <= RT_ARC:
+			msg = "%s strikes!" % _adv_mname(c)
+			if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
+				return
+
+
+func _fx_swing(p: Vector2, ang: float, r: float, col: Color, warn: bool, life: float) -> void:
+	if fx.size() > 420:
+		return
+	fx.append({"k": "swing", "p": p, "t0": t, "life": life, "col": col, "r": r, "ang": ang, "warn": warn})
 
 
 func _adv_badges() -> void:
