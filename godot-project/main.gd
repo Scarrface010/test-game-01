@@ -113,6 +113,7 @@ var inv: Array[String] = []
 var aim := -1
 var boost := 0
 var cloak_steps := 0
+var hex_armed := false
 var act_cd := 0
 var station_uses := 0
 const STATION_USES := 3
@@ -135,7 +136,7 @@ var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
 var run_kills := 0
-var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0, "suit": 0, "tank": 0, "belt": 0, "vet": 0}
+var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0, "p_fort": 0, "p_surv": 0, "p_curse": 0, "sp": 0, "suit": 0, "tank": 0, "belt": 0, "vet": 0}
 # Shop v2 (unlocks only). The old stat-boost shop is refunded once, using these old prices.
 const OLD_SHOP_COSTS := {"vet": [15, 35, 60], "iron": [20, 40, 70], "packed": [45], "lucky": [50], "pockets": [40, 90], "treasure": [25, 55, 100], "oil": [25, 50, 85], "toolbox": [30, 70], "gate": [60, 120], "steel": [35], "haggle": [30], "head": [75, 150], "ash": [120], "interest": [40, 80, 130], "kit": [40, 90]}
 # Drop-pool packs: traits and relics that stay out of drops until the pack is bought.
@@ -144,6 +145,9 @@ const PACKS := {
 	"p_blood": {"t": ["siphon", "bloodlust", "execute", "adrenaline", "barrier"], "r": ["bloodpact", "hood", "echo"]},
 	"p_combo": {"t": ["rampage", "rhythm", "marked", "deadly", "harvest"], "r": ["overclock"]},
 	"p_relic": {"t": [], "r": ["deadeye", "efficient", "plating", "hazmat", "gravedigger", "thornmail", "scrapper"]},
+	"p_fort": {"t": [], "r": ["midas", "scavenger", "luckychip"]},
+	"p_surv": {"t": [], "r": ["aegis", "boots", "lantern", "slowdark"]},
+	"p_curse": {"t": [], "r": ["glass", "greedy", "blade", "heavyammo", "ember", "prism"]},
 }
 var shop_page := 0
 var shop_tab := 0   # 0 characters, 1 relics, 2 permanent upgrades
@@ -226,11 +230,11 @@ var cls_page := 0
 var btn_cl_l := Rect2(12, 520, 76, 150)
 var btn_cl_r := Rect2(632, 520, 76, 150)
 var btn_cpick := Rect2(160, 1000, 400, 80)
-var btn_mode_p := Rect2(50, 330, 620, 270)
-var btn_mode_a := Rect2(50, 650, 620, 270)
-var btn_tut := Rect2(50, 950, 620, 84)
+var btn_mode_p := Rect2(30, 330, 320, 380)
+var btn_mode_a := Rect2(370, 330, 320, 380)
+var btn_tut := Rect2(50, 740, 620, 84)
 var tut_mode := 0
-var btn_lb := Rect2(50, 1052, 620, 84)
+var btn_lb := Rect2(50, 840, 620, 84)
 var btn_lbname := Rect2(40, 1100, 300, 64)
 var btn_lbback := Rect2(380, 1100, 300, 64)
 const LB_URL := "https://pocket-station-lb.scarrface010-7e8.workers.dev"
@@ -242,7 +246,7 @@ var lb_rows: Array = []
 var lb_status := ""
 var lb_mode := 0
 var tut_page := 0
-var btn_cont := Rect2(50, 1146, 620, 72)
+var btn_cont := Rect2(50, 940, 620, 72)
 var btn_saves := Rect2(50, 1220, 300, 52)
 var btn_sv_copy := Rect2(110, 400, 500, 84)
 var btn_sv_paste := Rect2(110, 510, 500, 84)
@@ -273,11 +277,12 @@ var font_pix: Font = null
 var font_clear: Font = null
 var font_title: Font = ThemeDB.fallback_font
 var font_mode := 1
-var btn_font := Rect2(370, 1220, 300, 52)
+var btn_font := Rect2(626, 24, 70, 70)
+var tut_seen := {"puzzle": false, "adv": false}
 var set_res := 0
 var set_fit := 0
 var set_fps := 60
-var set_filt := 1
+var set_filt := 1   # always smooth
 var set_ret := 8
 var btn_inset := Rect2(510, 76, 190, 56)
 var set_shake := 1
@@ -303,7 +308,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 48
+const BUILD := 49
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -329,9 +334,9 @@ var adv_text := {
 	"syn_slowdark_lantern": "Scanner pulses reach even further",
 	"syn_skeleton_boots": "The exit needs another 4 fewer points",
 	"syn_phoenix_aegis": "Phoenix revive also gives +1 level", "gate": "The exit needs 4 fewer points per level",
-	"cls_scout": "+10 air and +1 sight. Starts with a Blink Scroll and an Air Canister.",
+	"cls_scout": "+10 air and +1 sight. Starts with a Time Crystal.",
 	"cls_brute": "Starts +2 levels, +1 armour, but 10 less air. Starts with a Bomb.",
-	"cls_gunslinger": "Starts with a Blaster Pistol (full ammo, +4 max ammo) and 2 Zap Rods, but is frail: 4 less health and 10 less air.",
+	"cls_gunslinger": "Starts with a Blaster Pistol (full ammo, +4 max ammo) and an Ammo Pack, but is frail: 4 less health and 10 less air.",
 	"cls_mystic": "An 8-point shield every floor and +1 item slot. Starts with a Shadow Cloak.",
 	"aegis": "Start every floor with an 8-point shield", "packed": "Start every floor with an 8-point shield",
 	"phoenix": "Survive one death: restores full health and air",
@@ -373,11 +378,16 @@ func _ready() -> void:
 	_layout_buttons()
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	font_clear = ThemeDB.fallback_font
-	var pf = load("res://fonts/PixelifySans.ttf")
+	var pf = load("res://fonts/Fredoka.ttf")
 	if pf is Font:
+		var wt := TextServerManager.get_primary_interface().name_to_tag("wght")
+		var fb := FontVariation.new()
+		fb.base_font = pf
+		fb.variation_opentype = {wt: 520}
+		font_clear = fb
 		var fv := FontVariation.new()
 		fv.base_font = pf
-		fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 650}
+		fv.variation_opentype = {wt: 700}
 		font_pix = fv
 	_apply_font()
 	_make_themes()
@@ -402,17 +412,19 @@ func _ready() -> void:
 			bank += _shop_refund(old_ups)
 			migrate_shop = true
 		lb_name = String(cfg.get_value("lb", "name", ""))
-		font_mode = clampi(int(cfg.get_value("ui", "font", 1)), 0, 2)
+		font_mode = 2
 		_apply_font()
 		set_res = clampi(int(cfg.get_value("ui", "res", 0)), 0, 1)
 		set_fit = clampi(int(cfg.get_value("ui", "fit", 0)), 0, 1)
 		set_fps = int(cfg.get_value("ui", "fps", 60)) if int(cfg.get_value("ui", "fps", 60)) in [30, 60, 120] else 60
-		set_filt = clampi(int(cfg.get_value("ui", "smooth", 1)), 0, 1)
+		set_filt = 1
 		set_shake = clampi(int(cfg.get_value("ui", "shake", 1)), 0, 1)
 		set_mus = clampi(int(cfg.get_value("ui", "music", 0)), 0, 3)
 		set_sfxv = clampi(int(cfg.get_value("ui", "sfxvol", 0)), 0, 3)
 		set_vib = clampi(int(cfg.get_value("ui", "vibrate", 1)), 0, 1)
-		set_big = clampi(int(cfg.get_value("ui", "bigbtn", 0)), 0, 1)
+		set_big = 0
+		tut_seen["puzzle"] = bool(cfg.get_value("ui", "tut_p", false))
+		tut_seen["adv"] = bool(cfg.get_value("ui", "tut_a", false))
 		_layout_buttons()
 		_apply_sound()
 		_apply_display()
@@ -634,11 +646,11 @@ func _make_defs() -> void:
 		"ammopack": {"name": "Ammo Pack", "desc": "Refills half your max ammo", "col": Color("ffc24f"), "adv": true},
 	}
 	class_defs = [
-		{"id": "scout", "name": "Scout", "desc": "The dark waits +1 step per ring. Starts with a Blink Scroll and a Time Crystal.", "col": Color("4fd1ff"), "lvl": 0, "per": 1, "kit": ["blink", "crystal"]},
+		{"id": "scout", "name": "Scout", "desc": "The dark waits +1 step per ring. Starts with a Time Crystal.", "col": Color("4fd1ff"), "lvl": 0, "per": 1, "kit": ["crystal"]},
 		{"id": "brute", "name": "Brute", "desc": "+2 starting levels, but the dark is 1 step faster. Starts with a Bomb.", "col": Color("ff6a5c"), "lvl": 2, "per": -1, "kit": ["bomb"]},
 		{"id": "mystic", "name": "Mystic", "desc": "A shield every floor and +1 item slot. Starts with a Shadow Cloak.", "col": Color("c07cff"), "lvl": 0, "per": 0, "kit": ["cloak"]},
 		{"id": "gambler", "name": "Gambler", "desc": "Begins with 2 random relics (maybe cursed!) and sees 4 relic cards, not 3.", "col": Color("ffd84f"), "lvl": 0, "per": 0, "kit": []},
-		{"id": "gunslinger", "name": "Gunslinger", "desc": "Starts with two Zap Rods, but the dark is 1 step faster.", "col": Color("ff9a4f"), "lvl": 0, "per": -1, "kit": ["zap", "zap"]},
+		{"id": "gunslinger", "name": "Gunslinger", "desc": "Starts with an Ammo Pack, but the dark is 1 step faster.", "col": Color("ff9a4f"), "lvl": 0, "per": -1, "kit": ["ammopack"]},
 	]
 	door_defs = {
 		"standard": {"name": "Steady Path", "desc": "A normal floor.", "col": Color("9fb3d9")},
@@ -648,22 +660,26 @@ func _make_defs() -> void:
 		"market": {"name": "Merchant", "desc": "Spend your run coins on tools, then continue to a normal floor.", "col": Color("c07cff")},
 	}
 	shop_defs = [
-		{"id": "c_brute", "name": "Brute Class", "desc": "Unlock the Brute: +2 levels, starts with a Bomb", "costs": [45]},
-		{"id": "c_mystic", "name": "Mystic Class", "desc": "Unlock the Mystic: shield each floor, +1 slot", "costs": [75]},
-		{"id": "c_gunslinger", "name": "Gunslinger Class", "desc": "Unlock the Gunslinger: starts with two Zap Rods", "costs": [90]},
-		{"id": "c_gambler", "name": "Gambler Class", "desc": "Unlock the Gambler: 2 random relics, 4 cards", "costs": [120]},
-		{"id": "kit", "name": "Starter Kit", "desc": "Adventure: begin each run with random starter gear", "costs": [80, 180]},
-		{"id": "toolbox", "name": "Toolbox", "desc": "Start every run with a random tool", "costs": [60, 140]},
-		{"id": "p_elem", "name": "Elemental Pack", "desc": "8 fire, shock, cryo and toxic traits + 4 relics", "costs": [40]},
-		{"id": "p_blood", "name": "Bloodthirst Pack", "desc": "5 heal, execute and kill traits + 3 relics", "costs": [35]},
-		{"id": "p_combo", "name": "Combo Pack", "desc": "5 streak, crit and XP traits + 1 relic", "costs": [35]},
-		{"id": "p_relic", "name": "Relic Cache", "desc": "7 utility relics join the relic pool", "costs": [30]},
-		{"id": "head", "name": "Head Start", "desc": "Begin every run with a random relic", "costs": [150]},
-		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [240]},
-	{"id": "suit", "name": "Reinforced Suit", "desc": "Adventure: +4 starting max health per rank", "costs": [60, 120, 200]},
-	{"id": "tank", "name": "Spare Tank", "desc": "Adventure: +8 starting air per rank", "costs": [50, 100, 170]},
-	{"id": "belt", "name": "Ammo Belt", "desc": "Adventure: +4 max ammo per rank, start runs with full ammo", "costs": [40, 90, 150]},
-	{"id": "vet", "name": "Veteran Training", "desc": "Adventure: start each run 1 level higher per rank", "costs": [90, 180, 300]},
+		{"id": "c_brute", "name": "Brute Class", "desc": "Unlock the Brute: +2 levels, starts with a Bomb", "costs": [90]},
+		{"id": "c_mystic", "name": "Mystic Class", "desc": "Unlock the Mystic: shield each floor, +1 slot", "costs": [150]},
+		{"id": "c_gunslinger", "name": "Gunslinger Class", "desc": "Unlock the Gunslinger: starts with a Blaster and an Ammo Pack", "costs": [180]},
+		{"id": "c_gambler", "name": "Gambler Class", "desc": "Unlock the Gambler: 2 random relics, 4 cards", "costs": [240]},
+		{"id": "kit", "name": "Starter Kit", "desc": "Adventure: begin each run with random starter gear", "costs": [160, 360]},
+		{"id": "toolbox", "name": "Toolbox", "desc": "Start every run with a random tool", "costs": [120, 280]},
+		{"id": "p_elem", "name": "Elemental Pack", "desc": "8 fire, shock, cryo and toxic traits + 4 relics", "costs": [80]},
+		{"id": "p_blood", "name": "Bloodthirst Pack", "desc": "5 heal, execute and kill traits + 3 relics", "costs": [70]},
+		{"id": "p_combo", "name": "Combo Pack", "desc": "5 streak, crit and XP traits + 1 relic", "costs": [70]},
+		{"id": "p_relic", "name": "Relic Cache", "desc": "7 utility relics join the relic pool", "costs": [60]},
+	{"id": "p_fort", "name": "Fortune Pack", "desc": "3 coin, tool and crit relics join the relic pool", "costs": [70]},
+	{"id": "p_surv", "name": "Survivor Pack", "desc": "4 shield, spike and dark-control relics join the pool", "costs": [70]},
+	{"id": "p_curse", "name": "Curse Pack", "desc": "6 risky high-reward relics join the relic pool", "costs": [80]},
+		{"id": "head", "name": "Head Start", "desc": "Begin every run with a random relic", "costs": [300]},
+		{"id": "ash", "name": "Phoenix Ash", "desc": "Begin every run with a Phoenix Feather", "costs": [480]},
+	{"id": "suit", "name": "Reinforced Suit", "desc": "Adventure: +4 starting max health per rank", "costs": [120, 240, 400]},
+	{"id": "tank", "name": "Spare Tank", "desc": "Adventure: +8 starting air per rank", "costs": [100, 200, 340]},
+	{"id": "belt", "name": "Ammo Belt", "desc": "Adventure: +4 max ammo per rank", "costs": [80, 180, 300]},
+	{"id": "sp", "name": "Quick Study", "desc": "Adventure: start each run with +1 skill point per rank", "costs": [400, 800, 1400]},
+	{"id": "vet", "name": "Veteran Training", "desc": "Adventure: start each run 1 level higher per rank", "costs": [180, 360, 600]},
 	]
 
 
@@ -843,7 +859,9 @@ func _save_meta() -> void:
 	cfg.set_value("ui", "music", set_mus)
 	cfg.set_value("ui", "sfxvol", set_sfxv)
 	cfg.set_value("ui", "vibrate", set_vib)
-	cfg.set_value("ui", "bigbtn", set_big)
+	cfg.set_value("ui", "bigbtn", 0)
+	cfg.set_value("ui", "tut_p", tut_seen["puzzle"])
+	cfg.set_value("ui", "tut_a", tut_seen["adv"])
 	cfg.set_value("lb", "uid", lb_uid)
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
@@ -1024,6 +1042,7 @@ func _begin_floor() -> void:
 	keys = 0
 	boost = 0
 	cloak_steps = 0
+	hex_armed = false
 	aim = -1
 	walk.clear()
 	pops.clear()
@@ -1709,7 +1728,7 @@ func _shop_rect(i: int) -> Rect2:
 
 
 const SHOP_TABS := ["CHARACTERS", "RELICS", "UPGRADES"]
-const SHOP_RELIC_IDS := ["p_elem", "p_blood", "p_combo", "p_relic", "head", "ash"]
+const SHOP_RELIC_IDS := ["p_elem", "p_blood", "p_combo", "p_relic", "p_fort", "p_surv", "p_curse", "head", "ash"]
 
 
 func _shop_tab_of(id: String) -> int:
@@ -1746,7 +1765,7 @@ func _act_desc(cid: String) -> String:
 		return {
 			"scout": "Deep Breath: +10 air and your next 8 steps cost no air. Recharges in 40 steps.",
 			"brute": "Iron Stance: blocks the next 2 hits and gives +3 attack until your next kill. Recharges in 30 steps.",
-			"mystic": "Hex Pulse: stuns enemies within 3 tiles for 3 steps (not bosses or turrets). Recharges in 35 steps.",
+			"mystic": "Hex Mark: the next enemy you hit takes double damage until it dies. Recharges in 35 steps.",
 			"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
 			"gunslinger": "Ricochet: your next shot bounces to a second enemy within 3 tiles. Recharges in 25 steps.",
 		}.get(cid, "")
@@ -1848,7 +1867,7 @@ const ACTS := {
 	"brute": {"n": "Iron Stance", "cd": 30},
 	"gambler": {"n": "Reshuffle", "cd": 50},
 	"gunslinger": {"n": "Ricochet", "cd": 25},
-	"mystic": {"n": "Hex Pulse", "cd": 35},
+	"mystic": {"n": "Hex Mark", "cd": 35},
 }
 
 
@@ -2051,6 +2070,12 @@ func _act_ricochet(from: Vector2i, dmg: int) -> void:
 
 
 func _act_mystic() -> bool:
+	if mode == "adv":
+		hex_armed = true
+		msg = "Hex Mark: the next enemy you hit takes double damage until it dies"
+		_act_fx(Color("c07cff"))
+		_sfx("shield")
+		return true
 	var n := 0
 	for c in mons.keys():
 		if absi(c.x - pos.x) + absi(c.y - pos.y) > 3:
@@ -2646,11 +2671,7 @@ func _gui_input(event: InputEvent) -> void:
 			tut_page = 0
 			_sfx("ui")
 			return
-		if btn_saves.has_point(p):
-			state = SAVES
-			_sfx("ui")
-			return
-		if btn_font.has_point(p):
+		if btn_font.get_center().distance_to(p) <= 40.0:
 			state = SETTINGS
 			_sfx("ui")
 			return
@@ -2709,6 +2730,7 @@ func _gui_input(event: InputEvent) -> void:
 				_test_room_start()
 				return
 			_new_run()
+			_first_tut()
 			return
 		if btn_shop2.has_point(p):
 			shop_return = CLASS
@@ -3599,7 +3621,7 @@ func _apply_display() -> void:
 
 
 func _set_rect(i: int) -> Rect2:
-	return Rect2(110, 262 + i * 84, 500, 58)
+	return Rect2(110, 262 + i * 100, 500, 58)
 
 
 # Top-row buttons: 64px tall (74 with large buttons) so they are easy to hit with a thumb.
@@ -3653,36 +3675,40 @@ func _settings_input(p: Vector2) -> void:
 		set_ret = MODE
 		_sfx("ui")
 		return
-	for i in 10:
+	for i in 7:
 		if _set_rect(i).has_point(p):
 			if i == 0:
-				font_mode = (font_mode + 1) % 3
-				_apply_font()
-			elif i == 1:
 				set_res = 1 - set_res
-			elif i == 2:
+			elif i == 1:
 				set_fit = 1 - set_fit
-			elif i == 3:
-				set_filt = 1 - set_filt
-			elif i == 4:
+			elif i == 2:
 				set_fps = 60 if set_fps == 30 else (120 if set_fps == 60 else 30)
-			elif i == 5:
+			elif i == 3:
 				set_shake = 1 - set_shake
-			elif i == 6:
+			elif i == 4:
 				set_mus = (set_mus + 1) % 4
 				_apply_sound()
-			elif i == 7:
+			elif i == 5:
 				set_sfxv = (set_sfxv + 1) % 4
-			elif i == 8:
+			else:
 				set_vib = 1 - set_vib
 				_buzz(60)
-			else:
-				set_big = 1 - set_big
-				_layout_buttons()
 			_apply_display()
 			_save_meta()
 			_sfx("ui")
 			return
+
+
+func _draw_gear(gc: Vector2, col: Color) -> void:
+	var pr := t - press_t < 0.14 and gc.distance_to(press_p) <= 40.0
+	var r := 33.0 if pr else 35.0
+	draw_circle(gc, r, Color(0.06, 0.09, 0.17, 0.92))
+	draw_arc(gc, r, 0.0, TAU, 40, col, 3.0)
+	for k in 8:
+		var a := float(k) * TAU / 8.0
+		draw_line(gc + Vector2.from_angle(a) * 14.0, gc + Vector2.from_angle(a) * 23.0, col, 7.0)
+	draw_arc(gc, 15.0, 0.0, TAU, 28, col, 7.0)
+	draw_circle(gc, 7.0, Color(0.06, 0.09, 0.17))
 
 
 func _draw_settings(acc: Color) -> void:
@@ -3690,33 +3716,27 @@ func _draw_settings(acc: Color) -> void:
 	_txt("SETTINGS", Vector2(0, 200), 60, acc)
 	_txt("Saved on this device", Vector2(0, 252), 24, Color(1, 1, 1, 0.7))
 	var labels := [
-		"TEXT: " + ["PIXEL", "MIXED", "CLEAR"][font_mode],
 		"RESOLUTION: " + ("NATIVE" if set_res == 0 else "720p"),
 		"SCREEN: " + ("FIT" if set_fit == 0 else "STRETCH"),
-		"SPRITES: " + ("CRISP" if set_filt == 0 else "SMOOTH"),
 		"FRAME RATE: %d" % set_fps,
 		"SHAKE: " + ("ON" if set_shake == 1 else "OFF"),
 		"MUSIC: " + String(VOL_NAMES[set_mus]),
 		"SOUND FX: " + String(VOL_NAMES[set_sfxv]),
 		"VIBRATION: " + ("ON" if set_vib == 1 else "OFF"),
-		"BUTTONS: " + ("NORMAL" if set_big == 0 else "LARGE"),
 	]
 	var hints := [
-		"Pixel = retro font everywhere. Mixed = pixel titles only.",
-		"Native is sharpest. 720p draws fewer pixels: faster on weak phones.",
-		"Fit keeps proportions with bars. Stretch fills the whole screen.",
-		"Crisp keeps sprite pixels sharp. Smooth blends them.",
+		"Native is sharpest. 720p is faster on weak phones.",
+		"Fit keeps proportions. Stretch fills the screen.",
 		"30 saves battery. 60 is smoother.",
 		"Screen shake on hits and blasts.",
-		"Music volume. SOUND ON/OFF (top left) mutes everything.",
+		"Music volume. SOUND ON/OFF (top left) mutes all.",
 		"Volume of sound effects.",
-		"Short buzzes on hits, kills, big moments and button taps (phones only).",
-		"Large makes the top buttons and the tool, power and weapon buttons bigger.",
+		"Short buzzes on hits, kills and taps (phones).",
 	]
-	for i in 10:
+	for i in 7:
 		var r := _set_rect(i)
 		_button(r, String(labels[i]), Color("c9d3f0"), 24)
-		_txt(String(hints[i]), Vector2(0, r.end.y + 20), 16, Color(1, 1, 1, 0.55))
+		_txt(String(hints[i]), Vector2(0, r.end.y + 30), 23, Color(1, 1, 1, 0.7))
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
 	if test_unlocked:
 		_button(BTN_TEST, "TEST ROOM (all gear)", Color("ff8af0"), 26)
@@ -4131,6 +4151,18 @@ func _draw_tut(acc: Color) -> void:
 	_button(btn_icl, "BACK", acc, 28)
 
 
+func _first_tut() -> void:
+	var k := "adv" if mode == "adv" else "puzzle"
+	if bool(tut_seen.get(k, false)):
+		return
+	tut_seen[k] = true
+	_save_meta()
+	tut_back = state
+	tut_mode = 1 if mode == "adv" else 0
+	tut_page = 0
+	state = TUTORIAL
+
+
 func _tut_input(p: Vector2) -> void:
 	if btn_icl.has_point(p):
 		state = tut_back
@@ -4159,16 +4191,8 @@ func _tut_input(p: Vector2) -> void:
 # ---------- drawing ----------
 
 func _apply_font() -> void:
-	var pix: Font = font_pix if font_pix != null else font_clear
-	if font_mode == 0:
-		font = pix
-		font_title = pix
-	elif font_mode == 1:
-		font = font_clear
-		font_title = pix
-	else:
-		font = font_clear
-		font_title = font_clear
+	font = font_clear
+	font_title = font_pix if font_pix != null else font_clear
 
 
 func _fit(s: String, size: int, w: float, f: Font = null) -> int:
@@ -4347,10 +4371,10 @@ func _draw_intro() -> void:
 	var tu := clampf((u - 1.2) / 0.9, 0.0, 1.0)
 	var te := 1.0 - (1.0 - tu) * (1.0 - tu)
 	var ty := H * 0.62
-	_ctext("POCKET", Vector2(cx - (1.0 - te) * 80.0, ty), 104, Color(1, 1, 1, te))
-	_ctext("STATION", Vector2(cx + (1.0 - te) * 80.0, ty + 100.0), 104, Color(1.0, 0.85, 0.31, te))
+	_txt("POCKET", Vector2(-(1.0 - te) * 80.0, ty), 104, Color(1, 1, 1, te))
+	_txt("STATION", Vector2((1.0 - te) * 80.0, ty + 100.0), 104, Color(1.0, 0.85, 0.31, te))
 	var su := clampf((u - 2.4) / 0.8, 0.0, 1.0)
-	_ctext("tap to skip", Vector2(cx, H - 70.0), 22, Color(1, 1, 1, 0.45 * su))
+	_txt("tap to skip", Vector2(0, H - 70.0), 22, Color(1, 1, 1, 0.45 * su))
 	var fo := clampf((u - (INTRO_LEN - 0.5)) / 0.5, 0.0, 1.0)
 	if fo > 0.0:
 		draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, fo))
@@ -4732,27 +4756,25 @@ func _draw_overlay(acc: Color) -> void:
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
-		_txt("Puzzle best: %d floors     Adventure best: %d floors     Bank: %d" % [best, adv_best, int(bank_disp)], Vector2(0, 296), 20, Color(1, 1, 1, 0.55))
 		var mp := Color("9fb3d9")
 		_panel(btn_mode_p, mp, 0.2)
-		_txt("PUZZLE", Vector2(btn_mode_p.position.x + 28, btn_mode_p.position.y + 70), 52, mp, 560.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_para("Small tense rooms. Level up by beating monsters, then reach the gate before the dark swallows the board. Every step counts.", Vector2(btn_mode_p.position.x + 28, btn_mode_p.position.y + 120), 25, Color.WHITE, 560.0)
+		_txt("PUZZLE", Vector2(btn_mode_p.position.x + 24, btn_mode_p.position.y + 70), 44, mp, 280.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_para("Small tense rooms. Level up by beating monsters, then reach the gate before the dark swallows the board. Every step counts.", Vector2(btn_mode_p.position.x + 24, btn_mode_p.position.y + 118), 23, Color.WHITE, 276.0)
 		var ma := Color("7dffb0")
 		_panel(btn_mode_a, ma, 0.2)
-		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 70), 52, ma, 560.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 70), 44, ma, 280.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_button(btn_tut, "HOW TO PLAY", Color("ffd84f"), 34, "help")
 		_button(btn_lb, "LEADERBOARD", Color("7fd8ff"), 34, "trophy")
 		if save_info != "":
 			_panel(btn_cont, Color("6dff9a"), 0.2)
 			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
 			_txt(save_info, Vector2(btn_cont.position.x, btn_cont.position.y + 60), 19, Color(1, 1, 1, 0.7), btn_cont.size.x)
-		_button(btn_saves, "SAVES", Color("c9d3f0"), 24, "save")
-		_button(btn_font, "SETTINGS", Color("c9d3f0"), 24)
+		_draw_gear(btn_font.get_center(), Color("c9d3f0"))
 		var bt := get_node_or_null("/root/Boot")
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
 			_txt(xfer_msg, Vector2(0, 252), 24, Color("6dff9a"))
-		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 28, btn_mode_a.position.y + 120), 25, Color.WHITE, 560.0)
+		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 118), 23, Color.WHITE, 276.0)
 	elif state == DEAD:
 		_txt(over_title, Vector2(0, 430), 64, Color("ff5d5d"))
 		var ly := 510
@@ -6150,6 +6172,12 @@ func _adv_damage_mon(c: Vector2i, dmg: int, col := Color("ff9a3c")) -> void:
 	if _titan_immune(c):
 		_pop(c, "SHIELDED", Color("7fe8ff"))
 		return
+	if hex_armed:
+		hex_armed = false
+		_st_get(c)["hex"] = true
+		_pop(c, "HEXED", Color("c07cff"))
+	if mstat.has(c) and mstat[c].has("hex"):
+		dmg *= 2
 	var left := mon_hp_now(c) - dmg
 	_pop(c, "-%d" % dmg, col)
 	_fx_hit(c, false, false)
@@ -7273,7 +7301,7 @@ func _adv_init_run() -> void:
 	arena = false
 	arena_d = {}
 	skills.clear()
-	skill_pts = 0
+	skill_pts = up("sp")
 	pk = {}
 	sk_sel = ""
 	sk_phx = false

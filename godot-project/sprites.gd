@@ -974,6 +974,8 @@ const HI_LEG_TOP := 142
 
 
 func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
+	if ResourceLoader.exists(CHAR_HI % cls):
+		return _player_cls(cls, frame, dir, eq)
 	var sheet: Image = (load(PBASE_HI) as Texture2D).get_image()
 	sheet.convert(Image.FORMAT_RGBA8)
 	var base: Image = sheet.get_region(Rect2i(PCOL[dir] * HW, 0, HW, HH))
@@ -1055,6 +1057,65 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	if hi_wpn != null and hi_wpn.get_width() == WPS and hi_wpn.get_height() == WPS:
 		if dir == 1:
 			# back view: the weapon is behind the body, only what pokes out past the shoulder shows
+			var wb: Image = hi_wpn.duplicate()
+			wb.blend_rect(out, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
+			out = wb
+		else:
+			out.blend_rect(hi_wpn, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
+	var ptex := ImageTexture.create_from_image(out)
+	ptex.set_meta("scl", PSCALE)
+	return ptex
+
+
+# ---- per-class cartoon bodies (art/chars/<cls>.png: 3 cells of 128x176, cols front, back, side)
+# Gear made for these bodies lives in art/chars/gear/<item>_<cls>.png (same layout). Each item hides a band of
+# rows of the base body (char_bands.gd) and draws its own layer there, so pieces stay modular:
+# armour = neck to waist, helmet = everything above the head line. Old gear art does not fit these bodies and is not drawn.
+const CHAR_HI := "res://art/chars/%s.png"
+const CHAR_GEAR := "res://art/chars/gear/%s_%s.png"
+const CharBands := preload("res://char_bands.gd")
+
+
+func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
+	var col: int = PCOL[dir]
+	var sheet: Image = (load(CHAR_HI % cls) as Texture2D).get_image()
+	sheet.convert(Image.FORMAT_RGBA8)
+	var base: Image = sheet.get_region(Rect2i(col * HW, 0, HW, HH))
+	var layers: Array = []
+	for slot in ["armour", "boots", "helmet"]:
+		var gid := String(eq.get(slot, ""))
+		if gid == "" or not ResourceLoader.exists(CHAR_GEAR % [gid, cls]):
+			continue
+		var bd: Dictionary = CharBands.B.get(gid, {})
+		if bd.has(cls):
+			var r: Array = bd[cls][col]
+			base.fill_rect(Rect2i(0, int(r[0]), HW, maxi(0, int(r[1]) - int(r[0]))), Color(0, 0, 0, 0))
+		var g: Image = (load(CHAR_GEAR % [gid, cls]) as Texture2D).get_image()
+		g.convert(Image.FORMAT_RGBA8)
+		layers.append(g.get_region(Rect2i(col * HW, 0, HW, HH)))
+	for l in layers:
+		base.blend_rect(l, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	var wid := String(eq.get("weapon", ""))
+	var hi_wpn: Image = null
+	if USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
+		hi_wpn = (load(HI_WPN % [wid, dir]) as Texture2D).get_image()
+		hi_wpn.convert(Image.FORMAT_RGBA8)
+	var wa := _art(eq, "weapon")
+	if hi_wpn == null and not wa.is_empty():
+		var ov := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+		var wc := Cv.new(32, 32)
+		var wg: Array = WGRIP[dir]
+		_weapon(wc, wa, wg[0], wg[1], wg[2])
+		wc.outline(Color("0a0d1a"))
+		var wi: Image = wc.img.duplicate()
+		wi.resize(64, 64, Image.INTERPOLATE_NEAREST)
+		ov.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
+		base.blend_rect(_map_old(ov, HIMAP[dir]), Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	base = _walk_frame_hi(base, frame, dir)
+	var out := Image.create(WPS, WPS, false, Image.FORMAT_RGBA8)
+	out.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i((WPS - HW) / 2, (WPS - HH) / 2))
+	if hi_wpn != null and hi_wpn.get_width() == WPS and hi_wpn.get_height() == WPS:
+		if dir == 1:
 			var wb: Image = hi_wpn.duplicate()
 			wb.blend_rect(out, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
 			out = wb
