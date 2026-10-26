@@ -1035,6 +1035,10 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	if hi_wpn != null and hi_wpn.get_width() == HW and hi_wpn.get_height() == HH:
 		base.blend_rect(hi_wpn, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if hi_helm != null and hi_helm.get_width() == HW and hi_helm.get_height() == HH:
+		# the helmet replaces the default head: wipe the head so it cannot show underneath
+		for hy in range(0, int(m[8]) + 2):
+			for hx in HW:
+				base.set_pixel(hx, hy, Color(0, 0, 0, 0))
 		base.blend_rect(hi_helm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	base = _walk_frame_hi(base, frame, dir)
 	var behind := _class_deco(accent, cls, dir, true)
