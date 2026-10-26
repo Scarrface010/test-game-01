@@ -860,7 +860,10 @@ func player(accent: Color, cls: String, frame: int = 0, dir: int = 0, eq: Dictio
 	if dir == 2:
 		var img: Image = player(accent, cls, frame, 3, eq).get_image()
 		img.flip_x()
+		var src := player(accent, cls, frame, 3, eq)
 		t = ImageTexture.create_from_image(img)
+		if src.has_meta("scl"):
+			t.set_meta("scl", src.get_meta("scl"))
 	else:
 		var ai: ImageTexture = _player_ai(accent, cls, frame, dir, eq)
 		t = ai if ai != null else _build_player(accent, cls, frame, dir, eq).tex()
