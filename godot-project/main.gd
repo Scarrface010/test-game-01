@@ -303,7 +303,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 40
+const BUILD := 41
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -589,8 +589,8 @@ func _make_defs() -> void:
 		{"id": "gravedigger", "name": "Grave Robber", "desc": "Walking over a fresh corpse gives 2 coins", "max": 2, "adv": true},
 		{"id": "heavyammo", "name": "Heavy Ammo", "desc": "Ranged shots deal +4 damage but cost 2 more air", "max": 1, "curse": true, "adv": true},
 		{"id": "pyro", "name": "Pyromaniac", "desc": "+4 max health. Fire traits: burns last 2 steps longer and hurt double, Volatile blasts +20%", "max": 1, "adv": true, "tag": "fire"},
-		{"id": "storm", "name": "Storm Capacitor", "desc": "+4 max health. Shock traits: stuns last 1 step longer, Arc Chain hits 3 enemies", "max": 1, "adv": true, "tag": "shock"},
-		{"id": "frost", "name": "Frost Core", "desc": "+4 max health. Shatter deals +100% instead of +50%", "max": 1, "adv": true, "tag": "cryo"},
+		{"id": "storm", "name": "Storm Capacitor", "desc": "+4 max health. Shock traits: stuns last 1 step longer, Arc Chain hits 3 enemies. Decoy Chain: Decoy Beacons last 4 steps longer and stun enemies beside them", "max": 1, "adv": true, "tag": "shock"},
+		{"id": "frost", "name": "Frost Core", "desc": "+4 max health. Shatter deals +100% instead of +50%. Frozen Ground: Frost Charge stuns 2 steps longer", "max": 1, "adv": true, "tag": "cryo"},
 		{"id": "toxi", "name": "Toxicologist", "desc": "+4 max health. Poison stacks up to 7 instead of 4", "max": 1, "adv": true, "tag": "toxic"},
 		{"id": "bloodpact", "name": "Blood Pact", "desc": "+4 max health. Siphon heals double, and healing past full becomes shield", "max": 1, "adv": true, "tag": "blood"},
 		{"id": "hood", "name": "Executioner's Hood", "desc": "+4 max health. Executioner works below 35% health", "max": 1, "adv": true, "tag": "execute"},
@@ -5712,7 +5712,7 @@ func _adv_gen() -> void:
 		if not is_start and rng.randf() < 0.16:
 			var xc := _adv_pick(rng, r, false, taken)
 			if xc.x >= 0:
-				var xpool := ["shieldbattery", "shieldbattery", "luckycoin", "luckycoin", "bounty", "bounty", "lanternoil", "lanternoil", "idol", "shrine", "shrine", "heartcell", "ammocrate", "ammocrate", "ammocrate"]
+				var xpool := ["shieldbattery", "shieldbattery", "luckycoin", "luckycoin", "bounty", "bounty", "lanternoil", "lanternoil", "idol", "shrine", "shrine", "altar", "trapcache", "heartcell", "ammocrate", "ammocrate", "ammocrate"]
 				items[xc] = String(xpool[rng.randi() % xpool.size()])
 				pts += 2
 		if rng.randf() < 0.22:
@@ -7020,6 +7020,14 @@ func _adv_apply_change(old_hp: int, old_ox: float) -> void:
 	oxy = minf(oxy, oxy_max)
 
 
+func _rand_tool() -> String:
+	var ids: Array = []
+	for k in use_defs.keys():
+		if k != "pick":
+			ids.append(k)
+	return String(ids[randi() % ids.size()])
+
+
 func _adv_give_gear(id: String) -> bool:
 	var slot := String(gear_defs[gb(id)]["slot"])
 	if not equip.has(slot) or String(equip[slot]) == "":
@@ -7726,6 +7734,60 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				adv_pts -= 2
 				msg = "Pack is full! Sell or drop something in the BAG"
 				snd = "blocked"
+		elif kind == "altar":
+			var acost := 4 + floor_n
+			if coins < acost:
+				items[nc] = kind
+				msg = "Gambling Altar: it wants %d coins" % acost
+				snd = "blocked"
+			else:
+				coins -= acost
+				adv_pts += 3
+				var ar := randf()
+				var apaid := true
+				if ar < 0.4:
+					var arng := RandomNumberGenerator.new()
+					arng.randomize()
+					var agid := _adv_roll_gear(arng, 1)
+					if _adv_give_gear(agid):
+						msg = "The altar pays out: %s!" % gname(agid)
+					else:
+						apaid = false
+				elif ar < 0.75:
+					var atid := _rand_tool()
+					if _give_use(atid):
+						msg = "The altar pays out: %s" % String(use_defs[atid]["name"])
+					else:
+						apaid = false
+				else:
+					msg = "The altar takes %d coins and stays silent" % acost
+				if not apaid:
+					coins += acost
+					adv_pts -= 3
+					items[nc] = kind
+					msg = "Your pack is full - the altar waits"
+					snd = "blocked"
+				else:
+					_pop(nc, "-%d coins" % acost, Color("ffc93c"))
+					snd = "big"
+		elif kind == "trapcache":
+			adv_pts += 3
+			var tmsg := ""
+			if randf() < 0.5:
+				var tdm := mini(hp - 1, 2 + floor_n / 3)
+				if tdm > 0:
+					hp -= tdm
+					_pop(nc, "-%d HP" % tdm, Color("ff6a6a"))
+					tmsg = "A trap fires! -%d health. " % tdm
+			var tcoin := 6 + floor_n
+			coins += tcoin
+			tmsg += "Cache: +%d coins" % tcoin
+			if randf() < 0.4:
+				var ttid := _rand_tool()
+				if _give_use(ttid):
+					tmsg += " and a %s" % String(use_defs[ttid]["name"])
+			msg = tmsg
+			snd = "big"
 		elif kind == "pot":
 			var pxp := maxi(2, int(round(xp_need() * 0.2 * pot_g() * (1.0 + sk("pot") / 100.0))))
 			adv_pts += 2
@@ -8616,7 +8678,7 @@ func _adv_use_slot(i: int) -> void:
 		var fn := 0
 		for c in mons.keys():
 			if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 2:
-				_st_stun(c, 4)
+				_st_stun(c, 6 if relic_n("frost") > 0 else 4)
 				if _stunned(c):
 					fn += 1
 		if fn == 0:
@@ -8744,9 +8806,18 @@ func _adv_aim_apply(c: Vector2i) -> void:
 	if id == "decoy":
 		decoy_c = c
 		decoy_steps = 8
+		msg = "Decoy placed: monsters chase it for 8 steps"
+		if relic_n("storm") > 0:
+			decoy_steps = 12
+			var dn := 0
+			for mc in mons.keys():
+				if maxi(absi(mc.x - c.x), absi(mc.y - c.y)) <= 1:
+					_st_stun(mc, 3)
+					if _stunned(mc):
+						dn += 1
+			msg = "Decoy Chain: lasts 12 steps, %d enemies stunned" % dn
 		_fx_ring(Vector2(c), Color("ffb347"), 1.2, 0.5, 5.0)
 		_fx_burst(Vector2(c), Color("ffb347"), 12, 2.6, 0.6, 5.0)
-		msg = "Decoy placed: monsters chase it for 8 steps"
 		_sfx("lamp")
 		return
 	if id == "grapple":
@@ -9502,8 +9573,17 @@ func _draw_char_tab(acc: Color) -> void:
 	_spr(_chr_tex(prev), mr.get_center() + Vector2(0, -4), 272.0)
 	_ctext("PREVIEW: tap EQUIP to wear it" if prev != "" else "tap the model to turn it", Vector2(mr.get_center().x, mr.end.y - 14), 15, Color("ffd84f") if prev != "" else Color(1, 1, 1, 0.4))
 	var wid := String(equip.get("ranged" if ranged_mode and _weapon_range() > 0 else "weapon", ""))
-	if wid != "" and gtr(wid).size() > 0:
-		_ctext(gtrait_line(wid), Vector2(mr.get_center().x, mr.position.y + 16), 14, Color("ffd84f"))
+	var tsrc := prev if prev != "" else wid
+	if tsrc != "" and gtr(tsrc).size() > 0:
+		var tt := ""
+		for tid3 in gtr(tsrc):
+			tt += "%s: %s\n" % [TRAIT_DEFS[tid3]["n"], TRAIT_DEFS[tid3]["d"]]
+		tt = tt.strip_edges()
+		var tsz := font.get_multiline_string_size(tt, HORIZONTAL_ALIGNMENT_LEFT, mr.size.x - 20.0, 14)
+		var strip := Rect2(mr.position.x + 4, mr.end.y - 26.0 - tsz.y - 10.0, mr.size.x - 8.0, tsz.y + 12.0)
+		draw_rect(strip, Color(0.02, 0.03, 0.08, 0.88))
+		draw_rect(strip, Color("ffd84f", 0.5), false, 1.0)
+		_para(tt, strip.position + Vector2(8, 6 + font.get_ascent(14)), 14, Color("ffd84f"), mr.size.x - 20.0)
 	for i in 6:
 		var slot := String(CHR_SLOTS[i])
 		var r := _chr_slot_rect(i)

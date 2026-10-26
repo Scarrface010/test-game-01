@@ -955,6 +955,7 @@ func _player_ai(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 const PBASE_HI := "res://art/player_base_hi.png"
 const HI_HELM := "res://art/gear_hi/%s_%d.png"
 const HI_WPN := "res://art/gear_hi/w_%s_%d.png"
+const USE_HI_WPN := false
 const HW := 128
 const HH := 176
 # old 64px body -> new body: [o_top, o_neck, o_feet, o_hx0, o_hx1, o_bx0, o_bx1, n_top, n_neck, n_feet, n_hx0, n_hx1, n_bx0, n_bx1]
@@ -1015,7 +1016,8 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 		_blit_fit(ov, g, GFIT[slot][dir])
 	var wid := String(eq.get("weapon", ""))
 	var hi_wpn: Image = null
-	if wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
+	# AI weapon layers (gear_hi/w_*) were generated with a body baked in; use the code-drawn weapons until weapon-only art exists
+	if USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
 		hi_wpn = (load(HI_WPN % [wid, dir]) as Texture2D).get_image()
 		hi_wpn.convert(Image.FORMAT_RGBA8)
 	var wa := _art(eq, "weapon")
@@ -1827,7 +1829,8 @@ func _pickup_png(id: String) -> ImageTexture:
 	if cache.has(key):
 		return cache[key]
 	var tx: ImageTexture = null
-	var path := "res://art/pickups/%s_64.png" % id
+	# new events borrow existing icons until they get their own art
+	var path := "res://art/pickups/%s_64.png" % {"altar": "luckycoin", "trapcache": "bounty"}.get(id, id)
 	if ResourceLoader.exists(path):
 		var src := load(path) as Texture2D
 		if src != null:
