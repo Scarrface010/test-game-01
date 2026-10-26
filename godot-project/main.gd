@@ -279,7 +279,7 @@ var set_fit := 0
 var set_fps := 60
 var set_filt := 1
 var set_ret := 8
-var btn_inset := Rect2(265, 76, 190, 56)
+var btn_inset := Rect2(510, 76, 190, 56)
 var set_shake := 1
 var set_mus := 0     # music volume step: 0 = 100%, 1 = 60%, 2 = 30%, 3 = off
 var set_sfxv := 0    # sound effects volume step, same scale
@@ -303,7 +303,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 41
+const BUILD := 42
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1770,7 +1770,7 @@ func _market_rect(i: int) -> Rect2:
 func _slot_rect(i: int) -> Rect2:
 	if mode == "adv":
 		var sz := _slot_sz()
-		return Rect2(712.0 - (slots_n() - i) * (sz + 8.0), 1100.0 + adv_ex, sz, sz)
+		return Rect2(712.0 - (slots_n() - i) * (sz + 8.0), 1060.0 + adv_ex, sz, sz)
 	return Rect2(40 + i * 118, 982, 108, 62)
 
 
@@ -1865,7 +1865,7 @@ func _act_rect() -> Rect2:
 	if mode == "adv":
 		var ah := _row2_h()
 		var ax1 := 616.0 if _weapon_range() > 0 else 704.0
-		return Rect2(424, 1198.0 + adv_ex, ax1 - 424.0 - 4.0, ah)
+		return Rect2(424, 1158.0 + adv_ex, ax1 - 424.0 - 4.0, ah)
 	var sy := 982.0
 	var x0 := 40.0 + slots_n() * 118.0
 	if 616.0 - x0 >= 110.0:
@@ -3596,13 +3596,13 @@ func _set_rect(i: int) -> Rect2:
 func _layout_buttons() -> void:
 	var h := 64.0 if set_big == 0 else 74.0
 	var w := 116.0 if set_big == 0 else 128.0
-	btn_sound = Rect2(10, 4, w, h)
+	btn_sound = Rect2(10, 40, w, h)
 	btn_invmenu = btn_sound   # bag "menu" and class "< mode" take the sound button's spot and size
 	btn_modeback = btn_sound
-	btn_inv = Rect2(710.0 - w, 4, w, h)
+	btn_inv = Rect2(710.0 - w, 40, w, h)
 	btn_menu = btn_inv
 	btn_reset = btn_inv
-	btn_skill = Rect2(btn_inv.position.x - 6.0 - w, 4, w, h)
+	btn_skill = Rect2(btn_inv.position.x - 6.0 - w, 40, w, h)
 
 
 # Adventure bottom cluster (thumb zone): tool row, then badges + class power + weapon toggle.
@@ -3615,7 +3615,7 @@ func _row2_h() -> float:
 
 
 func _cancel_rect() -> Rect2:
-	return Rect2(16, 1032.0 + adv_ex, 688, 62)
+	return Rect2(16, 992.0 + adv_ex, 688, 62)
 
 
 func _settings_input(p: Vector2) -> void:
@@ -9202,7 +9202,7 @@ func _adv_draw() -> void:
 	var mlist: Array = []
 	var wall_set: Array = _wall_set(ti)
 	var rx := int(ceil(360.0 / AC)) + 1
-	var ry := int(ceil((MAPB - 318.0) * 0.5 / AC)) + 2
+	var ry := int(ceil(maxf(AMY - 318.0, 1280.0 + adv_ex - AMY) / AC)) + 2
 	var x0 := int(floor(cam.x)) - rx
 	var y0 := int(floor(cam.y)) - ry
 	for cx in range(x0, x0 + 2 * rx + 2):
@@ -9211,7 +9211,7 @@ func _adv_draw() -> void:
 			if not _aseen(c):
 				continue
 			var ctr := _actr(c)
-			if ctr.y < 260.0 or ctr.y > MAPB + 70.0 or ctr.x < -60.0 or ctr.x > 780.0:
+			if ctr.y < 260.0 or ctr.y > 1280.0 + adv_ex + 70.0 or ctr.x < -60.0 or ctr.x > 780.0:
 				continue
 			var r := Rect2(ctr - Vector2(AC, AC) * 0.5, Vector2(AC, AC))
 			var vis := adv_vis.has(c)
@@ -9328,16 +9328,15 @@ func _adv_draw() -> void:
 	_map_end()
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
-	draw_rect(Rect2(0, MAPB, 720, 250), th["bg"])
+	draw_rect(Rect2(0, MAPB, 720, 250), Color(th["bg"].r, th["bg"].g, th["bg"].b, 0.3))
 	draw_line(Vector2(0, 318), Vector2(720, 318), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
-	draw_line(Vector2(0, MAPB), Vector2(720, MAPB), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
 	for s in stars:
 		if float(s[1]) < 318.0 or float(s[1]) > MAPB:
 			var a := 0.12 + 0.28 * (0.5 + 0.5 * sin(t * 1.5 + float(s[2])))
 			var sz: float = s[3]
 			draw_rect(Rect2(float(s[0]), float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	# minimap
-	var mm := Rect2(574, 888.0 + adv_ex, 134, 134)
+	var mm := Rect2(574, 848.0 + adv_ex, 134, 134)
 	draw_rect(mm, Color(0, 0, 0, 0.7))
 	draw_rect(mm, Color(acc.r, acc.g, acc.b, 0.6), false, 2.0)
 	if adv_mini != null:
@@ -9381,7 +9380,7 @@ func _adv_draw() -> void:
 	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
 	if _weapon_range() > 0:
 		var md := _row2_h()
-		btn_mode = Rect2(700.0 - md, 1198.0 + adv_ex, md, md)
+		btn_mode = Rect2(700.0 - md, 1158.0 + adv_ex, md, md)
 		var mcol := Color("ffc24f") if ranged_mode else Color("ff8a4f")
 		draw_circle(btn_mode.get_center(), md * 0.5, Color(0.03, 0.04, 0.08, 0.94))
 		draw_circle(btn_mode.get_center(), md * 0.5, Color(mcol.r, mcol.g, mcol.b, 0.2))
@@ -9427,7 +9426,7 @@ func _adv_draw() -> void:
 		else:
 			_txt("TAP HERE TO CANCEL", Vector2(cnr.end.x - 170, cnr.position.y + 36), 14, Color("ff8a8a"), 160.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	else:
-		_txt(msg, Vector2(0, 1074.0 + adv_ex), 24, Color.WHITE, 720.0)
+		_txt(msg, Vector2(0, 1034.0 + adv_ex), 24, Color.WHITE, 720.0)
 	_draw_world_banner()
 	if state == PLAY and hp > 0:
 		if low:
@@ -9460,7 +9459,7 @@ func _adv_badges() -> void:
 	for it in items:
 		if bx + 62.0 > 420.0:
 			break
-		var br := Rect2(bx, 1198.0 + adv_ex, 62, h)
+		var br := Rect2(bx, 1158.0 + adv_ex, 62, h)
 		var bcol: Color = it[2]
 		_panel(br, bcol, 0.1, false)
 		var kind := String(it[0])
@@ -9490,21 +9489,21 @@ func _chr_slot_rect(i: int) -> Rect2:
 	return Rect2(40 if i < 3 else 540, 266 + (i % 3) * 104, 140, 96)
 
 
-const CHR_LIST_TOP := 592.0
+const CHR_LIST_TOP := 662.0
 const CHR_LIST_BOT := 1062.0
 
 
 # k = index in the pack; rows scroll with inv_scroll
 func _chr_row_rect(k: int) -> Rect2:
-	return Rect2(40, 596 + k * 110 - inv_scroll, 640, 102)
+	return Rect2(40, 666 + k * 110 - inv_scroll, 640, 102)
 
 
 func _chr_equip_rect(k: int) -> Rect2:
-	return Rect2(548, 596 + k * 110 - inv_scroll + 8, 124, 42)
+	return Rect2(548, 666 + k * 110 - inv_scroll + 8, 124, 42)
 
 
 func _chr_sell_rect(k: int) -> Rect2:
-	return Rect2(548, 596 + k * 110 - inv_scroll + 54, 124, 38)
+	return Rect2(548, 666 + k * 110 - inv_scroll + 54, 124, 38)
 
 
 func _chr_row_visible(k: int) -> bool:
@@ -9561,7 +9560,7 @@ func _chr_input(p: Vector2) -> void:
 
 
 func _draw_char_tab(acc: Color) -> void:
-	inv_scroll_max = maxf(0.0, bag.size() * 110.0 - (CHR_LIST_BOT - 596.0 + 8.0))
+	inv_scroll_max = maxf(0.0, bag.size() * 110.0 - (CHR_LIST_BOT - 666.0 + 8.0))
 	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
 	if chr_sel >= bag.size():
 		chr_sel = -1
@@ -9579,11 +9578,11 @@ func _draw_char_tab(acc: Color) -> void:
 		for tid3 in gtr(tsrc):
 			tt += "%s: %s\n" % [TRAIT_DEFS[tid3]["n"], TRAIT_DEFS[tid3]["d"]]
 		tt = tt.strip_edges()
-		var tsz := font.get_multiline_string_size(tt, HORIZONTAL_ALIGNMENT_LEFT, mr.size.x - 20.0, 14)
-		var strip := Rect2(mr.position.x + 4, mr.end.y - 26.0 - tsz.y - 10.0, mr.size.x - 8.0, tsz.y + 12.0)
+		var tsz := font.get_multiline_string_size(tt, HORIZONTAL_ALIGNMENT_LEFT, 620.0, 14)
+		var strip := Rect2(40, mr.end.y + 4.0, 640.0, minf(tsz.y + 12.0, 80.0))
 		draw_rect(strip, Color(0.02, 0.03, 0.08, 0.88))
 		draw_rect(strip, Color("ffd84f", 0.5), false, 1.0)
-		_para(tt, strip.position + Vector2(8, 6 + font.get_ascent(14)), 14, Color("ffd84f"), mr.size.x - 20.0)
+		_para(tt, strip.position + Vector2(8, 6 + font.get_ascent(14)), 14, Color("ffd84f"), 620.0)
 	for i in 6:
 		var slot := String(CHR_SLOTS[i])
 		var r := _chr_slot_rect(i)
@@ -9600,7 +9599,7 @@ func _draw_char_tab(acc: Color) -> void:
 			_spr(_gear_tex(gid), r.position + Vector2(70, 40), 44.0)
 			_ctext(String(gd["name"]), r.position + Vector2(70, 72), 14, _tier_col(int(gd["tier"])))
 			_ctext("tap: remove", r.position + Vector2(70, 88), 12, Color(1, 1, 1, 0.4))
-	_ctext("PACK  %d / %d     tap an item to preview it" % [bag.size(), BAG_MAX], Vector2(360, 584), 18, Color(1, 1, 1, 0.6))
+	_ctext("PACK  %d / %d     tap an item to preview it" % [bag.size(), BAG_MAX], Vector2(360, 654), 18, Color(1, 1, 1, 0.6))
 	if bag.is_empty():
 		_ctext("Your pack is empty.", Vector2(360, 800), 26, Color(1, 1, 1, 0.5))
 	for idx in bag.size():
@@ -9666,13 +9665,6 @@ func _inv_input(p: Vector2) -> void:
 	if btn_inset.has_point(p):
 		set_ret = INV
 		state = SETTINGS
-		_sfx("ui")
-		return
-	if btn_inhelp.has_point(p):
-		tut_back = INV
-		tut_mode = 1
-		tut_page = 0
-		state = TUTORIAL
 		_sfx("ui")
 		return
 	if btn_icl.has_point(p) or btn_inv.has_point(p):
@@ -9771,7 +9763,6 @@ func _inv_extra_rows() -> Array:
 func _draw_inv(acc: Color) -> void:
 	var armed := t - menu_armed < 3.0
 	_button(btn_invmenu, "SURE?" if armed else "MENU", Color("ff8a8a") if armed else acc)
-	_button(btn_inhelp, "HOW TO PLAY", Color("ffd84f"), 18)
 	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 18)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
 	var tabs := ["CHARACTER", "STATS", "TOOLS", "RELICS"]
