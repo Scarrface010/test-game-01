@@ -294,11 +294,16 @@ const VOL_NAMES := ["100%", "60%", "30%", "OFF"]
 var inv_vel := 0.0
 var inv_mv_t := -10.0
 var press_p := Vector2(-999, -999)
+const JOY_STEP := 0.16  # seconds per step while the stick is held
+var joy_on := false
+var joy_dir := Vector2i.ZERO
+var joy_v := Vector2.ZERO
+var joy_t := 0.0
 var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 39
+const BUILD := 40
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2564,6 +2569,22 @@ func _gui_input(event: InputEvent) -> void:
 			inv_vel = 0.0
 			inv_scroll = clampf(inv_scroll + (60.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -60.0), 0.0, inv_scroll_max)
 			return
+	if state == PLAY and mode == "adv" and swipe_on and event is InputEventMouseMotion:
+		var jd: Vector2 = event.position - swipe_start
+		if jd.length() > 90.0:
+			swipe_start = event.position - jd.normalized() * 90.0
+			jd = event.position - swipe_start
+		if jd.length() >= 28.0:
+			joy_on = true
+			joy_v = jd
+			var nd := Vector2i(signi(int(jd.x)), 0) if absf(jd.x) > absf(jd.y) else Vector2i(0, signi(int(jd.y)))
+			if nd != joy_dir:
+				joy_dir = nd
+				joy_t = JOY_STEP
+		elif joy_on:
+			joy_dir = Vector2i.ZERO
+			joy_v = jd
+		return
 	var tap_pos := Vector2(-1, -1)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if state == CLASS:
@@ -2586,9 +2607,9 @@ func _gui_input(event: InputEvent) -> void:
 					return
 			elif swipe_on:
 				swipe_on = false
-				var sd: Vector2 = event.position - swipe_start
-				if sd.length() >= 48.0:
-					_adv_swipe(sd)
+				if joy_on:
+					joy_on = false
+					joy_dir = Vector2i.ZERO
 					return
 				tap_pos = swipe_start
 	if tap_pos.x < 0.0 and not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
@@ -2842,7 +2863,13 @@ func _process(dt: float) -> void:
 			inv_vel = 0.0
 	if state == PLAY and mode == "adv":
 		cam = cam.lerp(Vector2(6, 6) if arena else vis_pos, minf(1.0, dt * 12.0))
-		if walk.size() > 0:
+		joy_t += dt
+		if joy_on:
+			walk.clear()
+			if joy_dir != Vector2i.ZERO and joy_t >= JOY_STEP and _aopen(pos + joy_dir):
+				joy_t = 0.0
+				_adv_step(pos + joy_dir, true)
+		elif walk.size() > 0:
 			walk_t += dt
 			if walk_t >= 0.11:
 				walk_t = 0.0
@@ -9336,6 +9363,10 @@ func _adv_draw() -> void:
 			_edge_glow(Color("3d9bff"), clampf(1.0 - oxy / (oxy_max * 0.25), 0.0, 1.0))
 		if hpf <= 0.3:
 			_edge_glow(Color("ff2b3d"), clampf(1.0 - hpf / 0.3, 0.0, 1.0))
+	if joy_on and state == PLAY:
+		draw_circle(swipe_start, 90.0, Color(1, 1, 1, 0.07))
+		draw_arc(swipe_start, 90.0, 0.0, TAU, 48, Color(1, 1, 1, 0.35), 3.0)
+		draw_circle(swipe_start + joy_v, 34.0, Color(1, 1, 1, 0.35))
 
 
 func _adv_badges() -> void:
