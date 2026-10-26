@@ -1074,6 +1074,11 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 const CHAR_HI := "res://art/chars/%s.png"
 const CHAR_GEAR := "res://art/chars/gear/%s_%s.png"
 const CharBands := preload("res://char_bands.gd")
+# weapon hand: art/chars/hands/<cls>.png is the class's fist, redrawn over the weapon (char_hands.py)
+const CHAR_HAND := "res://art/chars/hands/%s.png"
+const CharHands := preload("res://char_hands.gd")
+const HAND_GEN := [Vector2i(36, 118), Vector2i(94, 118), Vector2i(70, 118)]
+const CWS := 384   # canvas of the class player texture (body centred, weapons have room on every side)
 
 
 func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageTexture:
@@ -1112,17 +1117,31 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 		ov.blend_rect(wi, Rect2i(0, 0, 64, 64), Vector2i.ZERO)
 		base.blend_rect(_map_old(ov, HIMAP[dir]), Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	base = _walk_frame_hi(base, frame, dir)
-	var out := Image.create(WPS, WPS, false, Image.FORMAT_RGBA8)
-	out.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i((WPS - HW) / 2, (WPS - HH) / 2))
+	# bigger canvas than WPS: weapons are moved to the class's hand and long guns reach well past the body
+	var out := Image.create(CWS, CWS, false, Image.FORMAT_RGBA8)
+	var pad := Vector2i((CWS - WPS) / 2, (CWS - WPS) / 2)
+	var bo := Vector2i((CWS - HW) / 2, (CWS - HH) / 2)
+	out.blend_rect(base, Rect2i(0, 0, HW, HH), bo)
 	if hi_wpn != null and hi_wpn.get_width() == WPS and hi_wpn.get_height() == WPS:
+		# weapon layers are made for HAND_GEN; move them to this class's hand (and follow the walk sway)
+		var sway := 0 if (frame == 0 or dir == 3) else (2 if frame == 1 else -2)
+		var off := pad + Vector2i(sway, 0)
+		if CharHands.H.has(cls):
+			off += (CharHands.H[cls][col] as Vector2i) - (HAND_GEN[col] as Vector2i)
 		if dir == 1:
-			var wb: Image = hi_wpn.duplicate()
-			wb.blend_rect(out, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
+			var wb := Image.create(CWS, CWS, false, Image.FORMAT_RGBA8)
+			wb.blend_rect(hi_wpn, Rect2i(0, 0, WPS, WPS), off)
+			wb.blend_rect(out, Rect2i(0, 0, CWS, CWS), Vector2i.ZERO)
 			out = wb
 		else:
-			out.blend_rect(hi_wpn, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
+			out.blend_rect(hi_wpn, Rect2i(0, 0, WPS, WPS), off)
+			# the class's own fist drawn again on top, so the weapon sits inside the hand
+			if ResourceLoader.exists(CHAR_HAND % cls):
+				var hs: Image = (load(CHAR_HAND % cls) as Texture2D).get_image()
+				hs.convert(Image.FORMAT_RGBA8)
+				out.blend_rect(hs, Rect2i(col * WPS, 0, WPS, WPS), pad + Vector2i(sway, 0))
 	var ptex := ImageTexture.create_from_image(out)
-	ptex.set_meta("scl", PSCALE)
+	ptex.set_meta("scl", float(CWS) / float(HH))
 	return ptex
 
 

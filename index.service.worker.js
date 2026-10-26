@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1793026215|5461177';
+const CACHE_VERSION = '1793031883|5422074';
 /** @type {string} */
 const CACHE_PREFIX = 'Pocket Station-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
