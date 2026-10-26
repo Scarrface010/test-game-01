@@ -303,7 +303,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 45
+const BUILD := 46
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2946,6 +2946,8 @@ func _map_end() -> void:
 
 
 func _spr_ex(tex: Texture2D, ctr: Vector2, ssz: float, mod: Color, flip: float, rot: float, sx: float, sy: float) -> void:
+	if tex.has_meta("scl"):
+		ssz *= float(tex.get_meta("scl"))
 	draw_set_transform_matrix(Transform2D(rot, Vector2(sx * flip, sy), 0.0, ctr + tr_base))
 	draw_texture_rect(tex, Rect2(-ssz * 0.5, -ssz * 0.5, ssz, ssz), false, mod)
 	draw_set_transform(tr_base)
@@ -4238,6 +4240,8 @@ func _cell_rect(c: Vector2i) -> Rect2:
 
 
 func _spr(tex: Texture2D, ctr: Vector2, size: float, mod := Color.WHITE) -> void:
+	if tex.has_meta("scl"):
+		size *= float(tex.get_meta("scl"))
 	draw_texture_rect(tex, Rect2(ctr.x - size * 0.5, ctr.y - size * 0.5, size, size), false, mod)
 
 

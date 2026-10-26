@@ -958,6 +958,9 @@ const HI_WPN := "res://art/gear_hi/w_%s_%d.png"
 const USE_HI_WPN := true
 const HW := 128
 const HH := 176
+# the player texture is a 256 square so long weapons can reach outside the 128x176 body cell; main.gd scales it by PSCALE
+const WPS := 256
+const PSCALE := 256.0 / 176.0
 # old 64px body -> new body: [o_top, o_neck, o_feet, o_hx0, o_hx1, o_bx0, o_bx1, n_top, n_neck, n_feet, n_hx0, n_hx1, n_bx0, n_bx1]
 const HIMAP := {
 	0: [4, 33, 61, 8, 55, 10, 50, 16, 67, 173, 23, 104, 22, 103],
@@ -1032,8 +1035,6 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 	base.blend_rect(_map_old(ov, m), Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if hi_arm != null and hi_arm.get_width() == HW and hi_arm.get_height() == HH:
 		base.blend_rect(hi_arm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
-	if dir != 1 and hi_wpn != null and hi_wpn.get_width() == HW and hi_wpn.get_height() == HH:
-		base.blend_rect(hi_wpn, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if hi_helm != null and hi_helm.get_width() == HW and hi_helm.get_height() == HH:
 		# the helmet replaces the default head: wipe the head so it cannot show underneath
 		for hy in range(0, int(m[8]) + 2):
@@ -1041,19 +1042,24 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 				base.set_pixel(hx, hy, Color(0, 0, 0, 0))
 		base.blend_rect(hi_helm, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	base = _walk_frame_hi(base, frame, dir)
-	if dir == 1 and hi_wpn != null and hi_wpn.get_width() == HW and hi_wpn.get_height() == HH:
-		# back view: the weapon is behind the body, only what pokes out past the shoulder shows
-		var wb: Image = hi_wpn.duplicate()
-		wb.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
-		base = wb
 	var behind := _class_deco(accent, cls, dir, true)
 	if behind != null:
 		var bh := _map_old(behind, m)
 		bh.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 		base = bh
-	var out := Image.create(HH, HH, false, Image.FORMAT_RGBA8)
-	out.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i((HH - HW) / 2, 0))
-	return ImageTexture.create_from_image(out)
+	var out := Image.create(WPS, WPS, false, Image.FORMAT_RGBA8)
+	out.blend_rect(base, Rect2i(0, 0, HW, HH), Vector2i((WPS - HW) / 2, (WPS - HH) / 2))
+	if hi_wpn != null and hi_wpn.get_width() == WPS and hi_wpn.get_height() == WPS:
+		if dir == 1:
+			# back view: the weapon is behind the body, only what pokes out past the shoulder shows
+			var wb: Image = hi_wpn.duplicate()
+			wb.blend_rect(out, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
+			out = wb
+		else:
+			out.blend_rect(hi_wpn, Rect2i(0, 0, WPS, WPS), Vector2i.ZERO)
+	var ptex := ImageTexture.create_from_image(out)
+	ptex.set_meta("scl", PSCALE)
+	return ptex
 
 
 # remap a layer drawn for the old 64px body onto the 128x176 body: head band and body band scale separately
@@ -3164,5 +3170,7 @@ func white(tex: ImageTexture) -> ImageTexture:
 			if c.a > 0.0:
 				img.set_pixel(x, y, Color(1, 1, 1, c.a))
 	var t := ImageTexture.create_from_image(img)
+	if tex.has_meta("scl"):
+		t.set_meta("scl", tex.get_meta("scl"))
 	cache[key] = t
 	return t
