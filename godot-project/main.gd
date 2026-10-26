@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO }
 const GEAR_SLOTS := ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]
 
 const BAG_MAX := 12
@@ -303,7 +303,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 47
+const BUILD := 48
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -477,7 +477,7 @@ func _ready() -> void:
 		return
 	_setup_audio()
 	_new_floor()
-	state = MODE
+	state = INTRO
 	if OS.has_feature("web"):
 		var demo = JavaScriptBridge.eval("new URLSearchParams(location.search).get('demo')")
 		var fq = JavaScriptBridge.eval("new URLSearchParams(location.search).get('floor')")
@@ -2531,6 +2531,10 @@ func _new_run(start_floor := 1) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
+	if state == INTRO:
+		if (event is InputEventMouseButton and event.pressed) or (event is InputEventKey and event.pressed) or (event is InputEventScreenTouch and event.pressed):
+			state = MODE
+		return
 	if state == INV and inv_tab == 3 and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			chr_drag = event.position.y >= CHR_LIST_TOP and event.position.y <= CHR_LIST_BOT
@@ -2841,6 +2845,8 @@ func _process(dt: float) -> void:
 	if state != last_state:
 		last_state = state
 		state_t = t
+	if state == INTRO and t - state_t > INTRO_LEN:
+		state = MODE
 	if bank_disp < 0.0 or absf(bank_disp - bank) < 1.0:
 		bank_disp = float(bank)
 	else:
@@ -2997,7 +3003,7 @@ func _fx_death(c: Vector2i) -> void:
 	var body: Color = cols[(base_lv - 1) % cols.size()]
 	var big := is_boss or elite.has(c)
 	var cf := Vector2(c)
-	fx.append({"k": "ghost", "p": cf, "t0": t, "life": 0.55, "ti": ti, "lv": base_lv, "boss": is_boss})
+	fx.append({"k": "ghost", "p": cf, "t0": t, "life": 0.55, "ti": ti, "lv": base_lv, "boss": is_boss, "face": _mon_face(c), "tex": spr_gen.turret(ti, int(tur[c]["v"]), int(tur[c]["d"])) if tur.has(c) else null})
 	_fx_burst(cf, body, 40 if is_boss else (26 if big else 16), 4.4 if big else 3.4, 0.7, 7.0)
 	_fx_burst(cf, Color.WHITE, 8, 5.0, 0.3, 4.0)
 	_fx_ring(cf, body.lightened(0.4), 0.9, 0.45, 5.0)
@@ -3266,8 +3272,10 @@ func _fx_draw() -> void:
 				draw_line(tl, hd, Color(col4.r, col4.g, col4.b, (1.0 - u) * 0.95), w)
 			draw_circle(cc3, cell * 0.3 * (1.0 - u), Color(1, 1, 1, 0.35 * (1.0 - u)))
 		elif k == "ghost":
-			var tex := _monster_tex(int(f["ti"]), int(f["lv"]), bool(f["boss"]))
-			var gsz := cell * (0.98 if f["boss"] else 0.8)
+			var tex = f.get("tex")
+			if tex == null:
+				tex = _monster_tex(int(f["ti"]), int(f["lv"]), bool(f["boss"]), false, int(f.get("face", 0)))
+			var gsz := (AC if mode == "adv" else cell) * ((0.98 if mode == "adv" else 0.92) if f["boss"] else 0.8) * (1.08 if f.get("tex") != null else 1.0)
 			var gc := _wp(f["p"])
 			if u < 0.2:
 				var q := u / 0.2
@@ -3535,7 +3543,7 @@ func _wbox_draw() -> void:
 	var k := clampf(float(Time.get_ticks_msec() - wbox_t0) / 260.0, 0.0, 1.0) if has_r else 1.0
 	var side := (wbox_from and has_r) if k < 0.5 else rg
 	var sc := maxf(0.03, absf(cos(k * PI)))
-	var bx := Rect2(372, 80, 324, 62)
+	var bx := Rect2(24, 80, 324, 62)
 	draw_set_transform(bx.get_center(), 0.0, Vector2(sc, 1.0))
 	var lr := Rect2(-bx.size * 0.5, bx.size)
 	var col := Color("ffc24f") if side else Color("ff8a4f")
@@ -4308,9 +4316,51 @@ func _mod_label() -> String:
 var draw_count := 0
 
 
+const INTRO_LEN := 4.6
+
+
+func _draw_intro() -> void:
+	var u := t - state_t
+	var W := size.x
+	var H := size.y
+	draw_rect(Rect2(0, 0, W, H), Color(0.03, 0.04, 0.09))
+	var fade_in := clampf(u / 0.8, 0.0, 1.0)
+	for i in 70:
+		var sx := fmod(float(i) * 97.3 + 31.0, W)
+		var sy := fmod(float(i) * 211.7 + u * (6.0 + float(i % 5) * 3.0), H)
+		var tw := 0.25 + 0.55 * (0.5 + 0.5 * sin(u * 2.0 + float(i)))
+		draw_rect(Rect2(sx, sy, 2.0 + float(i % 3), 2.0 + float(i % 3)), Color(0.7, 0.85, 1.0, tw * fade_in))
+	var cx := W * 0.5
+	var cy := H * 0.36
+	var gr := clampf(u / 1.4, 0.0, 1.0)
+	gr = 1.0 - (1.0 - gr) * (1.0 - gr)
+	var R := 150.0 * gr
+	var pulse := 0.5 + 0.5 * sin(u * 3.0)
+	draw_circle(Vector2(cx, cy), R * 1.25, Color(0.2, 0.5, 0.8, 0.10 + 0.05 * pulse))
+	draw_circle(Vector2(cx, cy), R, Color(0.05, 0.09, 0.16))
+	draw_arc(Vector2(cx, cy), R, 0.0, TAU, 64, Color("7fd8ff"), 6.0)
+	draw_arc(Vector2(cx, cy), R * 0.82, u * 0.8, u * 0.8 + TAU * 0.7, 48, Color(0.5, 0.85, 1.0, 0.7), 4.0)
+	draw_arc(Vector2(cx, cy), R * 0.64, -u * 1.2, -u * 1.2 + TAU * 0.5, 40, Color("ffd84f"), 4.0)
+	for k in 8:
+		var a := float(k) * TAU / 8.0 + u * 0.3
+		draw_line(Vector2(cx, cy) + Vector2.from_angle(a) * R * 0.95, Vector2(cx, cy) + Vector2.from_angle(a) * R * 1.12, Color("7fd8ff"), 5.0)
+	var tu := clampf((u - 1.2) / 0.9, 0.0, 1.0)
+	var te := 1.0 - (1.0 - tu) * (1.0 - tu)
+	var ty := H * 0.62
+	_ctext("POCKET", Vector2(cx - (1.0 - te) * 80.0, ty), 104, Color(1, 1, 1, te))
+	_ctext("STATION", Vector2(cx + (1.0 - te) * 80.0, ty + 100.0), 104, Color(1.0, 0.85, 0.31, te))
+	var su := clampf((u - 2.4) / 0.8, 0.0, 1.0)
+	_ctext("tap to skip", Vector2(cx, H - 70.0), 22, Color(1, 1, 1, 0.45 * su))
+	var fo := clampf((u - (INTRO_LEN - 0.5)) / 0.5, 0.0, 1.0)
+	if fo > 0.0:
+		draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, fo))
+
 func _draw() -> void:
 	draw_count += 1
 	if themes.is_empty():
+		return
+	if state == INTRO:
+		_draw_intro()
 		return
 	var ti := tidx()
 	var th := cur_theme()
@@ -9367,7 +9417,6 @@ func _adv_draw() -> void:
 	_txt("XP %d/%d" % [xp, xp_need()], Vector2(288, 256), 14, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_hud_panels(acc, 124.0)
 	_txt(th["name"], Vector2(0, 62), 28, acc)
-	_txt("FLOOR %d    BEST %d" % [floor_n, adv_best], Vector2(24, 112), 22, Color(1, 1, 1, 0.6), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_wbox_draw()
 	_sk_banner()
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)

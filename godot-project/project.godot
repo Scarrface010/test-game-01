@@ -7,6 +7,8 @@ config/name="Pocket Station"
 run/main_scene="res://launcher.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0.03, 0.04, 0.09, 1)
+boot_splash/show_image=false
 
 [autoload]
 
