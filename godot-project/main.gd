@@ -308,7 +308,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 57
+const BUILD := 58
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -4656,7 +4656,71 @@ func _menu_tint(acc: Color) -> Color:
 	return acc
 
 
+const MENU_PLANETS := [
+	# [file, size px, start x, start y, drift x px/s, drift y px/s, spin rad/s]
+	["planet_ringed", 300.0, 560.0, 250.0, -4.0, 2.5, 0.0],
+	["planet_blue", 170.0, 120.0, 900.0, 5.0, -3.0, 0.02],
+	["planet_purple", 120.0, 610.0, 1090.0, -6.0, -2.0, -0.03],
+	["moon_grey", 64.0, 230.0, 160.0, 9.0, 4.0, 0.1],
+	["moon_ice", 52.0, 470.0, 700.0, -10.0, 6.0, -0.12],
+]
+var menu_tex := {}
+
+
+func _menu_tex(n: String) -> Texture2D:
+	if not menu_tex.has(n):
+		var pth := "res://art/menu/%s.png" % n
+		menu_tex[n] = load(pth) if ResourceLoader.exists(pth) else null
+	return menu_tex[n]
+
+
+func _draw_menu_space() -> bool:
+	var bg := _menu_tex("space_bg")
+	if bg == null:
+		return false
+	# backdrop slowly breathes so the nebula feels alive
+	var z := 1.06 + 0.02 * sin(t * 0.12)
+	var bw := 720.0 * z
+	var bh := 1280.0 * z
+	draw_texture_rect(bg, Rect2(360.0 - bw / 2 + sin(t * 0.07) * 12.0, 640.0 - bh / 2 + cos(t * 0.05) * 14.0, bw, bh), false)
+	# three star layers moving at different speeds (parallax)
+	for s in amb:
+		var layer := int(s[4] * 3.0) % 3
+		var sp: float = [8.0, 18.0, 36.0][layer]
+		var sx := fposmod(float(s[0]) - t * sp * 0.35, 720.0)
+		var sy := fposmod(float(s[1]) + t * sp, 1280.0)
+		var tw := 0.45 + 0.55 * absf(sin(t * (1.2 + layer) + float(s[3])))
+		var r: float = [1.2, 1.8, 2.6][layer]
+		draw_circle(Vector2(sx, sy), r * 2.2, Color(0.6, 0.8, 1.0, 0.12 * tw))
+		draw_circle(Vector2(sx, sy), r, Color(1, 1, 1, tw))
+	# a shooting star now and then
+	var ph := fposmod(t, 7.0)
+	if ph < 0.9:
+		var k := ph / 0.9
+		var sd := int(t / 7.0)
+		var st := Vector2(120.0 + float(sd * 173 % 480), 80.0 + float(sd * 97 % 400))
+		var hd := st + Vector2(260, 160) * k
+		draw_line(hd - Vector2(70, 43) * (1.0 - k * 0.5), hd, Color(1, 1, 1, 0.8 * (1.0 - k)), 3.0)
+		draw_circle(hd, 3.0, Color(1, 1, 0.9, 1.0 - k))
+	# planets and moons drift and wrap around the screen
+	for pl in MENU_PLANETS:
+		var tx := _menu_tex(pl[0])
+		if tx == null:
+			continue
+		var sz: float = pl[1]
+		var px := fposmod(float(pl[2]) + t * float(pl[4]) + sz, 720.0 + sz * 2.0) - sz
+		var py := fposmod(float(pl[3]) + t * float(pl[5]) + sz, 1280.0 + sz * 2.0) - sz
+		var ts := tx.get_size()
+		var sc := sz / maxf(ts.x, ts.y)
+		draw_set_transform(Vector2(px, py), t * float(pl[6]), Vector2(sc, sc))
+		draw_texture(tx, -ts / 2.0)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	return true
+
+
 func _draw_menu_bg(tint: Color) -> void:
+	if _draw_menu_space():
+		return
 	for i in 20:
 		var f := i / 19.0
 		var c := Color(0.02, 0.025, 0.06).lerp(Color(0.05, 0.07, 0.14), f).lerp(tint, 0.05 + 0.05 * f)
