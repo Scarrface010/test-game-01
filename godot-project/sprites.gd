@@ -2119,6 +2119,8 @@ func icon(name: String) -> ImageTexture:
 		return cache["icon_" + name]
 	if name == "use_ammopack":
 		return item("ammocrate")
+	if name == "use_beacon":
+		return icon("use_blink")
 	if name.begins_with("use_"):
 		var utx := _pickup_png(name.substr(4))
 		if utx != null:
