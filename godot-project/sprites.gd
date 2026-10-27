@@ -166,7 +166,7 @@ func _atlas_cell(path: String, col: int, row: int, cell: int = 32) -> ImageTextu
 	if im == null or (col + 1) * cell > im.get_width() or (row + 1) * cell > im.get_height():
 		return null
 	var out: Image = im.get_region(Rect2i(col * cell, row * cell, cell, cell))
-	if cell != TEX_PX:
+	if cell < TEX_PX:
 		out.resize(TEX_PX, TEX_PX, Image.INTERPOLATE_NEAREST)
 	return ImageTexture.create_from_image(out)
 
