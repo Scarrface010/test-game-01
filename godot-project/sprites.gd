@@ -1606,6 +1606,12 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 	var key := "gearicon_" + id
 	if cache.has(key):
 		return cache[key]
+	if slot == "trinket" and ResourceLoader.exists("res://art/trinkets/%s.png" % id):
+		var ksrc := load("res://art/trinkets/%s.png" % id) as Texture2D
+		if ksrc != null:
+			var ktx := ImageTexture.create_from_image(ksrc.get_image())
+			cache[key] = ktx
+			return ktx
 	if slot != "weapon" and slot != "trinket" and G64.SPEC.has(id):
 		var gi := _gear_icon64(id, slot)
 		cache[key] = gi
@@ -1692,14 +1698,16 @@ func corpse(ti: int, lvl: int, boss: bool, tv: int, td: int, fl: int) -> ImageTe
 		return cache[key]
 	var pcols: Array = [Color("7a1f2e"), Color("3f7a2a"), Color("5a2a8a"), Color("3a5aa0")]
 	var pc: Color = pcols[ti % 4]
-	var out := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	var k := TEX_PX / 32
+	var out := Image.create(TEX_PX, TEX_PX, false, Image.FORMAT_RGBA8)
 	var src: Image
 	if tv >= 0:
 		src = turret(ti, tv, td).get_image().duplicate()
 	else:
 		src = monster(ti, lvl, boss, true).get_image().duplicate()
 	src.convert(Image.FORMAT_RGBA8)
-	src.resize(32, 32, Image.INTERPOLATE_NEAREST)  # textures are 64px now; the corpse is composed on a 32 canvas, then upscaled
+	if src.get_width() != TEX_PX:
+		src.resize(TEX_PX, TEX_PX, Image.INTERPOLATE_BILINEAR)
 	var dim := 0.78 if tv < 0 else 0.5
 	for y in src.get_height():
 		for x in src.get_width():
@@ -1708,28 +1716,27 @@ func corpse(ti: int, lvl: int, boss: bool, tv: int, td: int, fl: int) -> ImageTe
 				var l := c.r * 0.3 + c.g * 0.59 + c.b * 0.11
 				src.set_pixel(x, y, Color(lerpf(c.r, l, 0.5) * dim * 1.1, lerpf(c.g, l, 0.5) * dim * 1.1, lerpf(c.b, l, 0.5) * dim * 1.1, c.a))
 	if tv >= 0:
-		_pool(out, 16, 26, 13.0, 4.5, Color(0.05, 0.05, 0.07, 0.8))
-		_pool(out, 16, 26, 9.0, 3.0, Color(0.12, 0.1, 0.1, 0.9))
-		src.resize(32, 22, Image.INTERPOLATE_NEAREST)
-		out.blend_rect(src, Rect2i(0, 0, 32, 22), Vector2i(0, 7))
+		_pool(out, 16 * k, 26 * k, 13.0 * k, 4.5 * k, Color(0.05, 0.05, 0.07, 0.8))
+		_pool(out, 16 * k, 26 * k, 9.0 * k, 3.0 * k, Color(0.12, 0.1, 0.1, 0.9))
+		src.resize(32 * k, 22 * k, Image.INTERPOLATE_BILINEAR)
+		out.blend_rect(src, Rect2i(0, 0, 32 * k, 22 * k), Vector2i(0, 7 * k))
 		for i in 5:
 			var sx := 6 + i * 5
-			out.set_pixel(sx, 22 - (i % 3) * 3 - 2, Color(0.55, 0.55, 0.6, 0.6))
+			out.fill_rect(Rect2i(sx * k, (22 - (i % 3) * 3 - 2) * k, k, k), Color(0.55, 0.55, 0.6, 0.6))
 		for e in [Vector2i(9, 25), Vector2i(21, 24), Vector2i(15, 27), Vector2i(25, 27)]:
-			out.set_pixel(e.x, e.y, Color("ff9a3c"))
+			out.fill_rect(Rect2i(e.x * k, e.y * k, k, k), Color("ff9a3c"))
 	else:
-		_pool(out, 16, 25, 14.0, 5.5, pc.darkened(0.25))
-		_pool(out, 16, 25, 12.0, 4.4, pc)
-		_pool(out, 12, 24, 4.0, 1.6, pc.lightened(0.25))
+		_pool(out, 16 * k, 25 * k, 14.0 * k, 5.5 * k, pc.darkened(0.25))
+		_pool(out, 16 * k, 25 * k, 12.0 * k, 4.4 * k, pc)
+		_pool(out, 12 * k, 24 * k, 4.0 * k, 1.6 * k, pc.lightened(0.25))
 		if fl == 1:
 			src.rotate_90(COUNTERCLOCKWISE)
 		else:
 			src.rotate_90(CLOCKWISE)
-		src.resize(32, 20, Image.INTERPOLATE_NEAREST)
-		out.blend_rect(src, Rect2i(0, 0, 32, 20), Vector2i(0, 9))
+		src.resize(32 * k, 20 * k, Image.INTERPOLATE_BILINEAR)
+		out.blend_rect(src, Rect2i(0, 0, 32 * k, 20 * k), Vector2i(0, 9 * k))
 		for sp in [Vector2i(3, 28), Vector2i(28, 22), Vector2i(26, 29)]:
-			out.set_pixel(sp.x, sp.y, pc.darkened(0.1))
-	out.resize(TEX_PX, TEX_PX, Image.INTERPOLATE_NEAREST)
+			out.fill_rect(Rect2i(sp.x * k, sp.y * k, k, k), pc.darkened(0.1))
 	var t := ImageTexture.create_from_image(out)
 	cache[key] = t
 	return t
@@ -1772,6 +1779,19 @@ func turret(ti: int, v: int, dir: int) -> ImageTexture:
 	var key := "tur_%d_%d_%d" % [ti, v, dir]
 	if cache.has(key):
 		return cache[key]
+	# cartoon art: front faces down (dir 0), back up (1), side faces right (3), mirrored for left (2)
+	var tview: String = ["front", "back", "side", "side"][clampi(dir, 0, 3)]
+	var tpath := "res://art/turrets/t%dv%d_%s.png" % [clampi(ti, 0, 3), clampi(v, 0, 1), tview]
+	if ResourceLoader.exists(tpath):
+		var tsrc := load(tpath) as Texture2D
+		if tsrc != null:
+			var timg: Image = tsrc.get_image()
+			timg.convert(Image.FORMAT_RGBA8)
+			if dir == 2:
+				timg.flip_x()
+			var ttx := ImageTexture.create_from_image(timg)
+			cache[key] = ttx
+			return ttx
 	var cv := Cv.new(32, 32)
 	var hx := 16
 	var hy := 13
