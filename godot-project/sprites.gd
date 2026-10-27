@@ -1100,6 +1100,7 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 		layers.append(g.get_region(Rect2i(col * HW, 0, HW, HH)))
 	for l in layers:
 		base.blend_rect(l, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
+	_hip_trinket(base, eq, col)
 	var wid := String(eq.get("weapon", ""))
 	var hi_wpn: Image = null
 	if USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
@@ -1143,6 +1144,27 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	var ptex := ImageTexture.create_from_image(out)
 	ptex.set_meta("scl", float(CWS) / float(HH))
 	return ptex
+
+
+# trinket hangs on the hip, over armour and body, under the weapon
+const TRK_HIP := {0: Vector2i(36, 122), 1: Vector2i(92, 122), 2: Vector2i(58, 124)}
+const TRK_PX := 26
+
+
+func _hip_trinket(base: Image, eq: Dictionary, col: int) -> void:
+	var tid := String(eq.get("trinket", ""))
+	if tid == "" or not ResourceLoader.exists("res://art/trinkets/%s.png" % tid):
+		return
+	var ti: Image = (load("res://art/trinkets/%s.png" % tid) as Texture2D).get_image()
+	ti.convert(Image.FORMAT_RGBA8)
+	var ur := ti.get_used_rect()
+	if ur.size.x <= 0 or ur.size.y <= 0:
+		return
+	ti = ti.get_region(ur)
+	var sc := float(TRK_PX) / float(maxi(ur.size.x, ur.size.y))
+	ti.resize(maxi(1, int(ur.size.x * sc)), maxi(1, int(ur.size.y * sc)), Image.INTERPOLATE_BILINEAR)
+	var c: Vector2i = TRK_HIP[col]
+	base.blend_rect(ti, Rect2i(Vector2i.ZERO, ti.get_size()), c - ti.get_size() / 2)
 
 
 # remap a layer drawn for the old 64px body onto the 128x176 body: head band and body band scale separately
@@ -2538,7 +2560,7 @@ func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
 	var key := "floor%d_%d_%d" % [ti, parity, variant]
 	if cache.has(key):
 		return cache[key]
-	var art_f: ImageTexture = _atlas_cell("res://art/tile_atlas.png", variant, ti * 2 + parity)
+	var art_f: ImageTexture = _atlas_cell("res://art/tile_atlas64.png", variant, ti * 2 + parity, 64)
 	if art_f != null:
 		if ti == 0:
 			var fim: Image = art_f.get_image()
@@ -2887,7 +2909,7 @@ func wall_tile(ti: int, wvar: int = 0) -> ImageTexture:
 	var key := "wall%d_%d" % [ti, wvar]
 	if cache.has(key):
 		return cache[key]
-	var art_w: ImageTexture = _atlas_cell("res://art/tile_atlas.png", ti, 8 + wvar)
+	var art_w: ImageTexture = _atlas_cell("res://art/tile_atlas64.png", ti, 8 + wvar, 64)
 	if art_w == null and wvar > 0:
 		return wall_tile(ti, 0)
 	if art_w != null:

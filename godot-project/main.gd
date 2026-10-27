@@ -308,7 +308,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 56
+const BUILD := 57
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1593,6 +1593,8 @@ func _die(why: String) -> void:
 	state = DEAD
 	walk.clear()
 	aim = -1
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	save_info = ""
 	var reached := floor_n - 1
 	var was_best := false
 	if mode == "adv":
@@ -3053,7 +3055,7 @@ func _fx_pickup(c: Vector2i, kind: String) -> void:
 		tgt = Vector2(70, 266)
 		col = Color("ffd84f")
 	elif kind.begins_with("use_"):
-		tgt = Vector2(90, 1064 if mode == "adv" else 1000)
+		tgt = _slot_rect(clampi(inv.size() - 1, 0, maxi(0, slots_n() - 1))).get_center()
 		col = use_defs[kind.substr(4)]["col"]
 	elif kind.begins_with("gear_"):
 		tgt = Vector2(648, 43)
@@ -8410,7 +8412,7 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 	var base := 2 + floor_n / 2 + level / 4
 	var hm := _haz_mult()
 	if id == "arc":
-		if _arc_live(c, adv_steps):
+		if not _arc_live(c, adv_steps):
 			_fx_bolt(Vector2(c) + Vector2(0, -0.4), Vector2(c), Color("ffe14f"))
 			return _adv_env_hurt(maxi(1, int(round(base * 1.5 * hm))), "Electric arc! You lose %d health", "You were electrocuted", "arc")
 		msg = "The arc plate is dead. Lucky timing!"
@@ -10483,10 +10485,10 @@ func _adv_selftest() -> void:
 		sh = 0
 		var hp_a := hp
 		_adv_haz_trigger("arc", start, Vector2i(1, 0))
-		if not _arc_live(start, adv_steps) and hp < hp_a:
+		if _arc_live(start, adv_steps) and hp < hp_a:
 			print("FAIL unlit arc plate shocked")
 			bad += 1
-		if _arc_live(start, adv_steps) and hp >= hp_a:
+		if not _arc_live(start, adv_steps) and hp >= hp_a:
 			print("FAIL lit arc plate did not shock")
 			bad += 1
 		state = PLAY
