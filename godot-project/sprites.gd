@@ -1610,6 +1610,19 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 		var gi := _gear_icon64(id, slot)
 		cache[key] = gi
 		return gi
+	if slot == "weapon" and USE_HI_WPN and ResourceLoader.exists(HI_WPN % [id, 0]):
+		var wi: Image = (load(HI_WPN % [id, 0]) as Texture2D).get_image()
+		wi.convert(Image.FORMAT_RGBA8)
+		var ur := wi.get_used_rect()
+		if ur.size.x > 0 and ur.size.y > 0:
+			var crop: Image = wi.get_region(ur)
+			var sc := 30.0 / float(maxi(ur.size.x, ur.size.y))
+			crop.resize(maxi(1, int(ur.size.x * sc)), maxi(1, int(ur.size.y * sc)), Image.INTERPOLATE_LANCZOS)
+			var wc := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+			wc.blend_rect(crop, Rect2i(0, 0, crop.get_width(), crop.get_height()), Vector2i((32 - crop.get_width()) / 2, (32 - crop.get_height()) / 2))
+			var wt := ImageTexture.create_from_image(wc)
+			cache[key] = wt
+			return wt
 	var cv := Cv.new(32, 32)
 	var ol := Color("0e1322")
 	if not ART.has(id):

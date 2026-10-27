@@ -142,9 +142,9 @@ const OLD_SHOP_COSTS := {"vet": [15, 35, 60], "iron": [20, 40, 70], "packed": [4
 # Drop-pool packs: traits and relics that stay out of drops until the pack is bought.
 const PACKS := {
 	"p_elem": {"t": ["ignite", "volatile", "static", "arc", "frostbite", "shatter", "toxin", "plague"], "r": ["pyro", "storm", "frost", "toxi"]},
-	"p_blood": {"t": ["siphon", "bloodlust", "execute", "adrenaline", "barrier"], "r": ["bloodpact", "hood", "echo"]},
+	"p_blood": {"t": ["siphon", "bloodlust", "execute", "adrenaline", "barrier"], "r": ["bloodpact", "hood"]},
 	"p_combo": {"t": ["rampage", "rhythm", "marked", "deadly", "harvest"], "r": ["overclock"]},
-	"p_relic": {"t": [], "r": ["deadeye", "efficient", "plating", "hazmat", "gravedigger", "thornmail", "scrapper"]},
+	"p_relic": {"t": [], "r": ["deadeye", "plating", "hazmat", "gravedigger", "thornmail", "scrapper"]},
 	"p_fort": {"t": [], "r": ["midas", "scavenger", "luckychip"]},
 	"p_surv": {"t": [], "r": ["aegis", "boots", "lantern", "slowdark"]},
 	"p_curse": {"t": [], "r": ["glass", "greedy", "blade", "heavyammo", "ember", "prism"]},
@@ -308,7 +308,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 53
+const BUILD := 54
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -595,20 +595,18 @@ func _make_defs() -> void:
 		{"id": "greedy", "name": "Greedy Pact", "desc": "Coins are worth triple, but every monster gets +1 level", "max": 1, "curse": true},
 		{"id": "blade", "name": "Hungry Blade", "desc": "Every kill gives +1 extra level, but gates need 3 more", "max": 1, "curse": true},
 		{"id": "deadeye", "name": "Deadeye Scope", "desc": "Ranged weapons reach 1 tile further", "max": 2, "adv": true},
-		{"id": "efficient", "name": "Efficient Barrel", "desc": "Ranged shots cost 1 less air (never below 0.5)", "max": 1, "adv": true},
 		{"id": "plating", "name": "Deflector Plating", "desc": "Enemy ranged shots deal 2 less damage", "max": 2, "adv": true},
 		{"id": "hazmat", "name": "Hazmat Suit", "desc": "Floor hazards hurt half as much", "max": 1, "adv": true},
 		{"id": "gravedigger", "name": "Grave Robber", "desc": "Walking over a fresh corpse gives 2 coins", "max": 2, "adv": true},
-		{"id": "heavyammo", "name": "Heavy Ammo", "desc": "Ranged shots deal +4 damage but cost 2 more air", "max": 1, "curse": true, "adv": true},
+		{"id": "heavyammo", "name": "Heavy Ammo", "desc": "Ranged shots deal 1.5x damage but use double ammo", "max": 1, "curse": true, "adv": true},
 		{"id": "pyro", "name": "Pyromaniac", "desc": "+4 max health. Fire traits: burns last 2 steps longer and hurt double, Volatile blasts +20%", "max": 1, "adv": true, "tag": "fire"},
-		{"id": "storm", "name": "Storm Capacitor", "desc": "+4 max health. Shock traits: stuns last 1 step longer, Arc Chain hits 3 enemies. Decoy Chain: Decoy Beacons last 4 steps longer and stun enemies beside them", "max": 1, "adv": true, "tag": "shock"},
+		{"id": "storm", "name": "Storm Capacitor", "desc": "+4 max health. Stuns +1 step, Arc Chain hits 3, Decoys last 4 longer and stun neighbours", "max": 1, "adv": true, "tag": "shock"},
 		{"id": "frost", "name": "Frost Core", "desc": "+4 max health. Shatter deals +100% instead of +50%. Frozen Ground: Frost Charge stuns 2 steps longer", "max": 1, "adv": true, "tag": "cryo"},
 		{"id": "toxi", "name": "Toxicologist", "desc": "+4 max health. Poison stacks up to 7 instead of 4", "max": 1, "adv": true, "tag": "toxic"},
-		{"id": "bloodpact", "name": "Blood Pact", "desc": "+4 max health. Siphon heals double, and healing past full becomes shield", "max": 1, "adv": true, "tag": "blood"},
+		{"id": "bloodpact", "name": "Blood Pact", "desc": "+4 max health. Siphon heals double", "max": 1, "adv": true, "tag": "blood"},
 		{"id": "hood", "name": "Executioner's Hood", "desc": "+4 max health. Executioner works below 35% health", "max": 1, "adv": true, "tag": "execute"},
 		{"id": "luckychip", "name": "Lucky Chip", "desc": "+10% crit chance, and crits restore 1 air", "max": 1, "adv": true, "tag": "crit"},
 		{"id": "prism", "name": "Prism Lens", "desc": "+1 attack for each different trait type on your weapon (max +4)", "max": 1, "adv": true, "tag": "variety"},
-		{"id": "echo", "name": "Echo Module", "desc": "Kill traits (heal, air, shield, coins) trigger twice", "max": 1, "adv": true, "tag": "kill"},
 		{"id": "overclock", "name": "Overclock", "desc": "Rampage can stack 3 higher", "max": 1, "adv": true, "tag": "streak"},
 		{"id": "thornmail", "name": "Thornmail", "desc": "Reflect 2 damage whenever you are hit", "max": 1, "adv": true},
 		{"id": "scrapper", "name": "Scrapper", "desc": "35% chance of an extra coin on every kill", "max": 1, "adv": true},
@@ -1764,7 +1762,7 @@ func _act_desc(cid: String) -> String:
 	if mode == "adv":
 		return {
 			"scout": "Deep Breath: +10 air and your next 8 steps cost no air. Recharges in 40 steps.",
-			"brute": "Iron Stance: blocks the next 2 hits and gives +3 attack until your next kill. Recharges in 30 steps.",
+			"brute": "Iron Stance: blocks the next 2 hits. Recharges in 30 steps.",
 			"mystic": "Hex Mark: the next enemy you hit takes double damage until it dies. Recharges in 35 steps.",
 			"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
 			"gunslinger": "Ricochet: your next shot bounces to a second enemy within 3 tiles. Recharges in 25 steps.",
@@ -1981,8 +1979,7 @@ func _act_scout() -> bool:
 func _act_brute() -> bool:
 	if mode == "adv":
 		act_stance = 2
-		boost = maxi(boost, 3)
-		msg = "Iron Stance: blocks the next 2 hits, +3 attack until your next kill"
+		msg = "Iron Stance: blocks the next 2 hits"
 	else:
 		boost = maxi(boost, 3)
 		msg = "Iron Stance: your next fight counts +3 levels"
@@ -3546,7 +3543,7 @@ func _wbox_info(r: bool) -> Array:
 	var nm := gname(id) if ok else ("None" if r else "Fists")
 	var l2 := ""
 	if r:
-		var dmg := _ranged_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg"))
+		var dmg := _ranged_hv()
 		l2 = "DMG %d   RNG %d   AMMO %d/%d" % [dmg, _shoot_range(), ammo, ammo_max()]
 	else:
 		l2 = "DMG %d" % p_atk()
@@ -6393,10 +6390,7 @@ func _st_poison(c: Vector2i, add: int) -> void:
 func _tr_heal(n: int) -> void:
 	if n <= 0:
 		return
-	var over := hp + n - hp_cap()
 	hp = mini(hp_cap(), hp + n)
-	if over > 0 and relic_n("bloodpact") > 0:
-		sh = mini(sh_cap(), sh + over)
 	_pop(pos, "+%d" % n, Color("ff8a9a"))
 
 
@@ -6435,6 +6429,12 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 	var d := maxi(1, int(round(float(dmg + add) * mul)))
 	if String(affix.get(c, "")) == "plated":
 		d = maxi(1, d - 2 - floor_n / 8)
+	if hex_armed and _st_ok(c):
+		hex_armed = false
+		_st_get(c)["hex"] = true
+		_pop(c, "HEXED", Color("c07cff"))
+	if mstat.has(c) and mstat[c].has("hex"):
+		d *= 2
 	return d
 
 
@@ -6516,7 +6516,7 @@ func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 			for o in _near_mons(c, 1, []):
 				_st_poison(o, 2)
 		tr_depth -= 1
-	var echo := 2 if relic_n("echo") > 0 else 1
+	var echo := 1
 	if tl.has("bloodlust"):
 		_tr_heal(maxi(1, hp_cap() / 10) * echo)
 	if tl.has("adrenaline"):
@@ -8158,6 +8158,13 @@ func _tier_shot_air(tier: int) -> float:
 	return float(ceili(1.8 * (1.0 + 0.5 * float(tier - 1))))
 
 
+func _ranged_hv() -> int:
+	var b := _ranged_atk() + int(sk("rdmg"))
+	if relic_n("heavyammo") > 0:
+		b = int(round(float(b) * 1.5))
+	return b
+
+
 func _shot_cost() -> float:
 	var wid := String(equip.get("ranged", ""))
 	var tier := 1
@@ -8222,8 +8229,8 @@ func _adv_shoot_do(c: Vector2i) -> void:
 	if randf() * 100.0 < sk("noammo"):
 		_pop(pos, "FREE SHOT", Color("6dff9a"))
 	else:
-		ammo = maxi(0, ammo - 1)
-	var dmg := _tr_hit_mod(c, _ranged_atk() + 4 * relic_n("heavyammo") + int(sk("rdmg")))
+		ammo = maxi(0, ammo - (2 if relic_n("heavyammo") > 0 else 1))
+	var dmg := _tr_hit_mod(c, _ranged_hv())
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
 		dmg = int(round(float(dmg) * crit_mult()))
@@ -9107,7 +9114,7 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	var bp := ctr + Vector2(AC * 0.3, -AC * 0.3)
 	draw_circle(bp, AC * 0.17, Color("0a0c14"))
 	draw_circle(bp, AC * 0.145, mc)
-	_ctext(str(lv), bp, int(AC * 0.22), Color.WHITE)
+	_ctext(str(dmg_taken(mon_atk(c))), bp, int(AC * 0.22), Color.WHITE)
 	var hpn := mon_hp_now(c)
 	var hpm := mon_hp_max(c)
 	var bw := AC * 0.7
@@ -9789,7 +9796,7 @@ func _inv_extra_rows() -> Array:
 	var rng_t := _shoot_range()
 	var hz := int(round((1.0 - _haz_mult()) * 100.0))
 	var sdef := int(gear("rangedef") + sk("rdef")) + 2 * relic_n("plating")
-	var sc := gear("shotsave") + sk("shotsave") + float(relic_n("efficient"))
+	var sc := gear("shotsave") + sk("shotsave")
 	return [
 		["#OFFENSE"],
 		["CRIT CHANCE", "%d%%" % int(round(crit_chance())), "Chance for a hit to crit."],
@@ -9800,7 +9807,7 @@ func _inv_extra_rows() -> Array:
 		["KILL HEAL", "%d" % int(gear("killheal")), "Health restored when you kill."],
 		["FINISHER", "+%d%%" % int(sk("finish")), "Bonus damage to enemies under half health."],
 		["RANGE", ("%d tiles" % rng_t) if rng_t > 0 else "none", "How far your ranged weapon shoots."],
-		["RANGED BONUS", "+%d" % (4 * relic_n("heavyammo") + int(sk("rdmg"))), "Extra damage on ranged shots."],
+		["RANGED BONUS", "+%d" % (_ranged_hv() - _ranged_atk()), "Extra damage on ranged shots."],
 		["RANGED CRIT", "+%d%%" % int(sk("rcrit")), "Extra crit chance with ranged weapons."],
 		["MAX AMMO", "%d" % ammo_max(), "Most ammo you can carry."],
 		["AMMO DROPS", "%d%%" % int(sk("ammodrop")), "Chance for a kill to drop ammo."],
@@ -10506,13 +10513,11 @@ func _adv_selftest() -> void:
 			bad += 1
 		_remove_mon(shc)
 	relics["deadeye"] = 2
-	relics["efficient"] = 1
 	relics["heavyammo"] = 1
 	if _shot_cost() < 0.5:
 		print("FAIL shot cost")
 		bad += 1
 	relics.erase("deadeye")
-	relics.erase("efficient")
 	relics.erase("heavyammo")
 	# ranged + corpse sim
 	for dix in 4:
