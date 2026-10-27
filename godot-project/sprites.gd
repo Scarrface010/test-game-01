@@ -2082,6 +2082,10 @@ func icon(name: String) -> ImageTexture:
 		if utx != null:
 			cache["icon_" + name] = utx
 			return utx
+	var otx := _pickup_png(name)
+	if otx != null:
+		cache["icon_" + name] = otx
+		return otx
 	var cv := Cv.new(32, 32)
 	var ol := Color("0e1322")
 	if name == "spikes":
