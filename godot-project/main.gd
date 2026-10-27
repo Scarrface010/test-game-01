@@ -308,7 +308,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 59
+const BUILD := 60
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -976,7 +976,10 @@ func _wall_set(ti: int) -> Array:
 
 # Stable per-cell pick, so a wall keeps the same look every frame.
 func _wall_var(x: int, y: int) -> int:
-	return _tile_hash(x + 57, y + 91) % WALL_VARS
+	var h: int = _tile_hash(x + 57, y + 91)
+	if h % 100 < 80:
+		return 0
+	return 1 + (h / 100) % (WALL_VARS - 1)
 
 
 func _monster_tex(ti: int, lvl: int, boss: bool, blink := false, dir := 0) -> ImageTexture:
