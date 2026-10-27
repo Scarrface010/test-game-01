@@ -308,7 +308,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 58
+const BUILD := 59
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1789,7 +1789,7 @@ func _market_rect(i: int) -> Rect2:
 func _slot_rect(i: int) -> Rect2:
 	if mode == "adv":
 		var sz := _slot_sz()
-		return Rect2(712.0 - (slots_n() - i) * (sz + 8.0), 1060.0 + adv_ex, sz, sz)
+		return Rect2(712.0 - (slots_n() - i) * (sz + 8.0), 1166.0 + adv_ex, sz, sz)
 	return Rect2(40 + i * 118, 982, 108, 62)
 
 
@@ -1883,8 +1883,8 @@ func _act_tick() -> void:
 func _act_rect() -> Rect2:
 	if mode == "adv":
 		var ah := _row2_h()
-		var ax1 := 616.0 if _weapon_range() > 0 else 704.0
-		return Rect2(424, 1158.0 + adv_ex, ax1 - 424.0 - 4.0, ah)
+		var ax1 := 704.0 - ah - 8.0 if _weapon_range() > 0 else 704.0
+		return Rect2(16, 1062.0 + adv_ex, ax1 - 16.0, ah)
 	var sy := 982.0
 	var x0 := 40.0 + slots_n() * 118.0
 	if 616.0 - x0 >= 110.0:
@@ -1918,8 +1918,8 @@ func _act_draw() -> void:
 		draw_rect(Rect2(r.position.x, r.end.y - 5.0, r.size.x * (1.0 - frac), 5.0), Color(col.r, col.g, col.b, 0.8))
 	var tc := Color.WHITE if (rdy or live) else Color(1, 1, 1, 0.5)
 	if r.size.y >= 50.0:
-		_ctext(String(ACTS[cls]["n"]), r.get_center() + Vector2(0, -11), 20, tc)
-		_ctext(_act_status(), r.get_center() + Vector2(0, 14), 17, Color(bc.r, bc.g, bc.b, 1.0))
+		_ctext(String(ACTS[cls]["n"]), r.get_center() + Vector2(0, -13), 26, tc)
+		_ctext(_act_status(), r.get_center() + Vector2(0, 18), 20, Color(bc.r, bc.g, bc.b, 1.0))
 	else:
 		_ctext("%s: %s" % [ACTS[cls]["n"], _act_status()], r.get_center(), 18, tc)
 
@@ -3642,7 +3642,7 @@ func _slot_sz() -> float:
 
 
 func _row2_h() -> float:
-	return 76.0 if set_big == 0 else 78.0
+	return 96.0 if set_big == 0 else 100.0
 
 
 func _cancel_rect() -> Rect2:
@@ -3943,7 +3943,7 @@ func _draw_lb(acc: Color) -> void:
 			var me: bool = String(row["uid"]) == lb_uid
 			var rc := Rect2(40, y - 34, 640, 50)
 			if me:
-				draw_rect(rc, Color(1, 0.85, 0.3, 0.16))
+				_obox(rc, Color(1, 0.85, 0.3, 0.16))
 				draw_rect(rc, Color("ffd84f"), false, 2.0)
 			var tc2 := Color("ffd84f") if me else Color.WHITE
 			var medal := [Color("ffd84f"), Color("c9d3f0"), Color("d08a4a")]
@@ -4413,7 +4413,6 @@ func _draw() -> void:
 		var marm := t - menu_armed < 3.0
 		_button(btn_menu, "SURE?" if marm else "MENU", Color("ff8a8a") if marm else acc)
 	_hud_panels(acc, 84.0)
-	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_txt("FLOOR %d    BEST %d%s" % [floor_n, best, _mod_label()], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -4718,6 +4717,11 @@ func _draw_menu_space() -> bool:
 	return true
 
 
+func _obox(r: Rect2, c: Color) -> void:
+	draw_rect(r, Color(0.03, 0.04, 0.08, 0.93))
+	draw_rect(r, c)
+
+
 func _draw_menu_bg(tint: Color) -> void:
 	if _draw_menu_space():
 		return
@@ -4797,7 +4801,7 @@ func _draw_menu_hero(acc: Color) -> void:
 
 func _draw_overlay(acc: Color) -> void:
 	if state == MODE:
-		_draw_menu_hero(acc)
+		_draw_menu_bg(_menu_tint(acc))
 	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC]:
 		_draw_menu_bg(_menu_tint(acc))
 	else:
@@ -4866,7 +4870,7 @@ func _draw_overlay(acc: Color) -> void:
 			var rr := _relic_rect(i)
 			var cursed := d.has("curse")
 			var col := Color("ff6a5c") if cursed else acc
-			draw_rect(rr, Color(col.r, col.g, col.b, 0.12))
+			_obox(rr, Color(col.r, col.g, col.b, 0.12))
 			draw_rect(rr, col, false, 2.0)
 			var own := relic_n(String(d["id"]))
 			var title := _aname(String(d["id"]), String(d["name"])) + ("   (you have %d)" % own if own > 0 else "")
@@ -4898,9 +4902,9 @@ func _draw_overlay(acc: Color) -> void:
 			var dd: Dictionary = door_defs[String(door_choices[i])]
 			var dr := _door_rect(i)
 			var dcol: Color = dd["col"]
-			draw_rect(dr, Color(dcol.r, dcol.g, dcol.b, 0.12))
+			_obox(dr, Color(dcol.r, dcol.g, dcol.b, 0.12))
 			draw_rect(dr, dcol, false, 3.0)
-			draw_rect(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), Color(dcol.r, dcol.g, dcol.b, 0.25))
+			_obox(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), Color(dcol.r, dcol.g, dcol.b, 0.25))
 			draw_rect(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), dcol, false, 3.0)
 			_txt(String(dd["name"]), Vector2(dr.position.x + 110, dr.position.y + 62), 36, dcol, 480.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(String(dd["desc"]), Vector2(dr.position.x + 110, dr.position.y + 106), 23, Color.WHITE, 480.0)
@@ -4913,7 +4917,7 @@ func _draw_overlay(acc: Color) -> void:
 			var uid: String = it["id"]
 			var can := coins >= int(it["price"]) and inv.size() < slots_n()
 			var mcol := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
-			draw_rect(mr, Color(mcol.r, mcol.g, mcol.b, 0.1))
+			_obox(mr, Color(mcol.r, mcol.g, mcol.b, 0.1))
 			draw_rect(mr, mcol, false, 2.0)
 			_use_icon(uid, Vector2(mr.position.x + 56, mr.position.y + 67), 70)
 			_txt(_use_name(uid), Vector2(mr.position.x + 110, mr.position.y + 50), 30, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -4932,7 +4936,7 @@ func _draw_overlay(acc: Color) -> void:
 		var copen := class_open(cid)
 		var cc := Color(ccol.r, ccol.g, ccol.b) if copen else Color(1, 1, 1, 0.45)
 		var card := Rect2(100, 262, 520, 690)
-		draw_rect(card, Color(cc.r, cc.g, cc.b, 0.12))
+		_obox(card, Color(cc.r, cc.g, cc.b, 0.12))
 		draw_rect(card, cc, false, 3.0)
 		_ctext(String(cd["name"]).to_upper(), Vector2(360, 318), 44, cc)
 		# idle animation: gentle breathing squash and sway
@@ -4995,7 +4999,7 @@ func _draw_overlay(acc: Color) -> void:
 			var maxed := lv >= costs.size()
 			var can2 := (not maxed) and bank >= int(costs[lv])
 			var col2 := Color("6dff9a") if can2 else Color(1, 1, 1, 0.45)
-			draw_rect(rr2, Color(col2.r, col2.g, col2.b, 0.1))
+			_obox(rr2, Color(col2.r, col2.g, col2.b, 0.1))
 			draw_rect(rr2, col2, false, 2.0)
 			var nm2 := _aname(String(d2["id"]), String(d2["name"]))
 			if costs.size() > 1:
@@ -6964,7 +6968,7 @@ func _draw_skills(acc: Color) -> void:
 			var pc := c + Vector2(-6.0 + 12.0 * k, rad + 11.0)
 			draw_circle(pc, 3.5, col if rk > k else Color(1, 1, 1, 0.2))
 	# detail panel
-	draw_rect(Rect2(30, 956, 660, 178), Color(1, 1, 1, 0.05))
+	_obox(Rect2(30, 956, 660, 178), Color(1, 1, 1, 0.05))
 	if sk_sel == "":
 		_txt("Tap a node to inspect it. Paths grow outward from the centre; the diamonds at the ends are the strongest.", Vector2(46, 1000), 20, Color(1, 1, 1, 0.6), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 	else:
@@ -7272,7 +7276,7 @@ func _draw_trade(acc: Color) -> void:
 		var sold := bool(o["sold"])
 		var can := coins >= _eff_price(o) and not sold
 		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
-		draw_rect(rr, Color(col.r, col.g, col.b, 0.1))
+		_obox(rr, Color(col.r, col.g, col.b, 0.1))
 		draw_rect(rr, col, false, 2.0)
 		if String(o["kind"]) == "gear":
 			var gd: Dictionary = gear_defs[gb(String(o["id"]))]
@@ -8709,7 +8713,7 @@ func _draw_med_menu(acc: Color) -> void:
 		var rr := _trade_rect(i)
 		var can := coins >= cost
 		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
-		draw_rect(rr, Color(col.r, col.g, col.b, 0.1))
+		_obox(rr, Color(col.r, col.g, col.b, 0.1))
 		draw_rect(rr, col, false, 2.0)
 		_spr(spr_gen.icon("medstation"), Vector2(rr.position.x + 56, rr.position.y + 67), 72.0)
 		_txt("+%d HP" % amt, Vector2(rr.position.x + 110, rr.position.y + 52), 34, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -9491,7 +9495,7 @@ func _adv_draw() -> void:
 			var sz: float = s[3]
 			draw_rect(Rect2(float(s[0]), float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
 	# minimap
-	var mm := Rect2(574, 848.0 + adv_ex, 134, 134)
+	var mm := Rect2(8, 326, 134, 134)
 	draw_rect(mm, Color(0, 0, 0, 0.7))
 	draw_rect(mm, Color(acc.r, acc.g, acc.b, 0.6), false, 2.0)
 	if adv_mini != null:
@@ -9507,7 +9511,7 @@ func _adv_draw() -> void:
 			draw_rect(Rect2(mm.position.x + 3 + mdc.x * msc - 1, mm.position.y + 3 + mdc.y * msc - 1, 4, 4), Color("6dff9a"))
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
 	# HUD
-	_button(btn_inv, "BAG", acc)
+	_button(btn_inv, "MENU", acc)
 	_button(btn_skill, "SKILLS", Color("ffd84f") if skill_pts > 0 else acc, 19)
 	if skill_pts > 0:
 		draw_circle(btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 13.0, Color("ff5d5d"))
@@ -9517,7 +9521,6 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(40, 245, 240.0 * xpf, 11), Color("ffd84f"))
 	_txt("XP %d/%d" % [xp, xp_need()], Vector2(288, 256), 14, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_hud_panels(acc, 124.0)
-	_txt(th["name"], Vector2(0, 62), 28, acc)
 	_wbox_draw()
 	_sk_banner()
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -9534,12 +9537,12 @@ func _adv_draw() -> void:
 	_txt("HP %d / %d" % [hp, hp_cap()], Vector2(380, 240), 18, Color.WHITE, 300.0)
 	if _weapon_range() > 0:
 		var md := _row2_h()
-		btn_mode = Rect2(700.0 - md, 1158.0 + adv_ex, md, md)
+		btn_mode = Rect2(704.0 - md, 1062.0 + adv_ex, md, md)
 		var mcol := Color("ffc24f") if ranged_mode else Color("ff8a4f")
 		draw_circle(btn_mode.get_center(), md * 0.5, Color(0.03, 0.04, 0.08, 0.94))
 		draw_circle(btn_mode.get_center(), md * 0.5, Color(mcol.r, mcol.g, mcol.b, 0.2))
 		draw_arc(btn_mode.get_center(), md * 0.5 - 1.0, 0.0, TAU, 36, mcol, 3.0)
-		_ctext("RANGED" if ranged_mode else "MELEE", btn_mode.get_center() + Vector2(0, -8), 16, mcol)
+		_ctext("RANGED" if ranged_mode else "MELEE", btn_mode.get_center() + Vector2(0, -8), 20, mcol)
 		_ctext("tap: swap", btn_mode.get_center() + Vector2(0, 14), 12, Color(1, 1, 1, 0.55))
 	draw_rect(Rect2(380, 252, 300, 16), Color(1, 1, 1, 0.12))
 	if sh > 0:
@@ -9580,6 +9583,9 @@ func _adv_draw() -> void:
 		else:
 			_txt("TAP HERE TO CANCEL", Vector2(cnr.end.x - 170, cnr.position.y + 36), 14, Color("ff8a8a"), 160.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	else:
+		if msg != "":
+			draw_rect(Rect2(8, 1006.0 + adv_ex, 704, 38), Color(0.03, 0.04, 0.08, 0.9))
+			draw_rect(Rect2(8, 1006.0 + adv_ex, 704, 38), Color(acc.r, acc.g, acc.b, 0.5), false, 2.0)
 		_txt(msg, Vector2(0, 1034.0 + adv_ex), 24, Color.WHITE, 720.0)
 	_draw_world_banner()
 	if state == PLAY and hp > 0:
@@ -9608,24 +9614,25 @@ func _adv_badges() -> void:
 		items.append(["hidden", str(cloak_steps), Color("9aa3c7")])
 	if poison_n > 0:
 		items.append(["poison", str(poison_n), Color("9dff6a")])
-	var h := _row2_h()
-	var bx := 16.0
+	var h := 152.0 - btn_inv.end.y - 4.0
+	var bw := 76.0
+	var bx := 696.0 - bw
 	for it in items:
-		if bx + 62.0 > 420.0:
+		if bx < 366.0:
 			break
-		var br := Rect2(bx, 1158.0 + adv_ex, 62, h)
+		var br := Rect2(bx, btn_inv.end.y + 2.0, bw, h)
 		var bcol: Color = it[2]
 		_panel(br, bcol, 0.1, false)
 		var kind := String(it[0])
-		var ic := Vector2(br.position.x + 31, br.position.y + h * 0.36)
+		var ic := Vector2(br.position.x + 22, br.get_center().y)
 		if kind == "key":
-			_draw_key(ic, 30)
+			_draw_key(ic, 24)
 		elif kind == "armor" or kind == "ammocrate" or kind == "bounty":
-			_spr(_item_tex(kind), ic, 34)
+			_spr(_item_tex(kind), ic, 28)
 		else:
-			_ctext({"boost": "ATK", "hidden": "HID", "poison": "PSN"}[kind], ic, 16, bcol)
-		_ctext(String(it[1]), Vector2(br.position.x + 31, br.end.y - 16), 22, bcol)
-		bx += 66.0
+			_ctext({"boost": "ATK", "hidden": "HID", "poison": "PSN"}[kind], ic, 13, bcol)
+		_txt(String(it[1]), Vector2(br.position.x + 38, br.get_center().y + 7), 20, bcol, 36.0, HORIZONTAL_ALIGNMENT_LEFT)
+		bx -= bw + 4.0
 
 const INV_TABS := [3, 0, 1, 2]   # display order -> inv_tab id: CHARACTER, STATS, TOOLS, RELICS
 const CHR_SLOTS := ["helmet", "armour", "boots", "weapon", "ranged", "trinket"]
@@ -9721,7 +9728,7 @@ func _draw_char_tab(acc: Color) -> void:
 	var prev := String(bag[chr_sel]) if chr_sel >= 0 else ""
 	var psl := String(gear_defs[gb(prev)]["slot"]) if prev != "" else ""
 	var mr := _chr_model_rect()
-	draw_rect(mr, Color(1, 1, 1, 0.04))
+	_obox(mr, Color(1, 1, 1, 0.04))
 	draw_rect(mr, Color(1, 1, 1, 0.18), false, 2.0)
 	_spr(_chr_tex(prev), mr.get_center() + Vector2(0, -4), 272.0)
 	_ctext("PREVIEW: tap EQUIP to wear it" if prev != "" else "tap the model to turn it", Vector2(mr.get_center().x, mr.end.y - 14), 15, Color("ffd84f") if prev != "" else Color(1, 1, 1, 0.4))
@@ -9742,7 +9749,7 @@ func _draw_char_tab(acc: Color) -> void:
 		var r := _chr_slot_rect(i)
 		var col := _gear_col(slot)
 		var hl := psl == slot
-		draw_rect(r, Color(col.r, col.g, col.b, 0.22 if hl else 0.08))
+		_obox(r, Color(col.r, col.g, col.b, 0.22 if hl else 0.08))
 		draw_rect(r, Color(col.r, col.g, col.b, 0.95 if hl else 0.55), false, 2.0)
 		_ctext(slot.to_upper(), r.position + Vector2(70, 14), 14, col)
 		var gid := String(equip.get(slot, ""))
@@ -9764,7 +9771,7 @@ func _draw_char_tab(acc: Color) -> void:
 		var gc := _gear_col(String(gd2["slot"]))
 		var rr := _chr_row_rect(idx)
 		var sel := idx == chr_sel
-		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.22 if sel else 0.08))
+		_obox(rr, Color(gc.r, gc.g, gc.b, 0.22 if sel else 0.08))
 		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.95 if sel else 0.55), false, 3.0 if sel else 2.0)
 		_spr(_gear_tex(bid), rr.position + Vector2(50, 51), 64.0)
 		_txt(String(gd2["name"]), rr.position + Vector2(98, 32), 24, _tier_col(int(gd2["tier"])), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -9924,7 +9931,7 @@ func _draw_inv(acc: Color) -> void:
 		var tr := _inv_tab_rect(i)
 		var cur := int(INV_TABS[i]) == mini(inv_tab, 3)
 		var tc := Color("ffd84f") if cur else Color(1, 1, 1, 0.5)
-		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if cur else 0.06))
+		_obox(tr, Color(tc.r, tc.g, tc.b, 0.16 if cur else 0.06))
 		draw_rect(tr, tc, false, 2.0)
 		_ctext(tabs[i], tr.get_center(), 20, tc)
 	if inv_tab == 0:
@@ -9954,7 +9961,7 @@ func _draw_inv(acc: Color) -> void:
 					_txt(String(r[0]).substr(1), Vector2(50, yy + 34), 24, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 					draw_line(Vector2(40, yy + 42), Vector2(680, yy + 42), Color(1, 0.85, 0.3, 0.35), 2.0)
 				else:
-					draw_rect(Rect2(40, yy, 640, 72 if inv_more else 58), Color(1, 1, 1, 0.05))
+					_obox(Rect2(40, yy, 640, 72 if inv_more else 58), Color(1, 1, 1, 0.05))
 					if inv_more:
 						_txt(String(r[0]), Vector2(60, yy + 30), 22, Color(1, 1, 1, 0.65), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 						_txt(String(r[1]), Vector2(360, yy + 32), 28, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_RIGHT)
@@ -9980,7 +9987,7 @@ func _draw_inv(acc: Color) -> void:
 			var id: String = inv[i]
 			var y := 286.0 + i * 104.0
 			var col: Color = use_defs[id]["col"]
-			draw_rect(Rect2(40, y, 640, 94), Color(col.r, col.g, col.b, 0.1))
+			_obox(Rect2(40, y, 640, 94), Color(col.r, col.g, col.b, 0.1))
 			draw_rect(Rect2(40, y, 640, 94), col, false, 2.0)
 			_use_icon(id, Vector2(86, y + 47), 52)
 			_txt(_use_name(id), Vector2(130, y + 38), 28, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -9999,7 +10006,7 @@ func _draw_inv(acc: Color) -> void:
 			var y := 262.0 + k * 130.0
 			var cursed := d.has("curse")
 			var col := Color("ff6a5c") if cursed else acc
-			draw_rect(Rect2(40, y, 640, 120), Color(col.r, col.g, col.b, 0.1))
+			_obox(Rect2(40, y, 640, 120), Color(col.r, col.g, col.b, 0.1))
 			draw_rect(Rect2(40, y, 640, 120), col, false, 2.0)
 			var n := relic_n(String(d["id"]))
 			_txt(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else "") + ("   CURSED" if cursed else ""), Vector2(58, y + 40), 30, col, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
