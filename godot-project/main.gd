@@ -105,6 +105,11 @@ var thief_held: Dictionary = {}  # Vector2i -> coins the thief is holding
 var relics: Dictionary = {}      # id -> count (this run only)
 var relic_defs: Array = []
 var synergies: Array = []
+var adv_fresh := false        # true only at the start of a run: next _adv_begin fully heals
+var root_n := 0               # rooted: move presses left before you can move again
+var fab_steps := 0            # Ammo Fabricator counter
+var tool_uses := 0            # Spare Parts counter
+var anchor_used := false      # Phase Anchor used this floor
 var use_defs: Dictionary = {}
 var class_defs: Array = []
 var door_defs: Dictionary = {}
@@ -149,9 +154,9 @@ const PACKS := {
 	"p_blood": {"t": ["siphon", "bloodlust", "execute", "adrenaline", "barrier"], "r": ["bloodpact", "hood"]},
 	"p_combo": {"t": ["rampage", "rhythm", "marked", "deadly", "harvest"], "r": ["overclock"]},
 	"p_relic": {"t": [], "r": ["deadeye", "plating", "hazmat", "gravedigger", "thornmail", "scrapper"]},
-	"p_fort": {"t": [], "r": ["midas", "scavenger", "luckychip"]},
+	"p_fort": {"t": [], "r": ["midas", "scavenger", "luckychip", "amidas"]},
 	"p_surv": {"t": [], "r": ["aegis", "boots", "lantern", "slowdark"]},
-	"p_curse": {"t": [], "r": ["glass", "greedy", "blade", "heavyammo", "ember", "prism"]},
+	"p_curse": {"t": [], "r": ["glass", "greedy", "blade", "heavyammo", "ember", "prism", "agreedy"]},
 }
 var shop_page := 0
 var shop_tab := 0   # 0 characters, 1 relics, 2 permanent upgrades
@@ -315,7 +320,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 64
+const BUILD := 65
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -608,15 +613,30 @@ func _make_defs() -> void:
 		{"id": "heavyammo", "name": "Heavy Ammo", "desc": "Ranged shots deal 1.5x damage but use double ammo", "max": 1, "curse": true, "adv": true},
 		{"id": "pyro", "name": "Pyromaniac", "desc": "+4 max health. Fire traits: burns last 2 steps longer and hurt double, Volatile blasts +20%", "max": 1, "adv": true, "tag": "fire"},
 		{"id": "storm", "name": "Storm Capacitor", "desc": "+4 max health. Stuns +1 step, Arc Chain hits 3, Decoys last 4 longer and stun neighbours", "max": 1, "adv": true, "tag": "shock"},
-		{"id": "frost", "name": "Frost Core", "desc": "+4 max health. Shatter deals +100% instead of +50%. Frozen Ground: Frost Charge stuns 2 steps longer", "max": 1, "adv": true, "tag": "cryo"},
+		{"id": "frost", "name": "Frost Core", "desc": "+4 max health. Frozen enemies take +100% damage instead of +50%. Frost Charge stuns 2 steps longer", "max": 1, "adv": true, "tag": "cryo"},
 		{"id": "toxi", "name": "Toxicologist", "desc": "+4 max health. Poison stacks up to 7 instead of 4", "max": 1, "adv": true, "tag": "toxic"},
 		{"id": "bloodpact", "name": "Blood Pact", "desc": "+4 max health. Siphon heals double", "max": 1, "adv": true, "tag": "blood"},
 		{"id": "hood", "name": "Executioner's Hood", "desc": "+4 max health. Executioner works below 35% health", "max": 1, "adv": true, "tag": "execute"},
-		{"id": "luckychip", "name": "Lucky Chip", "desc": "+10% crit chance, and crits restore 1 air", "max": 1, "adv": true, "tag": "crit"},
-		{"id": "prism", "name": "Prism Lens", "desc": "+1 attack for each different trait type on your weapon (max +4)", "max": 1, "adv": true, "tag": "variety"},
+		{"id": "luckychip", "name": "Lucky Chip", "desc": "+5% crit chance, and crits restore 1 air", "max": 1, "adv": true, "tag": "crit"},
+		{"id": "prism", "name": "Prism Lens", "desc": "+1 attack for each different trait type on your weapon (max +4), but attacking costs double air", "max": 1, "curse": true, "adv": true, "tag": "variety"},
 		{"id": "overclock", "name": "Overclock", "desc": "Rampage can stack 3 higher", "max": 1, "adv": true, "tag": "streak"},
 		{"id": "thornmail", "name": "Thornmail", "desc": "Reflect 2 damage whenever you are hit", "max": 1, "adv": true},
 		{"id": "scrapper", "name": "Scrapper", "desc": "35% chance of an extra coin on every kill", "max": 1, "adv": true},
+		{"id": "amidas", "name": "Midas Touch", "desc": "Every coin you pick up is worth +1", "max": 1, "adv": true},
+		{"id": "agreedy", "name": "Greedy Pact", "desc": "Every enemy you kill drops +2 coins, but every enemy is +1 level", "max": 1, "curse": true, "adv": true},
+		{"id": "medic", "name": "Medic Drone", "desc": "When you leave a floor, 50% of your remaining shield turns into healing", "max": 1, "adv": true},
+		{"id": "bedge", "name": "Bleeding Edge", "desc": "Bleed damage counts as a hit for Siphon and lifesteal", "max": 1, "adv": true, "tag": "blood"},
+		{"id": "ccore", "name": "Catalyst Core", "desc": "Elemental Reactions have no cooldown on the same enemy", "max": 1, "adv": true},
+		{"id": "spare", "name": "Spare Parts", "desc": "Every 3rd tool you use is refunded", "max": 1, "adv": true},
+		{"id": "smagnet", "name": "Salvage Magnet", "desc": "Elites and bosses always drop 2 extra scrap", "max": 1, "adv": true},
+		{"id": "uplink", "name": "Drone Uplink", "desc": "Your drone's zaps apply your melee weapon's elemental traits", "max": 1, "adv": true},
+		{"id": "anchor", "name": "Phase Anchor", "desc": "Warping to your beacon gives you a random tool (once per floor)", "max": 1, "adv": true},
+		{"id": "ammofab", "name": "Ammo Fabricator", "desc": "Every 8 steps without shooting restores 1 ammo", "max": 1, "adv": true},
+		{"id": "scrubber", "name": "Oxygen Scrubber", "desc": "Kills while under half air restore +3 air", "max": 1, "adv": true},
+		{"id": "gcoin", "name": "Gambler's Coin", "desc": "Each floor rolls a random buff for that floor: +10% crit, +10% dodge, or +1 coin value", "max": 1, "adv": true},
+		{"id": "bbattery", "name": "Blood Battery", "desc": "+50% damage, but every attack costs 1% of your max health", "max": 1, "curse": true, "adv": true},
+		{"id": "uwarp", "name": "Unstable Warp", "desc": "Beacon warps don't use up the beacon, but every warp roots you: press move 5 times to break free", "max": 1, "curse": true, "adv": true},
+		{"id": "ocell", "name": "Overcharged Cell", "desc": "Your class power recharges twice as fast, but your max shield is cut to 25%", "max": 1, "curse": true, "adv": true},
 		{"id": "ember", "name": "Ember Lantern", "desc": "Lanterns hold the dark back 12 steps, but spikes cost 2 more", "max": 1, "curse": true},
 	]
 	synergies = [
@@ -624,9 +644,17 @@ func _make_defs() -> void:
 		{"a": "slowdark", "b": "lantern", "text": "Lanterns hold the dark back 12 steps"},
 		{"a": "skeleton", "b": "boots", "text": "Gates need 1 less level again"},
 		{"a": "phoenix", "b": "aegis", "text": "Phoenix revive also gives +1 level"},
-		{"a": "pyro", "b": "storm", "text": "Stunning a burning enemy deals bonus damage"},
-		{"a": "storm", "b": "toxi", "text": "Arcs also poison the enemies they hit"},
-		{"a": "bloodpact", "b": "hood", "text": "Executions heal 10% of your max health"},
+		{"a": "pyro", "b": "frost", "adv": true, "text": "Steam: enemies both burning and frozen take +50% damage"},
+		{"a": "storm", "b": "frost", "adv": true, "text": "Arc Chain also chills its targets for 1 step"},
+		{"a": "pyro", "b": "toxi", "adv": true, "text": "Burning enemies take double poison damage"},
+		{"a": "bloodpact", "b": "thornmail", "adv": true, "text": "Reflected thorn damage heals you 1"},
+		{"a": "hood", "b": "deadeye", "adv": true, "text": "Shots at max range execute below +10% more health"},
+		{"a": "luckychip", "b": "prism", "adv": true, "text": "Crits refund the extra air Prism Lens costs"},
+		{"a": "amidas", "b": "scrapper", "adv": true, "text": "Scrapper's extra coin chance rises to 50%"},
+		{"a": "uplink", "b": "storm", "adv": true, "text": "Drone zaps arc to another enemy within 2 tiles for 50%"},
+		{"a": "bedge", "b": "bloodpact", "adv": true, "text": "Bleeding Edge heals double"},
+		{"a": "spare", "b": "anchor", "adv": true, "text": "Refunded tools also give 3 shield"},
+		{"a": "plating", "b": "thornmail", "adv": true, "text": "Enemy shots you take reflect 2 damage at the shooter"},
 	]
 	use_defs = {
 		"bomb": {"name": "Bomb", "desc": "Destroys adjacent walls, spikes and weak monsters", "col": Color("ff7a45")},
@@ -738,7 +766,12 @@ func relic_n(id: String) -> int:
 
 
 func syn(a: String, b: String) -> bool:
-	return relic_n(a) > 0 and relic_n(b) > 0
+	if relic_n(a) <= 0 or relic_n(b) <= 0:
+		return false
+	for sy in synergies:
+		if (sy["a"] == a and sy["b"] == b) or (sy["a"] == b and sy["b"] == a):
+			return bool(sy.get("adv", false)) == (mode == "adv")
+	return false
 
 
 func cdef() -> Dictionary:
@@ -787,10 +820,17 @@ func kill_gain(c: Vector2i) -> int:
 	return (2 + relic_n("slayer") if elite.has(c) else 1) + relic_n("blade")
 
 
+func gcoin_buff() -> int:
+	if mode != "adv" or relic_n("gcoin") <= 0:
+		return -1
+	return absi(adv_seed + floor_n * 7) % 3
+
+
 func coin_val() -> int:
-	var v := 1 + int(gear("coin")) + int(sk("coin"))
+	var v := 1 + int(gear("coin")) + int(sk("coin")) + (1 if gcoin_buff() == 2 else 0)
 	if relic_n("midas") > 0:
 		v *= 2
+	v += relic_n("amidas")
 	if relic_n("greedy") > 0:
 		v *= 3
 	if fmod == "danger":
@@ -1670,7 +1710,7 @@ func _roll_relics(extra: int) -> Array:
 	var normal: Array = []
 	var cursed: Array = []
 	for d in relic_defs:
-		if d.has("adv") and mode != "adv":
+		if d.has("adv") != (mode == "adv"):
 			continue
 		if not relic_open(String(d["id"])):
 			continue
@@ -1981,7 +2021,7 @@ func _act_use() -> void:
 		"mystic":
 			ok = _act_mystic()
 	if ok:
-		act_cd = int(ceil(float(ACTS[cls]["cd"]) * (0.8 if gm("cdgem") else 1.0) * (1.0 - sk("pcell") / 100.0)))
+		act_cd = int(ceil(float(ACTS[cls]["cd"]) * (0.8 if gm("cdgem") else 1.0) * (1.0 - sk("pcell") / 100.0) * (0.5 if relic_n("ocell") > 0 else 1.0)))
 
 
 func _act_scout() -> bool:
@@ -2552,7 +2592,7 @@ func _new_run(start_floor := 1) -> void:
 	if cls == "gambler":
 		var pool: Array = []
 		for rd in relic_defs:
-			if (not rd.has("adv") or mode == "adv") and relic_open(String(rd["id"])):
+			if rd.has("adv") == (mode == "adv") and relic_open(String(rd["id"])):
 				pool.append(rd)
 		pool.shuffle()
 		for i in 2:
@@ -2562,7 +2602,7 @@ func _new_run(start_floor := 1) -> void:
 		relics["phoenix"] = 1
 	var safe_pool: Array = []
 	for d2 in relic_defs:
-		if d2.has("adv") and mode != "adv":
+		if d2.has("adv") != (mode == "adv"):
 			continue
 		if not relic_open(String(d2["id"])):
 			continue
@@ -4910,7 +4950,15 @@ func _draw_overlay(acc: Color) -> void:
 			if cursed:
 				_txt("CURSED", Vector2(rr.end.x - 150, rr.position.y + 40), 22, Color("ff6a5c"), 130.0, HORIZONTAL_ALIGNMENT_RIGHT)
 			_para(_atext(String(d["id"]), String(d["desc"])), Vector2(rr.position.x + 22, rr.position.y + 74), 21, Color.WHITE, rr.size.x - 44)
-			for sy in synergies:
+			var sy_list: Array = []
+			for sy0 in synergies:
+				if bool(sy0.get("adv", false)) == (mode == "adv") and (sy0["a"] == d["id"] or sy0["b"] == d["id"]):
+					var oth0 := String(sy0["b"]) if sy0["a"] == d["id"] else String(sy0["a"])
+					if relic_n(oth0) > 0:
+						sy_list.push_front(sy0)
+					else:
+						sy_list.append(sy0)
+			for sy in sy_list:
 				var other := ""
 				if sy["a"] == d["id"]:
 					other = String(sy["b"])
@@ -5243,6 +5291,7 @@ func _tut_map_start() -> void:
 	ranged_mode = false
 	coins = 0
 	_adv_snapshot()
+	adv_fresh = true
 	_adv_begin()
 	_tut_hint()
 	_sfx("big")
@@ -6130,7 +6179,8 @@ func hp_cap() -> int:
 
 
 func sh_cap() -> int:
-	return sh_max + int(gear("shield")) + int(sk("shield")) + 3 * int(pk.get("shield", 0))
+	var c := sh_max + int(gear("shield")) + int(sk("shield")) + 3 * int(pk.get("shield", 0))
+	return c / 4 if relic_n("ocell") > 0 else c
 
 
 func armor_total() -> int:
@@ -6319,6 +6369,8 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	var th := thorns_dmg()
 	if th > 0 and mons.has(src):
 		_adv_damage_mon(src, th)
+		if syn("bloodpact", "thornmail") and hp > 0:
+			_p_heal(1)
 	if hp <= 0 and gm("secondwind") and not sw_used:
 		sw_used = true
 		hp = 1
@@ -6406,7 +6458,7 @@ const TRAIT_DEFS := {
 	"arc": {"n": "Arc Chain", "d": "Hits arc to another enemy within 2 tiles for 50% damage", "t": ["shock"]},
 	"frostbite": {"n": "Frostbite", "d": "The first hit on each enemy freezes it for a step", "t": ["cryo"]},
 	"shatter": {"n": "Shatter", "d": "+50% damage to stunned or frozen enemies", "t": ["cryo", "shock"]},
-	"toxin": {"n": "Toxin", "d": "Hits poison: 1 damage a step per stack, up to 4 stacks", "t": ["toxic"]},
+	"toxin": {"n": "Toxin", "d": "Hits poison: 1 damage a step per stack, up to 4 stacks. Poison hurts more the deeper you go (x2 on floor 8, x3 on floor 16)", "t": ["toxic"]},
 	"plague": {"n": "Plague", "d": "Poisoned enemies spread poison to neighbours when they die", "t": ["toxic", "kill"]},
 	"siphon": {"n": "Siphon", "d": "Heal 20% of the damage you deal (at least 1)", "t": ["blood"]},
 	"bloodlust": {"n": "Bloodlust", "d": "Kills heal 10% of your max health", "t": ["blood", "kill"]},
@@ -6427,7 +6479,9 @@ const TRAIT_DEFS := {
 	"barrier": {"n": "Barrier", "d": "Kills grant +3 shield", "t": ["kill", "defense"]},
 	"thorned": {"n": "Spiked", "d": "Reflect 2 damage (more on deeper floors) when hit", "t": ["defense"]},
 	"duelist": {"n": "Duelist", "d": "+10% dodge chance", "t": ["defense"]},
-	"tireless": {"n": "Efficient Rounds", "d": "Shots cost 1 less air", "t": ["ranged"]},
+	"echoslam": {"n": "Echo Slam", "d": "Every 4th hit strikes twice", "t": ["streak"], "min": 4},
+	"rooting": {"n": "Rooting", "d": "50% chance on hit to root the enemy: it can't move on its next turn", "t": ["control"]},
+	"tireless": {"n": "Efficient Rounds", "d": "15% chance a shot uses no ammo", "t": ["ranged"]},
 }
 
 # Gear mods for helmet / armour / boots / trinket (stored in the same "@" list as weapon traits).
@@ -6456,6 +6510,8 @@ const MOD_DEFS := {
 	"ironwill": {"n": "Iron Will", "d": "Immune to stun", "slot": "helmet", "s": {}},
 	"vampmesh": {"n": "Vampiric Mesh", "d": "Kills heal 2 health", "slot": "armour", "s": {}},
 	"insulated": {"n": "Insulated", "d": "Immune to burn", "slot": "armour", "s": {}},
+	"vinestep": {"n": "Vinestep", "d": "Enemies that hit you are rooted for their next turn", "slot": "boots", "s": {}},
+	"anchored": {"n": "Anchored", "d": "Immune to root", "slot": "armour", "s": {}},
 	"explorer": {"n": "Explorer", "d": "The exit shows on the minimap when you arrive", "slot": "boots", "s": {}},
 	"secondwind": {"n": "Second Wind", "d": "Once per floor, survive a lethal hit at 1 health", "slot": "trinket", "s": {}},
 }
@@ -6529,6 +6585,8 @@ func _rally() -> float:
 
 
 func _on_warp(from: Vector2i) -> void:
+	if relic_n("uwarp") > 0:
+		_root(5)
 	if sk("apx_jump") > 0.0:
 		for jc in _near_mons(pos, int(sk("apx_jump")), []):
 			if mons.has(jc) and _st_ok(jc) and not _mk(jc):
@@ -6558,6 +6616,15 @@ func _on_warp(from: Vector2i) -> void:
 			_adv_damage_mon(rc, rd, Color("a68cff"))
 
 
+func _root(n: int) -> void:
+	if gm("anchored"):
+		_pop(pos, "ANCHORED", Color("6fcf5a"))
+		return
+	root_n = maxi(root_n, n)
+	walk.clear()
+	_pop(pos, "ROOTED", Color("c07cff"))
+
+
 func _recall() -> bool:
 	if mode != "adv" or sk("recall") <= 0.0 or warp_rc:
 		return false
@@ -6583,6 +6650,12 @@ func _tool_spend(i: int) -> void:
 		_arc_foundry()
 	if sk("overclk") > 0.0:
 		sh = mini(sh_cap(), sh + int(sk("overclk")))
+	tool_uses += 1
+	if relic_n("spare") > 0 and tool_uses % 3 == 0:
+		_pop(pos, "REFUNDED", Color("4fd1c5"))
+		if syn("spare", "anchor"):
+			sh = mini(sh_cap(), sh + 3)
+		return
 	if randf() * 100.0 < sk("tinker") + (15.0 if set_on("crew", 3) else 0.0):
 		_pop(pos, "TOOL SAVED", Color("4fd1c5"))
 		return
@@ -6600,13 +6673,38 @@ func _drone_fire() -> void:
 			dts.append(dt0)
 	for dt in dts:
 		_fx_bolt(Vector2(pos) + Vector2(0, -0.4), Vector2(dt), Color("4fd1c5"))
-		_adv_damage_mon(dt, maxi(1, int(float(p_atk()) * sk("drone") / 100.0 * _rally())), Color("4fd1c5"))
+		var ddmg := maxi(1, int(float(p_atk()) * sk("drone") / 100.0 * _rally()))
+		_adv_damage_mon(dt, ddmg, Color("4fd1c5"))
+		if relic_n("uplink") > 0:
+			_uplink_apply(dt)
+			if syn("uplink", "storm"):
+				for ao in _near_mons(dt, 2, [dt]):
+					if mons.has(ao) and ao != dt:
+						_fx_bolt(Vector2(dt), Vector2(ao), Color("9fe8ff"))
+						_adv_damage_mon(ao, maxi(1, ddmg / 2), Color("9fe8ff"))
+						_uplink_apply(ao)
+						break
 		if sk("apx_merc") > 0.0 and not mons.has(dt):
 			coins += int(sk("apx_merc"))
 			_pop(dt, "+%d" % int(sk("apx_merc")), Color("ffd84f"))
 			if randf() < 0.10 and _adv_give_gear(_adv_roll_gear(null, 0)):
 				_pop(pos, "GEAR!", Color("ffd84f"))
 		break
+
+
+func _uplink_apply(c: Vector2i) -> void:
+	if not mons.has(c):
+		return
+	var wt := gtr(String(equip.get("weapon", "")))
+	if wt.has("ignite"):
+		_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 6)
+	if wt.has("toxin"):
+		_st_poison(c, 1)
+	if wt.has("static") and randf() < 0.25 + sk("conduct") / 100.0:
+		_st_stun(c, 1 + relic_n("storm"))
+	if wt.has("frostbite") and _st_ok(c) and mons.has(c) and not bool(_st_get(c).get("chill", false)):
+		mstat[c]["chill"] = true
+		_st_stun(c, 1)
 
 
 func _arc_foundry() -> void:
@@ -6685,7 +6783,7 @@ func _elems(c: Vector2i) -> Array:
 
 
 func _react(c: Vector2i, pre: Array, left: int) -> int:
-	if sk("react") <= 0.0 or left <= 0 or not mons.has(c) or int(_st_get(c).get("rcd", 0)) > 0:
+	if sk("react") <= 0.0 or left <= 0 or not mons.has(c) or (int(_st_get(c).get("rcd", 0)) > 0 and relic_n("ccore") <= 0):
 		return left
 	var post := _elems(c)
 	var pair := ""
@@ -6762,8 +6860,12 @@ var stun_hits := 0
 func _aff_on_hit(src: Vector2i, a: int) -> void:
 	if not mons.has(src):
 		return
+	if gm("vinestep"):
+		_st_root(src, 1)
 	var af := String(affix.get(src, ""))
 	match af:
+		"snare":
+			_root(2)
 		"burn":
 			if not gm("insulated"):
 				p_burn = 3
@@ -6861,6 +6963,7 @@ const AFFIX_DEFS := {
 	"acid": {"n": "Acidic", "d": "Hits halve your armour for 3 steps", "col": Color("b6ff3c"), "s": "acid"},
 	"frost": {"n": "Frost", "d": "Hits halve your damage for 3 steps", "col": Color("8fd8ff"), "s": "frost"},
 	"stun": {"n": "Stunning", "d": "Every 3rd hit stuns you, giving it a free hit", "col": Color("fff07a"), "s": "stun"},
+	"snare": {"n": "Snaring", "d": "Hits root you: 2 extra move presses to break free", "col": Color("6fcf5a"), "s": "snare"},
 	"void": {"n": "Void", "d": "Hits drain 5 air", "col": Color("a77bff"), "s": "void"},
 	"brute": {"n": "Brute", "d": "Double health", "col": Color("d98a5b"), "s": "brute"},
 	"fast": {"n": "Fast", "d": "Hits twice per turn", "col": Color("7affd8"), "s": "fast"},
@@ -6953,11 +7056,13 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 			continue
 		if not trait_open(String(tid)):
 			continue
+		if int(TRAIT_DEFS[tid].get("min", 0)) > tier:
+			continue
 		pool.append(String(tid))
 	var picked: Array[String] = []
 	while picked.size() < n and pool.size() > 0:
 		var i := (rng.randi() if rng != null else randi()) % pool.size()
-		if randf() * 100.0 < sk("attune"):
+		if randf() * 100.0 < sk("attune") or (ranged and picked.is_empty() and randf() < 0.5):
 			var ei: Array = []
 			for j in pool.size():
 				for tg2 in TRAIT_DEFS[pool[j]]["t"]:
@@ -6972,11 +7077,11 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 
 
 func crit_chance() -> float:
-	return gear("crit") + sk("crit") + ((sk("rcrit") + _set_stat("rcrit")) if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
+	return gear("crit") + sk("crit") + ((sk("rcrit") + _set_stat("rcrit")) if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 5.0 * relic_n("luckychip") + (10.0 if gcoin_buff() == 0 else 0.0)
 
 
 func dodge_chance() -> float:
-	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0)
+	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0) + (10.0 if gcoin_buff() == 1 else 0.0)
 
 
 func thorns_dmg() -> int:
@@ -7001,14 +7106,24 @@ func _boss_cell(c: Vector2i) -> bool:
 	return boss_floor and c == boss_cell
 
 
+func _st_root(c: Vector2i, steps: int) -> void:
+	if not mons.has(c) or not _st_ok(c) or tur.has(c):
+		return
+	_st_get(c)["root"] = maxi(int(_st_get(c).get("root", 0)), steps)
+	_pop(c, "ROOT", Color("6fcf5a"))
+	_fx_ring(Vector2(c), Color("6fcf5a"), 0.8, 0.3, 3.0)
+
+
+func _rooted(c: Vector2i) -> bool:
+	return mstat.has(c) and int(mstat[c].get("root", 0)) > 0
+
+
 func _st_stun(c: Vector2i, steps: int) -> void:
 	if not mons.has(c) or not _st_ok(c) or _boss_cell(c) or tur.has(c):
 		return
 	_st_get(c)["stun"] = maxi(int(_st_get(c).get("stun", 0)), steps)
 	_pop(c, "STUN", Color("ffe14f"))
 	_fx_ring(Vector2(c), Color("ffe14f"), 0.8, 0.3, 3.0)
-	if syn("pyro", "storm") and mstat[c].has("burn"):
-		_adv_damage_mon(c, 2 + level / 3, Color("ff7a45"))
 
 
 func _st_burn(c: Vector2i, steps: int, dmg: int) -> void:
@@ -7069,10 +7184,14 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		mul += sk("opener") / 100.0
 	if sk("pain") > 0.0:
 		mul += sk("pain") * float(int((hp_cap() - hp) * 10 / maxi(1, hp_cap()))) / 100.0
+	if syn("pyro", "frost") and _stunned(c) and mstat[c].has("chill") and mstat[c].has("burn"):
+		mul += 0.5
 	if sk("dfreeze") > 0.0 and _stunned(c) and mstat[c].has("chill"):
 		mul += sk("dfreeze") / 100.0
 	if set_on("cosmic", 2):
 		mul += 0.15
+	if relic_n("bbattery") > 0:
+		mul += 0.5
 	if sk("mark") > 0.0 and _st_ok(c):
 		if _mk(c):
 			mul += sk("mark") / 100.0
@@ -7094,12 +7213,14 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) -> int:
 	# returns the target's remaining health after trait effects (<= 0 means dead)
 	var tl := wtr()
+	if relic_n("bbattery") > 0 and tr_depth == 0:
+		hp = maxi(1, hp - maxi(1, hp_cap() / 100))
 	tr_streak += 1
 	tr_hits += 1
 	tr_mark = (tr_mark + 1) if tr_last == c else 1
 	tr_last = c
 	if relic_n("luckychip") > 0 and crit:
-		oxy = minf(oxy_max, oxy + 1.0)
+		oxy = minf(oxy_max, oxy + 1.0 + (1.0 if syn("luckychip", "prism") else 0.0))
 	if crit and set_on("crystal", 3):
 		for so in _near_mons(c, 1, []):
 			_adv_damage_mon(so, maxi(1, dealt / 2), Color("9fe8ff"))
@@ -7118,11 +7239,11 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 	if left > 0:
 		if tl.has("execute") and not _boss_cell(c):
 			var thr := 0.2 + 0.15 * relic_n("hood")
+			if ranged and syn("hood", "deadeye") and maxi(absi(c.x - pos.x), absi(c.y - pos.y)) >= _shoot_range():
+				thr += 0.1
 			if float(left) <= float(mon_hp_max(c)) * thr:
 				left = 0
 				_pop(c, "EXECUTED", Color("ff4a4a"))
-				if syn("bloodpact", "hood"):
-					_tr_heal(maxi(1, hp_cap() / 10))
 		if left > 0 and tl.has("ignite"):
 			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 6)
 		if left > 0 and tl.has("static") and randf() < 0.25 + sk("conduct") / 100.0:
@@ -7132,14 +7253,17 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 			_st_stun(c, 1)
 		if left > 0 and tl.has("toxin"):
 			_st_poison(c, 1)
+		if left > 0 and tl.has("rooting") and randf() < 0.5:
+			_st_root(c, 1)
 	if tl.has("arc"):
 		var tg := _near_mons(c, 2, [])
 		var cnt := 1 + (2 if relic_n("storm") > 0 else 0)
 		for i in mini(cnt, tg.size()):
 			var o: Vector2i = tg[i]
 			_fx_bolt(Vector2(c), Vector2(o), Color("9fe8ff"))
-			if syn("storm", "toxi") and _st_ok(o):
-				_st_poison(o, 1)
+			if syn("storm", "frost") and _st_ok(o) and mons.has(o):
+				_st_get(o)["chill"] = true
+				_st_stun(o, 1)
 			_adv_damage_mon(o, maxi(1, dealt / 2), Color("9fe8ff"))
 	if tl.has("cleave") and not ranged:
 		for o in _near_mons(c, 1, []):
@@ -7153,6 +7277,16 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 			if mons.has(b):
 				_adv_damage_mon(b, maxi(1, int(dealt * 0.6)))
 				break
+	if left > 0 and tl.has("echoslam") and tr_hits % 4 == 0 and mons.has(c):
+		left -= maxi(1, dealt)
+		_pop(c, "ECHO -%d" % maxi(1, dealt), Color("c9a2ff"))
+		_fx_ring(Vector2(c), Color("c9a2ff"), 0.8, 0.3, 3.0)
+		if left > 0 and tl.has("ignite"):
+			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 6)
+		if left > 0 and tl.has("static") and randf() < 0.25 + sk("conduct") / 100.0:
+			_st_stun(c, 1 + relic_n("storm"))
+		if left > 0 and tl.has("toxin"):
+			_st_poison(c, 1)
 	left = _react(c, el_pre, left)
 	if left <= 0 and tl.has("overkill"):
 		var ex := -left
@@ -7199,10 +7333,13 @@ func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 		var cn := (1 + floor_n / 5) * echo * coin_val()
 		coins += cn
 		_pop(c, "+%d coins" % cn, Color("ffc93c"))
+	if relic_n("agreedy") > 0:
+		coins += 2 * relic_n("agreedy")
+		_pop(c, "+%d coins" % (2 * relic_n("agreedy")), Color("ffc93c"))
 	if sk("kcoin") > 0.0:
 		coins += int(sk("kcoin"))
 		_pop(c, "+%d coin" % int(sk("kcoin")), Color("ffc93c"))
-	if relic_n("scrapper") > 0 and randf() < 0.35:
+	if relic_n("scrapper") > 0 and randf() < (0.5 if syn("amidas", "scrapper") else 0.35):
 		coins += coin_val()
 		_pop(c, "+%d coin" % coin_val(), Color("ffc93c"))
 
@@ -7227,7 +7364,7 @@ func _tr_tick() -> void:
 				st.erase("burn")
 		if st.has("psn"):
 			var p: Array = st["psn"]
-			_adv_damage_mon(c, int(p[0]), Color("8aff6a"))
+			_adv_damage_mon(c, int(p[0]) * (1 + floor_n / 8) * (2 if syn("pyro", "toxi") and st.has("burn") else 1), Color("8aff6a"))
 			if not mons.has(c):
 				mstat.erase(c)
 				continue
@@ -7237,13 +7374,21 @@ func _tr_tick() -> void:
 		if st.has("bleed"):
 			var bl: Array = st["bleed"]
 			_adv_damage_mon(c, int(bl[1]), Color("ff4d6d"))
+			if relic_n("bedge") > 0:
+				var bh := int(gear("leech") + sk("leech"))
+				if has_tr("siphon"):
+					bh += maxi(1, int(int(bl[1]) * 0.2))
+				if syn("bedge", "bloodpact"):
+					bh *= 2
+				if bh > 0:
+					_tr_heal(bh)
 			if not mons.has(c):
 				mstat.erase(c)
 				continue
 			bl[0] = int(bl[0]) - 1
 			if int(bl[0]) <= 0:
 				st.erase("bleed")
-		for tk in ["corr", "rcd"]:
+		for tk in ["corr", "rcd", "root"]:
 			if st.has(tk):
 				st[tk] = int(st[tk]) - 1
 				if int(st[tk]) <= 0:
@@ -7314,9 +7459,9 @@ const SK_BR := [
 	["VITALITY", Color("ff6a5c"), [
 		["Sturdy Frame", "+%s max health", "hp", [5, 10]],
 		["Plating", "+%s armour", "armor", [1, 2]],
-		["Field Generator", "+%s starting shield", "shield", [4, 8]],
-		["Trauma Kit", "Medkits heal %s%% more", "medk", [25, 50]],
 		["Spiked Plating", "Enemies that hit you take %s damage", "thorns", [1, 3]],
+		["Trauma Kit", "Medkits heal %s%% more", "medk", [25, 50]],
+		["Field Generator", "+%s starting shield", "shield", [4, 8]],
 		["Last Stand", "Below 30%% health you take %s%% less damage", "laststand", [30, 50]]]],
 	["OFFENSE", Color("ffb347"), [
 		["Edge", "+%s melee attack", "atk", [1, 2]],
@@ -7358,12 +7503,12 @@ const SK_BR := [
 # Outer hybrid branches: branch g sits in the gap between inner branches g and g+1.
 const SK_BR2 := [
 	["BLOODWORK", Color("ff4d6d"), [
-		["Blood Price", "Kills heal %s health", "kheal", [1, 2]],
+		["Blood Price", "Kills heal %s%% of max health", "kheal", [5, 10]],
 		["Hemorrhage", "Crits make enemies bleed 1+ damage a step for %s steps", "bleed", [3, 5]],
 		["Transfusion", "Healing past max health becomes shield (up to %s per heal)", "transf", [4, 8]],
 		["Pain Engine", "+%s%% damage for every 10%% of health you are missing", "pain", [3, 5]],
 		["Blood Pact", "Siphon and Bloodlust traits heal %s%% more", "bpact", [50, 100]],
-		["Crimson Engine", "Medkits don't work, but all healing is doubled and kills heal %s%% of max health", "crimson", [5, 8]]]],
+		["Crimson Engine", "Medkits don't work, but all healing is doubled and kills heal %s%% of max health", "crimson", [10, 20]]]],
 	["ELEMENTAL", Color("ff5fd2"), [
 		["Kindling", "Your burns last +%s step(s)", "kindle", [1, 2]],
 		["Conductor", "+%s%% stun chance from Static", "conduct", [10, 20]],
@@ -7373,7 +7518,7 @@ const SK_BR2 := [
 		["Elemental Reactions", "Mixing elements on an enemy triggers reactions: fire+cryo Steam, shock+toxic Corrode, fire+toxic Detonate, shock+cryo Shatter (power x%s)", "react", [1, 1.5]]]],
 	["ENGINEERING", Color("4fd1c5"), [
 		["Tinkerer", "%s%% chance a tool isn't used up", "tinker", [15, 30]],
-		["Overclocked", "Using a tool gives +%s shield", "overclk", [2, 4]],
+		["Overclocked", "Using a tool gives +%s shield", "overclk", [4, 8]],
 		["Power Cell", "Your class power recharges %s%% faster", "pcell", [15, 30]],
 		["Supply Line", "The first visit to each merchant gives %s free tool(s)", "supply", [1, 2]],
 		["Field Repair", "O2 stations give +%s shield (3 times per floor)", "frepair", [5, 10]],
@@ -7395,9 +7540,9 @@ const SK_BR2 := [
 	["WARP", Color("a68cff"), [
 		["Warp Beacon", "Each floor tops you up to %s Warp Beacon(s): use one to drop a beacon, use it again to warp back", "beacon", [1, 2]],
 		["Slipstream", "After any warp (Blink, Grapple, Rewind, Beacon) your next %s steps cost no air", "wslip", [3, 6]],
-		["Phase Shield", "Warping gives +%s shield", "wshield", [3, 6]],
+		["Phase Shield", "Warping gives +%s shield", "wshield", [8, 16]],
 		["Rift", "Warping leaves a rift that hits enemies next to where you left for %s%% of your attack", "rift", [100, 200]],
-		["Warp Lungs", "Warping restores %s air", "wair", [4, 8]],
+		["Warp Lungs", "Warping restores %s air", "wair", [25, 50]],
 		["Emergency Recall", "Once per floor, a killing blow warps you to your beacon (or the floor start) with %s%% health instead", "recall", [25, 40]]]],
 ]
 
@@ -7906,7 +8051,7 @@ func _make_gear() -> void:
 		{"id": "mirrorvest", "slot": "armour", "name": "Mirror Vest", "tier": 3, "price": 60, "stats": {"armor": 2, "rangedef": 2}},
 		{"id": "crystaltreads", "slot": "boots", "name": "Crystal Treads", "tier": 3, "price": 58, "stats": {"airsave": 24, "dodge": 5}},
 		{"id": "hazboots", "slot": "boots", "name": "Hazard Boots", "tier": 2, "price": 34, "stats": {"hazres": 50, "armor": 1}},
-		{"id": "ammorecycler", "slot": "trinket", "name": "Ammo Recycler", "tier": 3, "price": 58, "stats": {"shotsave": 1}},
+		{"id": "ammorecycler", "slot": "trinket", "name": "Ammo Recycler", "tier": 3, "price": 58, "stats": {"noammo": 15}},
 		{"id": "scopemod", "slot": "trinket", "name": "Scope Module", "tier": 3, "price": 56, "stats": {"rangeb": 1, "crit": 8}},
 		{"id": "critoptics", "slot": "trinket", "name": "Crit Optics", "tier": 2, "price": 34, "stats": {"crit": 15, "sight": 1}},
 		{"id": "overlord", "slot": "trinket", "name": "Overlord Chip", "tier": 4, "price": 96, "stats": {"atk": 3, "xp": 40}},
@@ -7950,15 +8095,12 @@ func _gear_desc(d: Dictionary) -> String:
 		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
 		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
 		"xp": "+%d%% XP", "coin": "+%d per coin", "dodge": "%d%% dodge", "thorns": "%d thorns damage", "killheal": "heal %d on kill",
-		"pod": "+%d air per pod", "range": "shoots %d tiles in a line, %s air per shot", "rangeb": "+%d range for ranged weapons", "shotsave": "shots cost %d less air", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
+		"pod": "+%d air per pod", "range": "shoots %d tiles in a line", "rangeb": "+%d range for ranged weapons", "noammo": "%d%% chance not to consume ammo", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
 	}
 	var parts: Array[String] = []
 	var st: Dictionary = d["stats"]
 	for k in st:
-		if k == "range":
-			parts.append(String(labels[k]) % [int(st[k]), str(int(_tier_shot_air(int(d["tier"]))))])
-		else:
-			parts.append(String(labels[k]) % int(st[k]))
+		parts.append(String(labels[k]) % int(st[k]))
 	return ", ".join(parts)
 
 
@@ -8153,7 +8295,7 @@ func _adv_snapshot() -> void:
 		"mons": mons.duplicate(), "elite": elite.duplicate(), "items": items.duplicate(), "spikes": spikes.duplicate(), "haz": haz.duplicate(), "tur": tur.duplicate(),
 		"coin_at": coin_at.duplicate(), "kinds": kinds.duplicate(), "thief_held": thief_held.duplicate(),
 		"vaults": vaults.duplicate(), "inv": inv.duplicate(), "coins": coins,
-		"level": level, "xp": xp, "hp_max": hp_max, "armor": armor, "sh": sh,
+		"level": level, "xp": xp, "hp_max": hp_max, "hp": hp, "armor": armor, "sh": sh,
 		"equip": equip.duplicate(), "bag": bag.duplicate(), "merchants": merchants.duplicate(true), "affix": affix.duplicate(), "skills": skills.duplicate(), "skill_pts": skill_pts, "ammo": ammo, "pk": pk.duplicate(), "run_kills": run_kills,
 	}
 
@@ -8202,10 +8344,14 @@ func _adv_reset() -> void:
 	ammo = int(saved.get("ammo", ammo))
 	run_kills = int(saved.get("run_kills", run_kills))
 	pk = saved.get("pk", {}).duplicate()
+	hp = int(saved.get("hp", 0))
 	_adv_begin()
 
 
 func _adv_init_run() -> void:
+	adv_fresh = true
+	tool_uses = 0
+	fab_steps = 0
 	scrap = 0
 	arena = false
 	arena_d = {}
@@ -8265,12 +8411,17 @@ func _adv_scaled(raw: int) -> int:
 		r += floor_n - 1
 	else:
 		r += (floor_n - 1) / 2
-	r += relic_n("greedy")
+	r += relic_n("greedy") + relic_n("agreedy")
 	return maxi(1, r)
 
 
 func _adv_begin() -> void:
-	hp = hp_cap()
+	if adv_fresh or hp <= 0:
+		hp = hp_cap()
+	adv_fresh = false
+	hp = mini(hp, hp_cap())
+	root_n = 0
+	anchor_used = false
 	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")) + int(sk("shield")))
 	sk_wind = false
 	shield = false
@@ -8335,6 +8486,10 @@ func _adv_begin() -> void:
 
 
 func _adv_next() -> void:
+	if relic_n("medic") > 0 and sh > 0 and hp < hp_cap():
+		var mh := maxi(1, sh / 2)
+		hp = mini(hp_cap(), hp + mh)
+		_pop(pos, "+%d HP" % mh, Color("6dff9a"))
 	if not arena and floor_n % 3 == 0:
 		arena = true
 	else:
@@ -8342,6 +8497,8 @@ func _adv_next() -> void:
 		floor_n += 1
 		sw_used = false
 	_adv_new_floor()
+	if gcoin_buff() >= 0:
+		msg = "Gambler's Coin: " + ["+10% crit", "+10% dodge", "+1 coin value"][gcoin_buff()] + " this floor"
 	for qi in int(sk("quarter")):
 		_give_use(_random_use())
 	if set_on("crew", 3):
@@ -8467,6 +8624,12 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		_p_heal(2)
 	if sk("airkill") > 0.0 and oxy < oxy_max:
 		oxy = minf(oxy_max, oxy + sk("airkill"))
+	if relic_n("scrubber") > 0 and oxy < oxy_max * 0.5:
+		oxy = minf(oxy_max, oxy + 3.0)
+		_pop(pos, "+3 AIR", Color("7fd8ff"))
+	if relic_n("smagnet") > 0 and (was_elite or is_boss):
+		scrap += 2
+		_pop(nc, "+2 SCRAP", Color("c9a36b"))
 	var mult := 1.0 + 0.5 * relic_n("blade")
 	if _world_rule() == "glare":
 		mult += 0.25
@@ -8493,7 +8656,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		msg += "  +%d ammo" % ammo_got
 	_pop(nc, "+%d XP" % xg, Color("6dff9a"))
 	_adv_gain_xp(xg)
-	var kh := int(gear("killheal")) + int(sk("kheal")) + int(float(hp_cap()) * sk("crimson") / 100.0)
+	var kh := int(gear("killheal")) + (maxi(1, int(float(hp_cap()) * sk("kheal") / 100.0)) if sk("kheal") > 0.0 else 0) + int(float(hp_cap()) * sk("crimson") / 100.0)
 	if kh > 0:
 		_p_heal(kh)
 	if was_elite or is_boss or was_affix:
@@ -8614,6 +8777,13 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		if res == 2 or res == 1:
 			moved = false
 			walk.clear()
+	elif root_n > 0 and nc != pos:
+		root_n -= 1
+		moved = false
+		walk.clear()
+		snd = ""
+		_pop(pos, ("ROOTED %d" % root_n) if root_n > 0 else "FREE!", Color("c07cff"))
+		msg = ("Rooted! Keep pressing move to break free (%d left)" % root_n) if root_n > 0 else "You break free"
 	elif vaults.has(nc):
 		if keys > 0:
 			keys -= 1
@@ -8913,6 +9083,13 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if rw_hist.size() > 9:
 		rw_hist.pop_front()
 	_act_tick()
+	if relic_n("ammofab") > 0 and _weapon_range() > 0:
+		fab_steps += 1
+		if fab_steps >= 8:
+			fab_steps = 0
+			if ammo < ammo_max():
+				ammo += 1
+				_pop(pos, "+1 AMMO", Color("ffc24f"))
 	if act_free > 0:
 		act_free -= 1
 		oxy -= extra
@@ -8920,7 +9097,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		mom_steps -= 1
 		oxy -= extra
 	else:
-		oxy -= (1.0 - (gear("airsave") + sk("airsave")) / 100.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+		var base_air := 1.0 - (gear("airsave") + sk("airsave")) / 100.0
+		oxy -= base_air * (2.0 if relic_n("prism") > 0 and not moved else 1.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
 	if _world_rule() == "leak" and not _adv_in_room(pos):
 		oxy -= 0.25
 	if moved and corpses.has(pos) and relic_n("gravedigger") > 0 and not bool(corpses[pos].get("looted", false)):
@@ -9097,6 +9275,8 @@ func _adv_hunters() -> void:
 			continue
 		if adv_steps % 2 != 0 and String(kinds[c]) != "rager":
 			continue
+		if _rooted(c):
+			continue
 		var bn := c
 		for dv in dirs:
 			var n: Vector2i = c + dv
@@ -9144,10 +9324,6 @@ func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
 	return true
 
 
-func _tier_shot_air(tier: int) -> float:
-	return float(ceili(1.8 * (1.0 + 0.5 * float(tier - 1))))
-
-
 func _ranged_hv() -> int:
 	var b := _ranged_atk() + int(sk("rdmg"))
 	if relic_n("heavyammo") > 0:
@@ -9160,7 +9336,7 @@ func _shot_cost() -> float:
 	var tier := 1
 	if wid != "" and gear_defs.has(gb(wid)):
 		tier = int(gear_defs[gb(wid)]["tier"])
-	return 1.0
+	return 2.0 if relic_n("prism") > 0 else 1.0
 
 
 func _adv_draw_shoot_lanes() -> void:
@@ -9206,6 +9382,7 @@ func _adv_shoot(c: Vector2i) -> void:
 
 func _adv_shoot_do(c: Vector2i) -> void:
 	_cloak_break()
+	fab_steps = 0
 	walk.clear()
 	aim = -1
 	var lv := _mon_level(c)
@@ -9216,7 +9393,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		_sfx("blocked")
 		return
 	var is_boss := boss_floor and c == boss_cell
-	if randf() * 100.0 < sk("noammo"):
+	if randf() * 100.0 < sk("noammo") + gear("noammo") + (15.0 if has_tr("tireless") else 0.0):
 		_pop(pos, "FREE SHOT", Color("6dff9a"))
 	else:
 		ammo = maxi(0, ammo - (2 if relic_n("heavyammo") > 0 else 1))
@@ -9347,6 +9524,8 @@ func _adv_shooters() -> void:
 				msg = "%s shoots!" % _adv_mname(c)
 				if not _adv_hurt(_ranged_dmg(c), _adv_mname(c)):
 					return
+				if syn("plating", "thornmail") and mons.has(c):
+					_adv_damage_mon(c, 2, Color("c9d3f0"))
 			continue
 		if adv_steps % 2 != 1:
 			continue
@@ -9823,13 +10002,18 @@ func _adv_use_slot(i: int) -> void:
 		var bfrom := pos
 		var bdst := warp_bc
 		warp_bc = Vector2i(-1, -1)
-		_tool_spend(i)
+		if relic_n("uwarp") <= 0:
+			_tool_spend(i)
 		_sfx("warp")
 		_fx_burst(vis_pos, Color("a68cff"), 16, 3.0, 0.5, 5.0)
 		_adv_step(bdst, true)
 		if state == PLAY:
 			msg = "Warped to your beacon"
 			_on_warp(bfrom)
+			if relic_n("anchor") > 0 and not anchor_used:
+				anchor_used = true
+				_give_use(_random_use())
+				_pop(pos, "+TOOL", Color("a68cff"))
 		return
 	elif id == "ammopack":
 		if ammo >= ammo_max():
@@ -10134,12 +10318,7 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 	if affix.has(c):
 		_aff_pill(ctr + Vector2(AC * 0.48, AC * 0.1), String(affix[c]), int(AC * 0.17), true)
 	if mstat.has(c):
-		var sx2 := -AC * 0.12
-		for sk in ["burn", "psn", "stun"]:
-			if mstat[c].has(sk):
-				var sc2 := Color("ff7a45") if sk == "burn" else (Color("8aff6a") if sk == "psn" else Color("ffe14f"))
-				draw_circle(ctr + Vector2(sx2, -AC * 0.42), AC * 0.07, sc2)
-				sx2 += AC * 0.16
+		_draw_status_icons(c, ctr)
 		if int(mstat[c].get("stun", 0)) > 0:
 			draw_arc(ctr, AC * 0.46, 0.0, TAU, 20, Color(1, 0.88, 0.3, 0.7), 2.0)
 	var bp := ctr + Vector2(AC * 0.3, -AC * 0.3)
@@ -10191,6 +10370,64 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
 		if thief_held.has(c):
 			_ctext("holds %d" % int(thief_held[c]), ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a"))
+
+
+func _draw_status_icons(c: Vector2i, ctr: Vector2) -> void:
+	var st: Dictionary = mstat[c]
+	var ic: Array = []
+	if st.has("burn"):
+		ic.append(["burn", Color("ff7a45"), int((st["burn"] as Array)[0])])
+	if st.has("psn"):
+		ic.append(["psn", Color("8aff6a"), int((st["psn"] as Array)[0])])
+	var sn := int(st.get("stun", 0))
+	if sn > 0:
+		ic.append(["chill" if st.has("chill") else "stun", Color("8fe8ff") if st.has("chill") else Color("ffe14f"), sn])
+	if st.has("bleed"):
+		ic.append(["bleed", Color("ff4d6d"), int((st["bleed"] as Array)[0])])
+	if st.has("corr"):
+		ic.append(["corr", Color("c07cff"), int(st["corr"])])
+	if int(st.get("root", 0)) > 0:
+		ic.append(["root", Color("6fcf5a"), int(st["root"])])
+	if st.has("mk"):
+		ic.append(["mk", Color("8fa8ff"), 0])
+	if ic.is_empty():
+		return
+	var r := AC * 0.075
+	var gap := AC * 0.2
+	var x0 := ctr.x - gap * float(ic.size() - 1) * 0.5
+	var y := ctr.y - AC * 0.43
+	for i in ic.size():
+		var p := Vector2(x0 + gap * float(i), y)
+		var col: Color = ic[i][1]
+		draw_circle(p, r * 1.45, Color(0.04, 0.05, 0.09, 0.88))
+		draw_arc(p, r * 1.45, 0.0, TAU, 16, col, 1.5)
+		match String(ic[i][0]):
+			"burn":
+				draw_colored_polygon(PackedVector2Array([p + Vector2(0, -r), p + Vector2(r * 0.8, r * 0.3), p + Vector2(0, r), p + Vector2(-r * 0.8, r * 0.3)]), col)
+			"psn", "bleed":
+				draw_colored_polygon(PackedVector2Array([p + Vector2(0, -r), p + Vector2(r * 0.6, r * 0.1), p + Vector2(-r * 0.6, r * 0.1)]), col)
+				draw_circle(p + Vector2(0, r * 0.35), r * 0.6, col)
+			"stun":
+				draw_polyline(PackedVector2Array([p + Vector2(r * 0.3, -r), p + Vector2(-r * 0.3, r * 0.1), p + Vector2(r * 0.3, -r * 0.1), p + Vector2(-r * 0.3, r)]), col, 2.0)
+			"chill":
+				for k in 3:
+					var a := PI * float(k) / 3.0
+					var d := Vector2(cos(a), sin(a)) * r
+					draw_line(p - d, p + d, col, 1.6)
+			"root":
+				draw_line(p + Vector2(0, -r), p + Vector2(0, r * 0.4), col, 1.8)
+				draw_line(p + Vector2(0, r * 0.4), p + Vector2(-r * 0.7, r), col, 1.6)
+				draw_line(p + Vector2(0, r * 0.4), p + Vector2(r * 0.7, r), col, 1.6)
+			"corr":
+				draw_arc(p, r * 0.7, 0.0, TAU, 12, col, 2.0)
+				draw_circle(p, r * 0.25, col)
+			"mk":
+				draw_arc(p, r * 0.7, 0.0, TAU, 12, col, 1.6)
+				draw_line(p + Vector2(-r, 0), p + Vector2(r, 0), col, 1.4)
+				draw_line(p + Vector2(0, -r), p + Vector2(0, r), col, 1.4)
+		var nn := int(ic[i][2])
+		if nn > 1:
+			_ctext(str(nn), p + Vector2(r * 1.6, r * 1.4), maxi(8, int(AC * 0.13)), col)
 
 
 func _draw_corpse(ctr: Vector2, c: Vector2i) -> void:
@@ -10993,7 +11230,6 @@ func _inv_extra_rows() -> Array:
 	var rng_t := _shoot_range()
 	var hz := int(round((1.0 - _haz_mult()) * 100.0))
 	var sdef := int(gear("rangedef") + sk("rdef")) + 2 * relic_n("plating")
-	var sc := gear("shotsave") + sk("shotsave")
 	return [
 		["#OFFENSE"],
 		["CRIT CHANCE", "%d%%" % int(round(crit_chance())), "Chance for a hit to crit."],
@@ -11021,7 +11257,7 @@ func _inv_extra_rows() -> Array:
 		["MIRROR", "%d" % mirror_n, "Hits left that Mirror Shard reflects."],
 		["#AIR"],
 		["AIR SAVING", "%d%%" % int(gear("airsave") + sk("airsave")), "Less air used per step."],
-		["SHOT AIR SAVING", "%.1f" % sc, "Air saved on every ranged shot."],
+		["FREE SHOT", "%d%%" % int(gear("noammo") + sk("noammo")), "Chance a ranged shot uses no ammo."],
 		["POD AIR", "%d" % int(adv_pod_amt()), "Air restored by each air pod."],
 		["BREATHS", ("%d left" % can_n) if sk("breathe") > 0 else "none", "Deep breaths left this floor (heal for half your air)."],
 		["AIR PER KILL", "%d" % int(sk("airkill")), "Air restored by every kill."],
