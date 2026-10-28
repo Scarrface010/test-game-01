@@ -136,6 +136,10 @@ var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
 var run_kills := 0
+var run_best := 0
+var run_dmg := 0
+var run_steps := 0
+var run_gear := 0
 var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gambler": 0, "kit": 0, "toolbox": 0, "head": 0, "ash": 0, "p_elem": 0, "p_blood": 0, "p_combo": 0, "p_relic": 0, "p_fort": 0, "p_surv": 0, "p_curse": 0, "sp": 0, "suit": 0, "tank": 0, "belt": 0, "vet": 0}
 # Shop v2 (unlocks only). The old stat-boost shop is refunded once, using these old prices.
 const OLD_SHOP_COSTS := {"vet": [15, 35, 60], "iron": [20, 40, 70], "packed": [45], "lucky": [50], "pockets": [40, 90], "treasure": [25, 55, 100], "oil": [25, 50, 85], "toolbox": [30, 70], "gate": [60, 120], "steel": [35], "haggle": [30], "head": [75, 150], "ash": [120], "interest": [40, 80, 130], "kit": [40, 90]}
@@ -255,6 +259,8 @@ var btn_sv_fimp := Rect2(110, 790, 500, 84)
 var btn_sv_back := Rect2(110, 1100, 500, 80)
 var name_edit: LineEdit = null
 var inv_scroll := 0.0
+var inv_filter := 0
+var inv_sort := 0
 var inv_scroll_max := 0.0
 var chr_off := 0.0    # extra height of the modifiers strip in the gear tab
 var tut_back := MODE
@@ -309,7 +315,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 62
+const BUILD := 63
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -323,7 +329,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -1628,7 +1634,8 @@ func _die(why: String) -> void:
 	over_title = "YOU DIED"
 	var dl: PackedStringArray = PackedStringArray([why, "Floor %d   Level %d" % [floor_n, level]])
 	if mode == "adv":
-		dl.append("Kills %d" % run_kills)
+		dl.append("Kills %d   Best hit %d   Damage %d" % [run_kills, run_best, run_dmg])
+		dl.append("Steps %d   Gear found %d" % [run_steps, run_gear])
 	dl.append("Floors cleared %d   Best %d%s" % [reached, adv_best if mode == "adv" else best, "   NEW BEST!" if was_best else ""])
 	dl.append("Banked +%d coins (total %d)" % [delta, bank])
 	over_sub = "\n".join(dl)
@@ -2523,6 +2530,10 @@ func _new_run(start_floor := 1) -> void:
 	floor_n = start_floor
 	coins = 0
 	run_kills = 0
+	run_best = 0
+	run_dmg = 0
+	run_steps = 0
+	run_gear = 0
 	guide_seen.clear()
 	run_banked = 0
 	mirror_n = 0
@@ -4864,8 +4875,8 @@ func _draw_overlay(acc: Color) -> void:
 			_txt(xfer_msg, Vector2(0, 252), 24, Color("6dff9a"))
 		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 118), 23, Color.WHITE, 276.0)
 	elif state == DEAD:
-		_txt(over_title, Vector2(0, 430), 64, Color("ff5d5d"))
-		var ly := 510
+		_txt(over_title, Vector2(0, 400), 64, Color("ff5d5d"))
+		var ly := 476
 		var li := 0
 		for line in over_sub.split("\n"):
 			var lc := Color.WHITE
@@ -4873,8 +4884,8 @@ func _draw_overlay(acc: Color) -> void:
 				lc = Color("ffb0a0")
 			elif line.contains("NEW BEST"):
 				lc = Color("ffd84f")
-			_txt(line, Vector2(0, ly), 28, lc)
-			ly += 46
+			_txt(line, Vector2(0, ly), 26, lc)
+			ly += 42
 			li += 1
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
 		_button(btn_shop, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
@@ -6366,7 +6377,7 @@ const MOD_DEFS := {
 	"swift": {"n": "Swift", "d": "+8% dodge chance", "slot": "boots", "s": {"dodge": 8}},
 	"sprinter": {"n": "Sprinter", "d": "Kills make your next 2 steps cost no air", "slot": "boots", "s": {}},
 	"trail": {"n": "Trailblazer", "d": "Each step has a 4% chance to find a coin", "slot": "boots", "s": {}},
-	"charger": {"n": "Charger", "d": "+50% damage on your first hit after 2+ steps", "slot": "boots", "s": {}},
+	"charger": {"n": "Charger", "d": "+15% damage on your first hit after 2+ steps", "slot": "boots", "s": {}},
 	"lucky": {"n": "Lucky Charm", "d": "+1 coin per coin picked up", "slot": "trinket", "s": {"coin": 1}},
 	"airtank": {"n": "Air Tank", "d": "+10 max air", "slot": "trinket", "s": {"air": 10}},
 	"locket": {"n": "Vital Locket", "d": "+4 max health", "slot": "trinket", "s": {"hp": 4}},
@@ -6450,6 +6461,20 @@ func _rally() -> float:
 
 
 func _on_warp(from: Vector2i) -> void:
+	if sk("apx_jump") > 0.0:
+		for jc in _near_mons(pos, int(sk("apx_jump")), []):
+			if mons.has(jc) and _st_ok(jc) and not _mk(jc):
+				_st_get(jc)["mk"] = true
+				_pop(jc, "MARKED", Color("8fa8ff"))
+		if sk("drone") > 0.0:
+			_drone_fire()
+	if sk("apx_brift") > 0.0:
+		_tr_heal(maxi(1, int(hp_cap() * sk("apx_brift") / 100.0)))
+		if from.x >= 0 and from != pos:
+			for bc in _near_mons(from, 1, []):
+				if mons.has(bc) and _st_ok(bc):
+					_st_get(bc)["bleed"] = [maxi(3, int(sk("bleed"))), 1 + floor_n / 6]
+					_pop(bc, "BLEED", Color("ff4d6d"))
 	if sk("wslip") > 0.0:
 		mom_steps += int(sk("wslip"))
 	if sk("wshield") > 0.0:
@@ -6484,12 +6509,65 @@ func _recall() -> bool:
 
 
 func _tool_spend(i: int) -> void:
+	if sk("apx_asm") > 0.0:
+		scrap += int(sk("apx_asm"))
+	if sk("apx_arc") > 0.0:
+		_arc_foundry()
 	if sk("overclk") > 0.0:
 		sh = mini(sh_cap(), sh + int(sk("overclk")))
 	if randf() * 100.0 < sk("tinker"):
 		_pop(pos, "TOOL SAVED", Color("4fd1c5"))
 		return
 	inv.remove_at(i)
+
+
+func _drone_fire() -> void:
+	var dts: Array = []
+	for dt0 in _near_mons(pos, 3, []):
+		if tur.has(dt0) and int(tur[dt0].get("hk", 0)) > 0:
+			continue
+		if _mk(dt0):
+			dts.push_front(dt0)
+		else:
+			dts.append(dt0)
+	for dt in dts:
+		_fx_bolt(Vector2(pos) + Vector2(0, -0.4), Vector2(dt), Color("4fd1c5"))
+		_adv_damage_mon(dt, maxi(1, int(float(p_atk()) * sk("drone") / 100.0 * _rally())), Color("4fd1c5"))
+		if sk("apx_merc") > 0.0 and not mons.has(dt):
+			coins += int(sk("apx_merc"))
+			_pop(dt, "+%d" % int(sk("apx_merc")), Color("ffd84f"))
+			if randf() < 0.10 and _adv_give_gear(_adv_roll_gear(null, 0)):
+				_pop(pos, "GEAR!", Color("ffd84f"))
+		break
+
+
+func _arc_foundry() -> void:
+	for mc in _near_mons(pos, int(sk("apx_arc")), []):
+		if not mons.has(mc) or (tur.has(mc) and int(tur[mc].get("hk", 0)) > 0):
+			continue
+		var pre := _elems(mc)
+		match randi() % 4:
+			0:
+				_st_burn(mc, 3 + int(sk("kindle")), 2 + floor_n / 6)
+			1:
+				_st_poison(mc, 2)
+			2:
+				_st_stun(mc, 1)
+			_:
+				if _st_ok(mc):
+					_st_get(mc)["chill"] = true
+				_st_stun(mc, 1)
+		_fx_bolt(Vector2(pos), Vector2(mc), Color("ff5fd2"))
+		var hit := maxi(1, p_atk() / 3)
+		if not mons.has(mc):
+			continue
+		var left := _react(mc, pre, mon_hp_now(mc) - hit)
+		_adv_damage_mon(mc, mon_hp_now(mc) - left, Color("ff5fd2"))
+
+
+func _asm_build() -> void:
+	if sk("apx_asm") > 0.0 and _give_use(_random_use()):
+		_pop(pos, "TOOL BUILT", Color("4fd1c5"))
 
 
 func _sell_val(id: String) -> int:
@@ -6501,7 +6579,7 @@ func _forge_cost(id: String) -> int:
 
 
 func _chr_forge_rect(k: int) -> Rect2:
-	return Rect2(416, 666 + chr_off + k * 110 - inv_scroll + 8, 124, 42)
+	return Rect2(416, 666 + chr_off + _inv_y(k) + 8, 124, 42)
 
 
 func _reforge(k: int) -> void:
@@ -6518,6 +6596,7 @@ func _reforge(k: int) -> void:
 		bag[k] = base + _roll_traits(null, int(gd["tier"]), int((gd["stats"] as Dictionary).get("range", 0)) > 0)
 	else:
 		bag[k] = base + _roll_mods(null, int(gd["tier"]), sl)
+	_asm_build()
 	_sfx("big")
 
 
@@ -6532,6 +6611,8 @@ func _elems(c: Vector2i) -> Array:
 		out.append("toxic")
 	if int(st.get("stun", 0)) > 0:
 		out.append("cryo" if st.has("chill") else "shock")
+	if sk("apx_blood") > 0.0 and st.has("bleed"):
+		out.append("blood")
 	return out
 
 
@@ -6576,8 +6657,14 @@ func _react(c: Vector2i, pre: Array, left: int) -> int:
 			left -= int((base + 1) * m)
 			_pop(c, "SHATTER", Color("9fe8ff"))
 			_fx_ring(Vector2(c), Color("9fe8ff"), 1.2, 0.4, 5.0)
+		"blood+cryo", "blood+fire", "blood+shock", "blood+toxic":
+			left -= int((base + 2) * m)
+			_pop(c, "BOIL", Color("ff4d6d"))
+			_fx_burst(Vector2(c), Color("ff4d6d"), 14, 3.0, 0.5, 5.0)
 		_:
 			return left
+	if sk("apx_blood") > 0.0:
+		_tr_heal(maxi(1, int(hp_cap() * sk("apx_blood") / 100.0)))
 	st["rcd"] = 2
 	return left
 
@@ -7232,6 +7319,20 @@ const SK_BR2 := [
 		["Emergency Recall", "Once per floor, a killing blow warps you to your beacon (or the floor start) with %s%% health instead", "recall", [25, 40]]]],
 ]
 
+# Apex keystones: between outer branch g and g+1, need both keystones, 3 points, 1 rank.
+const SK_APX := [
+	["Boiling Blood", "Bleeds count as an element for reactions, and every reaction heals you %s%% of max health", "apx_blood", [10]],
+	["Arc Foundry", "Every tool you use hits each enemy within %s tiles with a random element", "apx_arc", [2]],
+	["Assembly Line", "Every sale or reforge builds a random tool, and every tool you use gives %s scrap", "apx_asm", [1]],
+	["Mercenaries", "Your drone fires every 6 steps, and drone kills drop %s coins with a 10%% gear chance", "apx_merc", [2]],
+	["Tactical Jump", "Warping marks every enemy within %s tiles and fires your drone", "apx_jump", [2]],
+	["Blood Rift", "Warping heals %s%% of max health and makes enemies next to where you left bleed", "apx_brift", [15]],
+]
+
+
+func _sk_max(id: String) -> int:
+	return 1 if bool(sk_defs[id].get("apex", false)) else 2
+
 
 func _make_skills() -> void:
 	sk_defs.clear()
@@ -7271,6 +7372,18 @@ func _make_skills() -> void:
 			_sk_link("o%dn%d" % [g, e[0]], "o%dn%d" % [g, e[1]])
 		_sk_link("o%dn0" % g, "b%dn4" % g)
 		_sk_link("o%dn0" % g, "b%dn3" % ((g + 1) % SK_N))
+	for g in SK_APX.size():
+		var g2 := (g + 1) % SK_BR2.size()
+		var tha := deg_to_rad(SK_A0 + 60.0 * g + 60.0)
+		var ax: Array = SK_APX[g]
+		var ida := "x%d" % g
+		var ka := "o%dn5" % g
+		var kb := "o%dn5" % g2
+		sk_defs[ida] = {"b": 20 + g, "n": 6, "name": ax[0], "d": ax[1], "stat": ax[2], "v": ax[3], "key": true, "apex": true, "req": [ka, kb], "ring": 5,
+			"pos": SK_C + Vector2(cos(tha), sin(tha)) * 610.0, "col": (SK_BR2[g][1] as Color).lerp(SK_BR2[g2][1], 0.5)}
+		sk_adj[ida] = []
+		_sk_link(ida, ka)
+		_sk_link(ida, kb)
 
 
 func _sk_label(txt: String, c: Vector2, col: Color) -> void:
@@ -7301,6 +7414,8 @@ func sk_rank(id: String) -> int:
 
 
 func sk_cost(id: String) -> int:
+	if bool(sk_defs[id].get("apex", false)):
+		return 3
 	return 2 if bool(sk_defs[id]["key"]) else 1
 
 
@@ -7314,10 +7429,14 @@ func skill_spent() -> int:
 
 func sk_unlocked(id: String) -> bool:
 	var d: Dictionary = sk_defs[id]
+	if bool(d.get("apex", false)):
+		return sk_rank(String(d["req"][0])) >= 1 and sk_rank(String(d["req"][1])) >= 1
 	if int(d["n"]) == 0 and not bool(d.get("outer", false)):
 		return true
 	for o in sk_adj[id]:
 		if bool(d["key"]):
+			if bool(sk_defs[o].get("apex", false)):
+				continue
 			if int(sk_defs[o]["ring"]) == 3 and sk_rank(String(o)) >= 2:
 				return true
 		elif sk_rank(String(o)) >= 1:
@@ -7326,7 +7445,7 @@ func sk_unlocked(id: String) -> bool:
 
 
 func sk_can_buy(id: String) -> bool:
-	return sk_rank(id) < 2 and sk_unlocked(id) and skill_pts >= sk_cost(id)
+	return sk_rank(id) < _sk_max(id) and sk_unlocked(id) and skill_pts >= sk_cost(id)
 
 
 func sk_buy(id: String) -> bool:
@@ -7553,8 +7672,11 @@ func _draw_skills(acc: Color) -> void:
 		var rk := sk_rank(String(id))
 		var can := sk_can_buy(String(id))
 		var unl := sk_unlocked(String(id))
-		var rad := 31.0 if bool(d["key"]) else 24.0
-		var fill := Color(col.r, col.g, col.b, 0.9 if rk >= 2 else (0.5 if rk == 1 else 0.07))
+		var apx := bool(d.get("apex", false))
+		var rad := 38.0 if apx else (31.0 if bool(d["key"]) else 24.0)
+		var fill := Color(col.r, col.g, col.b, 0.9 if rk >= _sk_max(String(id)) else (0.5 if rk == 1 else 0.07))
+		if apx:
+			draw_arc(c, rad + 4.0, 0.0, TAU, 32, Color(1, 1, 1, 0.25 + 0.15 * sin(t * 3.0)), 2.0)
 		if bool(d["key"]):
 			var dp := PackedVector2Array([c + Vector2(0, -rad), c + Vector2(rad, 0), c + Vector2(0, rad), c + Vector2(-rad, 0)])
 			draw_colored_polygon(dp, Color("0a0c14"))
@@ -7569,8 +7691,8 @@ func _draw_skills(acc: Color) -> void:
 			draw_arc(c, rad + 6.0 + 2.0 * sin(t * 5.0), 0.0, TAU, 28, Color(1, 1, 1, 0.55), 2.0)
 		if String(id) == sk_sel:
 			draw_arc(c, rad + 10.0, 0.0, TAU, 28, Color.WHITE, 3.0)
-		for k in 2:
-			var pc := c + Vector2(-6.0 + 12.0 * k, rad + 11.0)
+		for k in _sk_max(String(id)):
+			var pc := c + Vector2((-6.0 + 12.0 * k) if _sk_max(String(id)) == 2 else 0.0, rad + 11.0)
 			draw_circle(pc, 3.5, col if rk > k else Color(1, 1, 1, 0.2))
 	for b in SK_N:
 		var th := deg_to_rad(SK_A0 + 60.0 * b)
@@ -7596,21 +7718,23 @@ func _draw_skills(acc: Color) -> void:
 		var sd: Dictionary = sk_defs[sk_sel]
 		var sc: Color = sd["col"]
 		var srk := sk_rank(sk_sel)
-		_txt(String(sd["name"]) + ("   KEYSTONE" if bool(sd["key"]) else "") + "   %d/2" % srk, Vector2(46, 992), 26, sc, 450.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var smax := _sk_max(sk_sel)
+		var kw := "   APEX" if smax == 1 else ("   KEYSTONE" if bool(sd["key"]) else "")
+		_txt(String(sd["name"]) + kw + "   %d/%d" % [srk, smax], Vector2(46, 992), 26, sc, 450.0, HORIZONTAL_ALIGNMENT_LEFT)
 		var warn := ""
-		if srk >= 2:
+		if srk >= smax:
 			_txt("MAXED", Vector2(500, 994), 28, sc, 180.0, HORIZONTAL_ALIGNMENT_CENTER)
 		else:
 			_button(btn_sk_buy, ("UPGRADE  (%d pt)" % sk_cost(sk_sel)) if sk_can_buy(sk_sel) else "LOCKED", sc if sk_can_buy(sk_sel) else Color(1, 1, 1, 0.35), 19)
 			if not sk_unlocked(sk_sel):
-				warn = "Needs a connected node first" if not bool(sd["key"]) else "Needs an outer node at rank 2"
+				warn = "Needs both neighbouring keystones" if smax == 1 else ("Needs a connected node first" if not bool(sd["key"]) else "Needs an outer node at rank 2")
 			elif skill_pts < sk_cost(sk_sel):
 				warn = "Not enough skill points"
 		var ry := 1022.0
 		if warn != "":
 			_txt(warn, Vector2(46, 1016), 16, Color("ff9a8a"), 450.0, HORIZONTAL_ALIGNMENT_LEFT)
 			ry = 1044.0
-		for rk2 in [1, 2]:
+		for rk2 in range(1, smax + 1):
 			var rtxt := "Rank %d: %s" % [rk2, sk_text(sk_sel, rk2)]
 			_para(rtxt, Vector2(46, ry), 18, Color.WHITE if srk >= rk2 else Color(1, 1, 1, 0.7), 620.0)
 			ry += font.get_multiline_string_size(rtxt, HORIZONTAL_ALIGNMENT_LEFT, 620.0, 18).y + 4.0
@@ -7812,10 +7936,12 @@ func _adv_give_gear(id: String) -> bool:
 		var oo := oxy_max
 		equip[slot] = id
 		_adv_apply_change(oh, oo)
+		run_gear += 1
 		return true
 	if bag.size() >= BAG_MAX:
 		return false
 	bag.append(id)
+	run_gear += 1
 	return true
 
 
@@ -8017,7 +8143,7 @@ func _adv_init_run() -> void:
 	if cls == "gunslinger":
 		equip["ranged"] = "blaster"
 	ammo = ammo_max() if cls == "gunslinger" else 0
-	ranged_mode = false
+	ranged_mode = (cls == "gunslinger")
 	for i in up("kit"):
 		var kid := _adv_roll_gear(null, -1)
 		if not equip.has(String(gear_defs[gb(kid)]["slot"])):
@@ -8327,7 +8453,7 @@ func _adv_fight(nc: Vector2i) -> int:
 	if gm("huntereye") and mon_hp_now(nc) >= mon_hp_max(nc):
 		dmg += 2
 	if gm("charger") and chg_n >= 2:
-		dmg = int(round(float(dmg) * 1.5))
+		dmg = int(round(float(dmg) * 1.15))
 		_pop(nc, "CHARGE", Color("ffd27a"))
 	chg_n = 0
 	var crit := randf() * 100.0 < crit_chance()
@@ -8340,6 +8466,7 @@ func _adv_fight(nc: Vector2i) -> int:
 	else:
 		_pop(nc, ("CRIT -%d" % dmg) if crit else ("-%d" % dmg), Color("ffd84f") if crit else Color.WHITE)
 		_fx_hit(nc, crit)
+		_run_hit(dmg)
 	var left := mon_hp_now(nc) - dmg
 	if not missed:
 		var lk := int(gear("leech") + sk("leech"))
@@ -8677,21 +8804,11 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		pos = nc
 		chg_n += 1
 	adv_steps += 1
+	run_steps += 1
 	if not _p_status_tick():
 		return
-	if sk("drone") > 0.0 and adv_steps % 12 == 0:
-		var dts: Array = []
-		for dt0 in _near_mons(pos, 3, []):
-			if tur.has(dt0) and int(tur[dt0].get("hk", 0)) > 0:
-				continue
-			if _mk(dt0):
-				dts.push_front(dt0)
-			else:
-				dts.append(dt0)
-		for dt in dts:
-			_fx_bolt(Vector2(pos) + Vector2(0, -0.4), Vector2(dt), Color("4fd1c5"))
-			_adv_damage_mon(dt, maxi(1, int(float(p_atk()) * sk("drone") / 100.0 * _rally())), Color("4fd1c5"))
-			break
+	if sk("drone") > 0.0 and adv_steps % (6 if sk("apx_merc") > 0.0 else 12) == 0:
+		_drone_fire()
 	if gm("regenweave") and adv_steps % 5 == 0 and hp < hp_cap():
 		hp += 1
 	if moved and gm("trail") and pick_kind == "" and randf() < 0.04:
@@ -9032,6 +9149,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 	else:
 		_pop(c, ("CRIT -%d" % dmg) if crit else ("-%d" % dmg), Color("ffd84f") if crit else Color.WHITE)
 		_fx_hit(c, crit)
+		_run_hit(dmg)
 		var lk := int(gear("leech") + sk("leech"))
 		if lk > 0 and hp < hp_cap():
 			_p_heal(lk)
@@ -9060,6 +9178,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		if not _adv_hurt(mon_atk(c), nm, c):
 			return
 	adv_steps += 1
+	run_steps += 1
 	rw_hist.append([pos, hp, oxy])
 	if rw_hist.size() > 9:
 		rw_hist.pop_front()
@@ -10416,20 +10535,78 @@ func _chr_slot_rect(i: int) -> Rect2:
 
 
 const CHR_LIST_TOP := 662.0
+const INV_FILT := ["ALL", "weapon", "ranged", "helmet", "armour", "boots", "trinket"]
+var btn_inv_filt := Rect2(40, 1070, 200, 40)
+var btn_inv_sort := Rect2(480, 1070, 200, 40)
+
+
+func _inv_view() -> Array:
+	var out: Array = []
+	for i in bag.size():
+		if inv_filter == 0 or String(gear_defs[gb(String(bag[i]))]["slot"]) == String(INV_FILT[inv_filter]):
+			out.append(i)
+	return out
+
+
+func _inv_y(k: int) -> float:
+	var vp := _inv_view().find(k)
+	if vp < 0:
+		return -99999.0
+	return vp * 110.0 - inv_scroll
+
+
+func _inv_do_sort() -> void:
+	var by_tier := inv_sort == 1
+	bag.sort_custom(func(a, b):
+		var da: Dictionary = gear_defs[gb(String(a))]
+		var db: Dictionary = gear_defs[gb(String(b))]
+		var sa := CHR_SLOTS.find(String(da["slot"]))
+		var sb := CHR_SLOTS.find(String(db["slot"]))
+		var ta := int(da["tier"])
+		var tb := int(db["tier"])
+		if by_tier:
+			return ta > tb if ta != tb else sa < sb
+		return sa < sb if sa != sb else ta > tb)
+
+
+func _cmp_line(prev: String) -> String:
+	var sl := String(gear_defs[gb(prev)]["slot"])
+	var cur := String(equip.get(sl, ""))
+	var a: Dictionary = gear_defs[gb(prev)]["stats"]
+	var b: Dictionary = gear_defs[gb(cur)]["stats"] if cur != "" else {}
+	var keys: Array = a.keys()
+	for k in b.keys():
+		if not keys.has(k):
+			keys.append(k)
+	var parts := PackedStringArray()
+	for k in keys:
+		var dv := int(float(a.get(k, 0)) - float(b.get(k, 0)))
+		if dv != 0:
+			parts.append("%+d %s" % [dv, String(k).to_upper()])
+	if cur == "":
+		return "COMPARE (slot empty): " + ", ".join(parts)
+	if parts.is_empty():
+		return "COMPARE vs %s: same base stats" % String(gear_defs[gb(cur)]["name"])
+	return "COMPARE vs %s: %s" % [String(gear_defs[gb(cur)]["name"]), ", ".join(parts)]
+
+
+func _run_hit(d: int) -> void:
+	run_dmg += maxi(0, d)
+	run_best = maxi(run_best, d)
 const CHR_LIST_BOT := 1062.0
 
 
 # k = index in the pack; rows scroll with inv_scroll
 func _chr_row_rect(k: int) -> Rect2:
-	return Rect2(40, 666 + chr_off + k * 110 - inv_scroll, 640, 102)
+	return Rect2(40, 666 + chr_off + _inv_y(k), 640, 102)
 
 
 func _chr_equip_rect(k: int) -> Rect2:
-	return Rect2(548, 666 + chr_off + k * 110 - inv_scroll + 8, 124, 42)
+	return Rect2(548, 666 + chr_off + _inv_y(k) + 8, 124, 42)
 
 
 func _chr_sell_rect(k: int) -> Rect2:
-	return Rect2(548, 666 + chr_off + k * 110 - inv_scroll + 54, 124, 38)
+	return Rect2(548, 666 + chr_off + _inv_y(k) + 54, 124, 38)
 
 
 func _chr_row_visible(k: int) -> bool:
@@ -10457,6 +10634,18 @@ func _chr_input(p: Vector2) -> void:
 		chr_dir = {0: 3, 3: 1, 1: 0}.get(chr_dir, 0)
 		_sfx("ui")
 		return
+	if btn_inv_filt.has_point(p):
+		inv_filter = (inv_filter + 1) % INV_FILT.size()
+		inv_scroll = 0.0
+		chr_sel = -1
+		_sfx("ui")
+		return
+	if btn_inv_sort.has_point(p):
+		inv_sort = 1 - inv_sort
+		_inv_do_sort()
+		chr_sel = -1
+		_sfx("ui")
+		return
 	for i in 6:
 		if _chr_slot_rect(i).has_point(p):
 			if _adv_unequip(String(CHR_SLOTS[i])):
@@ -10481,6 +10670,7 @@ func _chr_input(p: Vector2) -> void:
 			scrap += int(gear_defs[gb(String(bag[k]))]["tier"]) * int(sk("dismantle"))
 			bag.remove_at(k)
 			chr_sel = -1
+			_asm_build()
 			_sfx("coin")
 			return
 		if _chr_row_rect(k).has_point(p):
@@ -10490,7 +10680,7 @@ func _chr_input(p: Vector2) -> void:
 
 
 func _draw_char_tab(acc: Color) -> void:
-	inv_scroll_max = maxf(0.0, bag.size() * 110.0 - (CHR_LIST_BOT - 666.0 + 8.0))
+	inv_scroll_max = maxf(0.0, _inv_view().size() * 110.0 - (CHR_LIST_BOT - 666.0 + 8.0))
 	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
 	if chr_sel >= bag.size():
 		chr_sel = -1
@@ -10514,6 +10704,8 @@ func _draw_char_tab(acc: Color) -> void:
 			tt += "%s%s: %s\n" % [pre, TRAIT_DEFS[tid3]["n"], TRAIT_DEFS[tid3]["d"]]
 		for mid3 in gmods(tsrc):
 			tt += "%s%s: %s\n" % [pre, MOD_DEFS[mid3]["n"], MOD_DEFS[mid3]["d"]]
+	if prev != "":
+		tt = _cmp_line(prev) + "\n" + tt
 	tt = tt.strip_edges()
 	chr_off = 0.0
 	if tt != "":
@@ -10524,7 +10716,7 @@ func _draw_char_tab(acc: Color) -> void:
 		draw_rect(strip, Color(0.02, 0.03, 0.08, 0.88))
 		draw_rect(strip, Color("ffd84f", 0.5), false, 1.0)
 		_para(tt, strip.position + Vector2(8, 6 + font.get_ascent(14)), 14, Color("ffd84f"), 620.0)
-	inv_scroll_max = maxf(0.0, bag.size() * 110.0 - (CHR_LIST_BOT - 666.0 - chr_off + 8.0))
+	inv_scroll_max = maxf(0.0, _inv_view().size() * 110.0 - (CHR_LIST_BOT - 666.0 - chr_off + 8.0))
 	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
 	for i in 6:
 		var slot := String(CHR_SLOTS[i])
@@ -10546,7 +10738,11 @@ func _draw_char_tab(acc: Color) -> void:
 	if bag.is_empty():
 		_ctext("Your pack is empty.", Vector2(360, 800), 26, Color(1, 1, 1, 0.5))
 	for idx in bag.size():
+		var rr0 := _chr_row_rect(idx)
+		if rr0.end.y <= CHR_LIST_TOP + chr_off or rr0.position.y >= CHR_LIST_BOT:
+			continue
 		if not _chr_row_visible(idx):
+			_draw_row_partial(idx)
 			continue
 		var bid := String(bag[idx])
 		var gd2: Dictionary = gear_defs[gb(bid)]
@@ -10566,12 +10762,69 @@ func _draw_char_tab(acc: Color) -> void:
 		if sk("reforge") > 0.0:
 			_button(_chr_forge_rect(idx), "FORGE %d/%d" % [_forge_cost(bid), scrap], Color("c9a36b") if scrap >= _forge_cost(bid) else Color(1, 1, 1, 0.35), 15)
 	if inv_scroll_max > 0.0:
-		var tot := bag.size() * 110.0
+		var tot := _inv_view().size() * 110.0
 		var vh := CHR_LIST_BOT - CHR_LIST_TOP - chr_off
 		var bh := vh * vh / tot
 		var by := CHR_LIST_TOP + chr_off + (vh - bh) * inv_scroll / inv_scroll_max
 		draw_rect(Rect2(692, by, 6, bh), Color(1, 1, 1, 0.35))
 		_ctext("drag to scroll", Vector2(360, 1100), 16, Color(1, 1, 1, 0.4))
+	if not bag.is_empty():
+		_button(btn_inv_filt, "SHOW: " + String(INV_FILT[inv_filter]).to_upper(), Color("8fd3ff"), 17)
+		_button(btn_inv_sort, "SORT: " + ("TIER" if inv_sort == 1 else "SLOT"), Color("8fd3ff"), 17)
+
+
+# a pack row cut by the list edge: draw the part that is inside the list
+func _draw_row_partial(idx: int) -> void:
+	var lt := CHR_LIST_TOP + chr_off
+	var lb := CHR_LIST_BOT
+	var area := Rect2(0, lt, 720, lb - lt)
+	var bid := String(bag[idx])
+	var gd2: Dictionary = gear_defs[gb(bid)]
+	var gc := _gear_col(String(gd2["slot"]))
+	var rr := _chr_row_rect(idx)
+	var cr := rr.intersection(area)
+	if cr.size.y <= 0.0:
+		return
+	_obox(cr, Color(gc.r, gc.g, gc.b, 0.08))
+	var oc := Color(gc.r, gc.g, gc.b, 0.55)
+	draw_line(cr.position, Vector2(cr.position.x, cr.end.y), oc, 2.0)
+	draw_line(Vector2(cr.end.x, cr.position.y), cr.end, oc, 2.0)
+	if rr.position.y >= lt:
+		draw_line(rr.position, Vector2(rr.end.x, rr.position.y), oc, 2.0)
+	if rr.end.y <= lb:
+		draw_line(Vector2(rr.position.x, rr.end.y), rr.end, oc, 2.0)
+	var tex := _gear_tex(bid)
+	var ssz := 64.0
+	if tex.has_meta("scl"):
+		ssz *= float(tex.get_meta("scl"))
+	var sc := rr.position + Vector2(50, 51)
+	var srect := Rect2(sc.x - ssz * 0.5, sc.y - ssz * 0.5, ssz, ssz)
+	var sclip := srect.intersection(area)
+	if sclip.size.y > 0.0:
+		var ts := tex.get_size()
+		var src := Rect2((sclip.position - srect.position) / ssz * ts, sclip.size / ssz * ts)
+		draw_texture_rect_region(tex, sclip, src)
+	var y0 := rr.position.y
+	if y0 + 32.0 - 24.0 >= lt and y0 + 32.0 + 6.0 <= lb:
+		_txt(String(gd2["name"]), rr.position + Vector2(98, 32), 24, _tier_col(int(gd2["tier"])), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
+	if y0 + 56.0 - 16.0 >= lt and y0 + 56.0 + 5.0 <= lb:
+		_txt(String(gd2["slot"]).to_upper(), rr.position + Vector2(98, 56), 16, gc, 90.0, HORIZONTAL_ALIGNMENT_LEFT)
+		if gtrait_line(bid) != "":
+			_txt(gtrait_line(bid), rr.position + Vector2(190, 56), 14, Color("ffd84f"), 240.0, HORIZONTAL_ALIGNMENT_LEFT)
+	if y0 + 84.0 - 15.0 >= lt and y0 + 84.0 + 5.0 <= lb:
+		_txt(_gear_desc(gd2), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var btns: Array = [[_chr_equip_rect(idx), "EQUIP", gc, 22], [_chr_sell_rect(idx), "SELL %d" % _sell_val(bid), Color("ffc93c"), 18]]
+	if sk("reforge") > 0.0:
+		btns.append([_chr_forge_rect(idx), "FORGE %d/%d" % [_forge_cost(bid), scrap], Color("c9a36b") if scrap >= _forge_cost(bid) else Color(1, 1, 1, 0.35), 15])
+	for b in btns:
+		var br: Rect2 = b[0]
+		var bc: Color = b[2]
+		if br.position.y >= lt and br.end.y <= lb:
+			_button(br, String(b[1]), bc, int(b[3]))
+		else:
+			var bcl := br.intersection(area)
+			if bcl.size.y > 0.0:
+				draw_rect(bcl, Color(bc.r, bc.g, bc.b, 0.14))
 
 
 func _inv_use_rect(i: int) -> Rect2:
@@ -10980,7 +11233,7 @@ func _skill_selftest() -> int:
 			if not seen.has(o):
 				seen[o] = true
 				queue.append(o)
-	if seen.size() != 36 + 6 * SK_BR2.size() or sk_defs.size() != 36 + 6 * SK_BR2.size():
+	if seen.size() != 36 + 6 * SK_BR2.size() + SK_APX.size() or sk_defs.size() != 36 + 6 * SK_BR2.size() + SK_APX.size():
 		print("FAIL web connectivity ", seen.size())
 		bad += 1
 	skills.clear()
