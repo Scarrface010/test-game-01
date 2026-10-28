@@ -315,7 +315,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 63
+const BUILD := 64
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -6046,6 +6046,69 @@ func _adv_gen() -> void:
 	_roll_affixes()
 
 
+# ---------------------------------------------------------------- gear sets
+const GEAR_SETS := {
+	"crew": ["Station Crew", ["wrench", "hardcap", "scrap", "magboots", "battery"], "+1 armour, +10 air", "+2 coins every floor, tools 15% not used up"],
+	"hazmat": ["Hazmat", ["hazmask", "hazboots", "rebreather", "podamp"], "+60% hazard resist", "air pods also heal 3"],
+	"marksman": ["Marksman", ["targetvisor", "scopemod", "critoptics", "railsniper", "ghillie"], "+1 range, +10% ranged crit", "ranged crits refund 1 ammo"],
+	"riot": ["Riot Squad", ["riothelm", "bulwark", "aegiscore", "aegisemit", "ward"], "+5 max shield", "while shielded: +3 thorns, 25% less damage"],
+	"crystal": ["Crystal", ["crystalhelm", "crystalmail", "crystaltreads", "prismblade", "shardspear"], "+10% crit", "crits splash 50% to adjacent enemies"],
+	"phase": ["Phase", ["phase", "phaseweave", "warp", "wormhole"], "+8% dodge", "dodging gives +3 shield and a free step"],
+	"void": ["Void", ["voidcutter", "voidcrown", "singedge", "voidheart"], "+3 attack", "kills hit enemies within 2 tiles for 2 and heal you 2"],
+	"cosmic": ["Cosmic", ["eventrail", "horizonplate", "starmaul", "starweave", "eclipsecrown", "oblivion"], "+15% damage", "+2 attack, +20% XP"],
+}
+const SET_STATS := {
+	"crew": [{"armor": 1, "air": 10}, {}],
+	"hazmat": [{"hazres": 60}, {}],
+	"marksman": [{"rangeb": 1, "rcrit": 10}, {}],
+	"riot": [{"shield": 5}, {}],
+	"crystal": [{"crit": 10}, {}],
+	"phase": [{"dodge": 8}, {}],
+	"void": [{"atk": 3}, {}],
+	"cosmic": [{}, {"atk": 2, "xp": 20}],
+}
+
+
+func set_n(sid: String) -> int:
+	if mode != "adv":
+		return 0
+	var list: Array = GEAR_SETS[sid][1]
+	var n := 0
+	for slot in equip:
+		var id := String(equip[slot])
+		if id != "" and list.has(gb(id)):
+			n += 1
+	return n
+
+
+func set_on(sid: String, need: int) -> bool:
+	return set_n(sid) >= need
+
+
+func _set_stat(stat: String) -> float:
+	var tot := 0.0
+	if mode != "adv":
+		return tot
+	for sid in SET_STATS:
+		var n := set_n(String(sid))
+		if n >= 2:
+			tot += float((SET_STATS[sid][0] as Dictionary).get(stat, 0))
+		if n >= 3:
+			tot += float((SET_STATS[sid][1] as Dictionary).get(stat, 0))
+	return tot
+
+
+func _set_lines() -> String:
+	var out := ""
+	for sid in GEAR_SETS:
+		var n := set_n(String(sid))
+		if n <= 0:
+			continue
+		var g: Array = GEAR_SETS[sid]
+		out += "[SET] %s %d/%d  %s2: %s   %s3: %s\n" % [g[0], n, (g[1] as Array).size(), "* " if n >= 2 else "", g[2], "* " if n >= 3 else "", g[3]]
+	return out
+
+
 func gear(stat: String) -> float:
 	var tot := 0.0
 	for slot in equip:
@@ -6059,7 +6122,7 @@ func gear(stat: String) -> float:
 		if mode == "adv":
 			for mid in gmods(id):
 				tot += float((MOD_DEFS[mid]["s"] as Dictionary).get(stat, 0))
-	return tot
+	return tot + _set_stat(stat)
 
 
 func hp_cap() -> int:
@@ -6150,6 +6213,8 @@ func dmg_taken(a: int) -> int:
 		d = maxi(1, int(round(float(d) * (1.0 - sk("laststand") / 100.0))))
 	if gm("laststand") and hp * 100 < hp_cap() * 25:
 		d = maxi(1, int(round(float(d) * 0.7)))
+	if sh > 0 and set_on("riot", 3):
+		d = maxi(1, int(round(float(d) * 0.75)))
 	return d
 
 
@@ -6214,6 +6279,9 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	if randf() * 100.0 < dodge_chance():
 		_pop(pos, "DODGE", Color("9fe8ff"))
 		_fx_ring(vis_pos, Color("9fe8ff"), 1.1, 0.35, 3.0)
+		if set_on("phase", 3):
+			sh = mini(sh_cap(), sh + 3)
+			mom_steps += 1
 		msg += "   You dodge %s!" % who
 		return true
 	_buzz(35)
@@ -6515,7 +6583,7 @@ func _tool_spend(i: int) -> void:
 		_arc_foundry()
 	if sk("overclk") > 0.0:
 		sh = mini(sh_cap(), sh + int(sk("overclk")))
-	if randf() * 100.0 < sk("tinker"):
+	if randf() * 100.0 < sk("tinker") + (15.0 if set_on("crew", 3) else 0.0):
 		_pop(pos, "TOOL SAVED", Color("4fd1c5"))
 		return
 	inv.remove_at(i)
@@ -6904,7 +6972,7 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 
 
 func crit_chance() -> float:
-	return gear("crit") + sk("crit") + (sk("rcrit") if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
+	return gear("crit") + sk("crit") + ((sk("rcrit") + _set_stat("rcrit")) if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 10.0 * relic_n("luckychip")
 
 
 func dodge_chance() -> float:
@@ -6912,7 +6980,7 @@ func dodge_chance() -> float:
 
 
 func thorns_dmg() -> int:
-	return int(gear("thorns")) + int(sk("thorns")) + ((2 + floor_n / 6) if has_tr("thorned") else 0) + 2 * relic_n("thornmail")
+	return (3 if sh > 0 and set_on("riot", 3) else 0) + int(gear("thorns")) + int(sk("thorns")) + ((2 + floor_n / 6) if has_tr("thorned") else 0) + 2 * relic_n("thornmail")
 
 
 func _stunned(c: Vector2i) -> bool:
@@ -7003,6 +7071,8 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		mul += sk("pain") * float(int((hp_cap() - hp) * 10 / maxi(1, hp_cap()))) / 100.0
 	if sk("dfreeze") > 0.0 and _stunned(c) and mstat[c].has("chill"):
 		mul += sk("dfreeze") / 100.0
+	if set_on("cosmic", 2):
+		mul += 0.15
 	if sk("mark") > 0.0 and _st_ok(c):
 		if _mk(c):
 			mul += sk("mark") / 100.0
@@ -7030,6 +7100,12 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 	tr_last = c
 	if relic_n("luckychip") > 0 and crit:
 		oxy = minf(oxy_max, oxy + 1.0)
+	if crit and set_on("crystal", 3):
+		for so in _near_mons(c, 1, []):
+			_adv_damage_mon(so, maxi(1, dealt / 2), Color("9fe8ff"))
+	if crit and ranged and set_on("marksman", 3):
+		ammo = mini(ammo_max(), ammo + 1)
+		_pop(pos, "+1 AMMO", Color("6dff9a"))
 	if crit and left > 0 and sk("bleed") > 0.0 and mons.has(c) and _st_ok(c):
 		_st_get(c)["bleed"] = [int(sk("bleed")), 1 + floor_n / 6]
 		_pop(c, "BLEED", Color("ff4d6d"))
@@ -7090,6 +7166,12 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 
 func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 	var tl := wtr()
+	if tr_depth <= 3 and set_on("void", 3):
+		tr_depth += 1
+		for vo in _near_mons(c, 2, []):
+			_adv_damage_mon(vo, 2, Color("a68cff"))
+		_tr_heal(2)
+		tr_depth -= 1
 	if tr_depth <= 3:
 		tr_depth += 1
 		if tl.has("volatile") or String(affix.get(c, "")) == "volatile":
@@ -8262,6 +8344,8 @@ func _adv_next() -> void:
 	_adv_new_floor()
 	for qi in int(sk("quarter")):
 		_give_use(_random_use())
+	if set_on("crew", 3):
+		coins += 2
 	for bi in int(sk("beacon")) - inv.count("beacon"):
 		_give_use("beacon")
 
@@ -8583,6 +8667,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				var amt := adv_pod_amt()
 				oxy = minf(oxy_max, oxy + amt)
 				msg = "Air pod! +%d air" % int(amt)
+				if set_on("hazmat", 3):
+					_tr_heal(3)
 				_pop(nc, "+%d AIR" % int(amt), Color("7fd8ff"))
 				snd = "lamp"
 		elif kind == "hp" and sk("crimson") > 0.0:
@@ -10706,6 +10792,7 @@ func _draw_char_tab(acc: Color) -> void:
 			tt += "%s%s: %s\n" % [pre, MOD_DEFS[mid3]["n"], MOD_DEFS[mid3]["d"]]
 	if prev != "":
 		tt = _cmp_line(prev) + "\n" + tt
+	tt += "\n" + _set_lines()
 	tt = tt.strip_edges()
 	chr_off = 0.0
 	if tt != "":
