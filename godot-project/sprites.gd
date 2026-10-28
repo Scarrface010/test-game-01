@@ -2554,7 +2554,7 @@ func _tool_icon(cv: Cv, id: String) -> void:
 const NV := 16
 
 
-const STATION_FLOOR_LIGHT := 0.16   # how much lighter the Station floor is (0 = original)
+const STATION_FLOOR_LIGHT := 0.3   # how much lighter the Station floor is (0 = original)
 
 
 func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:

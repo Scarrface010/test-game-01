@@ -285,7 +285,10 @@ var mini_ret := 0
 var mini_done := false
 var mini_prev_save_off := false
 var mini_msg := ""
-var btn_mini := Rect2(160, 1100, 400, 76)
+var btn_mini := Rect2(160, 1000, 400, 70)
+var btn_tleave := Rect2(250, 1130, 220, 64)
+var puz_used := {}           # outfitter cells whose puzzle run was used (this floor)
+var mini_snap: Dictionary = {}
 var mini_pick := false
 var btn_quit := Rect2(160, 1150, 400, 70)
 var btn_cl_next := Rect2(110, 690, 500, 76)
@@ -340,7 +343,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 67
+const BUILD := 68
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -354,7 +357,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -1861,7 +1864,45 @@ func _mini_rect(i: int) -> Rect2:
 	return Rect2(60, 360 + i * 150, 600, 130)
 
 
+func _deep(v: Variant) -> Variant:
+	if v is Dictionary or v is Array:
+		return v.duplicate(true)
+	if typeof(v) >= TYPE_PACKED_BYTE_ARRAY:
+		return v.duplicate()
+	return v
+
+
+func _adv_stash() -> void:
+	mini_snap = {}
+	for k in SAVE_VARS + ["run_kills", "guide_seen", "trade_cell"]:
+		mini_snap[k] = _deep(get(k))
+	mini_snap["inv"] = inv.duplicate()
+	mini_snap["bag"] = bag.duplicate()
+
+
+func _adv_unstash() -> void:
+	for k in mini_snap:
+		if k != "inv" and k != "bag":
+			set(k, mini_snap[k])
+	inv.assign(mini_snap["inv"])
+	bag.assign(mini_snap["bag"])
+	mini_snap = {}
+	walk.clear()
+	pops.clear()
+	fx.clear()
+	mon_slide.clear()
+	mon_hit.clear()
+	mon_lunge.clear()
+	reveal.clear()
+	vfade.clear()
+	aim = -1
+	anim_floor = -1
+	_adv_update_vis()
+	_play_music(tidx())
+
+
 func _mini_start(w: int) -> void:
+	_adv_stash()
 	mini = true
 	mini_world = w
 	mini_ret = shop_return
@@ -1884,18 +1925,14 @@ func _mini_win() -> void:
 
 func _mini_end(why: String) -> void:
 	var g := maxi(0, coins)
-	bank += g
-	_save_meta()
 	mini = false
 	mini_done = false
 	save_off = mini_prev_save_off
-	walk.clear()
-	aim = -1
-	relics.clear()
-	mode = "adv"
-	shop_return = mini_ret
-	state = SHOP
-	mini_msg = "%s\n+%d coins added to your bank" % [why, g]
+	_adv_unstash()
+	coins += g
+	state = TRADE
+	trade_med = false
+	mini_msg = "%s\n+%d coins" % [why, g]
 	_sfx("coin")
 
 
@@ -3038,10 +3075,6 @@ func _gui_input(event: InputEvent) -> void:
 				mini_pick = false
 				_sfx("ui")
 			return
-		if btn_mini.has_point(p):
-			mini_pick = true
-			_sfx("ui")
-			return
 		if btn_back.has_point(p):
 			state = shop_return
 			_sfx("ui")
@@ -3156,6 +3189,12 @@ func _process(dt: float) -> void:
 				inv_vel = 0.0
 		else:
 			inv_vel = 0.0
+	if state != PLAY and joy_on:
+		joy_on = false
+		joy_dir = Vector2i.ZERO
+		swipe_on = false
+	if mode == "adv" and state == CLEAR:
+		cam = cam.lerp(Vector2(6, 6) if arena else vis_pos, minf(1.0, dt * 12.0))
 	if state == PLAY and mode == "adv":
 		cam = cam.lerp(Vector2(6, 6) if arena else vis_pos, minf(1.0, dt * 12.0))
 		joy_t += dt
@@ -5329,7 +5368,6 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_prev, "< PREV", acc, 24)
 		_button(btn_next, "NEXT >", acc, 24)
 		_button(btn_back, "BACK", acc, 26)
-		_button(btn_mini, "PUZZLE RUN  (earn coins)", Color("9fb3d9"), 26)
 		if mini_msg != "":
 			draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.6))
 			var mr3 := Rect2(80, 480, 560, 240)
@@ -5563,7 +5601,7 @@ func _arena_spawn_shards(n: int) -> void:
 
 func _adv_gen_tutorial() -> void:
 	AW = 15
-	AH = 32
+	AH = 42
 	adv_open.resize(AW * AH)
 	adv_open.fill(0)
 	adv_seen.resize(AW * AH)
@@ -5571,7 +5609,7 @@ func _adv_gen_tutorial() -> void:
 	adv_rooms.clear()
 	for dd in [mons, elite, items, spikes, haz, tur, corpses, coin_at, walls, portals, kinds, thief_held, vaults, stations, meds, merchants, mon_hp, affix, mstat]:
 		dd.clear()
-	for ry in [28, 23, 18, 13, 8, 3]:
+	for ry in TUT_ROOMS:
 		var r := Rect2i(3, ry, 9, 3)
 		adv_rooms.append(r)
 		for x in range(r.position.x, r.end.x):
@@ -5580,25 +5618,25 @@ func _adv_gen_tutorial() -> void:
 		if ry > 3:
 			for cy in [ry - 2, ry - 1]:
 				adv_open[_ai(Vector2i(7, cy))] = 1
-	start = Vector2i(7, 29)
+	start = Vector2i(7, 39)
 	pos = start
 	stairs = Vector2i(7, 3)
 	boss_floor = false
 	boss_cell = Vector2i(-1, -1)
-	adv_req = 5
-	adv_pts_total = 14
-	for cc in [Vector2i(4, 29), Vector2i(10, 29), Vector2i(7, 28)]:
+	adv_req = 6
+	adv_pts_total = 16
+	for cc in [Vector2i(4, 39), Vector2i(10, 39), Vector2i(7, 38), Vector2i(4, 19), Vector2i(10, 19)]:
 		coin_at[cc] = true
-	for sc in [Vector2i(6, 24), Vector2i(7, 24), Vector2i(8, 24)]:
+	for sc in [Vector2i(6, 34), Vector2i(7, 34), Vector2i(8, 34)]:
 		spikes[sc] = true
-	items[Vector2i(10, 23)] = "pot"
-	mons[Vector2i(7, 19)] = 1
-	mons[Vector2i(7, 13)] = 1
-	items[Vector2i(5, 9)] = "use_zap"
-	mons[Vector2i(4, 8)] = 1
-	stations[Vector2i(10, 10)] = true
-	items[Vector2i(10, 8)] = "pod"
-	items[Vector2i(5, 4)] = "gear_hardcap"
+	items[Vector2i(10, 33)] = "pot"
+	mons[Vector2i(7, 29)] = 1
+	mons[Vector2i(7, 23)] = 1
+	items[Vector2i(5, 14)] = "use_zap"
+	mons[Vector2i(4, 13)] = 1
+	stations[Vector2i(10, 15)] = true
+	items[Vector2i(10, 13)] = "pod"
+	items[Vector2i(5, 9)] = "gear_hardcap"
 
 
 func _tut_map_start() -> void:
@@ -5616,6 +5654,7 @@ func _tut_map_start() -> void:
 	equip["ranged"] = "blaster"
 	bag.clear()
 	inv.clear()
+	skill_pts = 1
 	ammo = ammo_max()
 	ranged_mode = false
 	coins = 0
@@ -5693,34 +5732,30 @@ func _tut_map_end(done: bool) -> void:
 		xfer_t = t
 
 
+const TUT_ROOMS := [38, 33, 28, 23, 18, 13, 8, 3]
 const TUT_HINTS := [
 	"Tap a tile to walk there, or swipe to step. Grab the coins!",
 	"Spikes hurt, so walk around them. Bottles give XP to level up.",
-	"A monster! Walk into it to fight. Its badge shows the risk: green is safe.",
-	"Tap the round button to swap to your gun, then tap a monster in a straight line. Shots use ammo.",
-	"Tools: walk over one to pick it up. Tap it in your bar, then tap again to use it.",
+	"A monster! Tap it or walk into it to attack. The number on it is the damage you will take.",
+	"Tap the round button at the bottom right to swap to your gun, then tap a monster in a straight line. Shots use ammo.",
+	"Your class power is the long button at the bottom. Tap it to use it. It recharges as you walk.",
+	"Tools: walk over one to pick it up. In your bar, tap once to select, again to confirm, and a third time to use it.",
 	"Air drops with every step. Stand on an O2 station or grab air pods to refill.",
-	"Gear! Walk over it, then open the BAG to equip it.",
+	"Gear! Pick it up, open the MENU, tap the item and EQUIP it. Modifiers add extra effects: tap SHOW MODIFIERS to read them.",
+	"Levels give skill points. Tap SKILLS to spend them on upgrades and shape your build. You have 1 point to try.",
 	"Coins and kills give points. Enough points open the exit. Walk to the gate to finish!",
 ]
 
 
 func _tut_hint() -> void:
 	var z := 0
-	if pos.y <= 25:
-		z = 1
-	if pos.y <= 20:
-		z = 2
-	if pos.y <= 15:
-		z = 3
-	if pos.y <= 10:
-		z = 4
-		if absi(pos.x - 10) + absi(pos.y - 10) <= 2:
-			z = 5
-	if pos.y <= 5:
+	for zl in [[35, 1], [30, 2], [25, 3], [20, 4], [15, 5], [10, 7], [5, 8]]:
+		if pos.y <= int(zl[0]):
+			z = int(zl[1])
+	if z == 5 and absi(pos.x - 10) + absi(pos.y - 15) <= 2:
 		z = 6
 	if adv_pts >= adv_req and pos.y <= 5:
-		z = 7
+		z = 9
 	if z <= tut_zone:
 		return
 	tut_zone = z
@@ -8587,9 +8622,21 @@ func _trade_input(p: Vector2) -> void:
 	if trade_med:
 		_med_input(p)
 		return
-	if btn_back.has_point(p):
+	if mini_msg != "":
+		mini_msg = ""
+		_sfx("ui")
+		return
+	if btn_tleave.has_point(p):
 		state = PLAY
 		_sfx("ui")
+		return
+	if btn_mini.has_point(p):
+		if puz_used.has(trade_cell):
+			_sfx("blocked")
+			return
+		puz_used[trade_cell] = true
+		_sfx("big")
+		_mini_start(tidx())
 		return
 	var offers: Array = merchants.get(trade_cell, [])
 	for i in offers.size():
@@ -8647,7 +8694,19 @@ func _draw_trade(acc: Color) -> void:
 			_txt(_use_name(uid), Vector2(rr.position.x + 110, rr.position.y + 50), 30, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(_atext("tool_" + uid, String(use_defs[uid]["desc"])), Vector2(rr.position.x + 110, rr.position.y + 84), 19, Color(1, 1, 1, 0.75), 340.0)
 		_txt("SOLD" if sold else "%d coins" % _eff_price(o), Vector2(rr.end.x - 170, rr.position.y + 76), 28, col, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
-	_button(btn_back, "LEAVE", acc, 28)
+	var pused := puz_used.has(trade_cell)
+	_button(btn_mini, "PUZZLE  (USED)" if pused else "PUZZLE", Color(1, 1, 1, 0.4) if pused else Color("9fb3d9"), 28)
+	_txt("Try a puzzle to get some extra coin.", Vector2(0, btn_mini.end.y + 32), 22, Color(1, 1, 1, 0.75))
+	_button(btn_tleave, "LEAVE", acc, 28)
+	if mini_msg != "":
+		draw_rect(Rect2(0, 0, 720, 1400), Color(0, 0, 0, 0.6))
+		var mr3 := Rect2(80, 480, 560, 240)
+		_panel(mr3, Color("ffc93c"), 0.2, false)
+		var my3 := mr3.position.y + 80.0
+		for ml in mini_msg.split("\n"):
+			_txt(ml, Vector2(mr3.position.x, my3), 30, Color("ffc93c") if my3 > mr3.position.y + 100.0 else Color.WHITE, mr3.size.x)
+			my3 += 52.0
+		_txt("Tap to continue", Vector2(mr3.position.x, mr3.end.y - 24), 20, Color(1, 1, 1, 0.6), mr3.size.x)
 
 
 func _draw_crate(ctr: Vector2, id: String, bob: float) -> void:
@@ -8677,6 +8736,7 @@ func _adv_new_floor() -> void:
 	maxd = 0
 	fmod = "standard"
 	adv_seed = randi()
+	puz_used.clear()
 	_adv_gen()
 	_adv_snapshot()
 	_adv_begin()
@@ -8787,6 +8847,9 @@ func _adv_scaled(raw: int) -> int:
 
 
 func _adv_begin() -> void:
+	joy_on = false
+	joy_dir = Vector2i.ZERO
+	swipe_on = false
 	if adv_fresh or hp <= 0:
 		hp = hp_cap()
 	adv_fresh = false
@@ -9569,6 +9632,9 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		return
 	if moved and pos == stairs and not mons.has(stairs):
 		if adv_pts >= adv_req and (not arena or not mons.has(boss_cell)):
+			joy_on = false
+			joy_dir = Vector2i.ZERO
+			swipe_on = false
 			_adv_clear()
 			return
 		msg = "Defeat the boss first!" if arena else "Exit sealed: %d / %d points" % [adv_pts, adv_req]
