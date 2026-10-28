@@ -240,7 +240,7 @@ var btn_cl_l := Rect2(12, 520, 76, 150)
 var btn_cl_r := Rect2(632, 520, 76, 150)
 var btn_cpick := Rect2(160, 1000, 400, 80)
 var btn_mode_p := Rect2(30, 330, 320, 380)
-var btn_mode_a := Rect2(370, 330, 320, 380)
+var btn_mode_a := Rect2(30, 330, 660, 380)
 var btn_tut := Rect2(50, 740, 620, 84)
 var tut_mode := 0
 var btn_lb := Rect2(50, 840, 620, 84)
@@ -271,6 +271,25 @@ var mods_open := false
 var chr_off := 0.0    # extra height of the modifiers strip in the gear tab
 var tut_back := MODE
 var tutorial := false
+var tut_dlg := ""            # tutorial dialog box text (blocks input until tapped)
+var fade_a := 0.0            # black screen fade (floor transitions)
+var fade_to := 0.0
+var fade_cb: Callable
+var relic_pick := -1         # -1 none, >=0 relic picked, -2 skip picked
+var pick_t := 0.0
+var floor_msg_t := -100.0
+var clear_pend := false      # left to menu from the floor-cleared popup
+var mini := false            # puzzle mini-game started from the shop
+var mini_world := 0
+var mini_ret := 0
+var mini_done := false
+var mini_prev_save_off := false
+var mini_msg := ""
+var btn_mini := Rect2(160, 1100, 400, 76)
+var mini_pick := false
+var btn_quit := Rect2(160, 1150, 400, 70)
+var btn_cl_next := Rect2(110, 690, 500, 76)
+var btn_cl_menu := Rect2(110, 782, 500, 60)
 var tut_zone := -1
 var tut_prev_cls := "scout"
 # hidden gear test room: tap the SETTINGS title 5 times to unlock its button
@@ -321,7 +340,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 66
+const BUILD := 67
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -335,7 +354,7 @@ const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "le
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -438,6 +457,7 @@ func _ready() -> void:
 		set_big = 0
 		tut_seen["puzzle"] = bool(cfg.get_value("ui", "tut_p", false))
 		tut_seen["adv"] = bool(cfg.get_value("ui", "tut_a", false))
+		tut_seen["map"] = bool(cfg.get_value("ui", "tut_m", false))
 		_layout_buttons()
 		_apply_sound()
 		_apply_display()
@@ -909,6 +929,7 @@ func _save_meta() -> void:
 	cfg.set_value("ui", "bigbtn", 0)
 	cfg.set_value("ui", "tut_p", tut_seen["puzzle"])
 	cfg.set_value("ui", "tut_a", tut_seen["adv"])
+	cfg.set_value("ui", "tut_m", bool(tut_seen.get("map", false)))
 	cfg.set_value("lb", "uid", lb_uid)
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
@@ -1147,7 +1168,7 @@ func _take_ring(free: Array[Vector2i], lo: int, hi: int) -> Vector2i:
 
 func _random_layout(tries: int) -> void:
 	var k := N - 6
-	boss_floor = floor_n % 5 == 0
+	boss_floor = (floor_n == mini_world * 3 + 3) if mini else floor_n % 5 == 0
 	var cells: Array[Vector2i] = []
 	for x in N:
 		for y in N:
@@ -1626,6 +1647,9 @@ func _thief_check() -> void:
 
 
 func _die(why: String) -> void:
+	if mini:
+		_mini_end("Knocked out: " + why)
+		return
 	if tutorial or testroom:
 		hp = hp_cap()
 		oxy = oxy_max
@@ -1683,11 +1707,12 @@ func _die(why: String) -> void:
 
 
 func _clear() -> void:
-	_lb_note(floor_n, false)
+	if not mini:
+		_lb_note(floor_n, false)
 	walk.clear()
 	aim = -1
 	_sfx("clear")
-	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEAR" % floor_n
+	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEARED" % floor_n
 	over_sub = "Next: floor %d" % (floor_n + 1)
 	var extra_cards := 0
 	if boss_floor:
@@ -1700,11 +1725,11 @@ func _clear() -> void:
 		extra_cards += 1
 	if fmod == "danger":
 		extra_cards += 1
-	if fmod == "calm" and not boss_floor:
-		relic_choices = []
-	else:
-		relic_choices = _roll_relics(extra_cards)
-	state = RELIC if relic_choices.size() > 0 else CLEAR
+	relic_choices = []
+	mini_done = mini and boss_floor
+	if mini_done:
+		over_sub = "You earned %d coins" % coins
+	state = CLEAR
 
 
 func _roll_relics(extra: int) -> Array:
@@ -1750,11 +1775,128 @@ func _finish_clear() -> void:
 	if mode == "adv":
 		_adv_next()
 		return
+	if mini:
+		_go_floor("standard")
+		return
 	if (floor_n + 1) % 5 == 0:
 		_go_floor("standard")
 	else:
 		door_choices = _roll_doors()
 		state = FORK
+
+
+func _fade_out(cb: Callable) -> void:
+	fade_to = 1.0
+	fade_cb = cb
+
+
+func _after_clear_fade() -> void:
+	clear_pend = false
+	relic_pick = -1
+	if relic_choices.size() > 0:
+		state = RELIC
+	else:
+		_relic_done()
+
+
+func _relic_done() -> void:
+	relic_pick = -1
+	_finish_clear()
+	floor_msg_t = t
+
+
+func _intro_done() -> void:
+	if not bool(tut_seen.get("map", false)):
+		tut_seen["map"] = true
+		_save_meta()
+		_tut_map_start()
+	else:
+		state = MODE
+
+
+func _draw_fade() -> void:
+	if fade_a > 0.0:
+		draw_rect(Rect2(-60, -60, 840, 1500), Color(0, 0, 0, fade_a))
+
+
+func _draw_floor_msg(acc: Color) -> void:
+	var u := t - floor_msg_t
+	if u < 0.0 or u > 2.4 or state != PLAY:
+		return
+	var a := clampf(minf(u / 0.35, (2.4 - u) / 0.5), 0.0, 1.0)
+	draw_rect(Rect2(-60, -60, 840, 1500), Color(0, 0, 0, 0.35 * a))
+	var r := Rect2(110, 520 + (1.0 - a) * 30.0, 500, 170)
+	_abox(r, Color(0.03, 0.04, 0.08, 0.92 * a))
+	_aline(r, Color(acc.r, acc.g, acc.b, a), 3.0)
+	var ttl := "BOSS ARENA" if (mode == "adv" and arena) else "FLOOR %d" % floor_n
+	_txt(ttl, Vector2(r.position.x, r.position.y + 90), 60, Color(acc.r, acc.g, acc.b, a), r.size.x)
+	_txt(String(cur_theme()["name"]), Vector2(r.position.x, r.position.y + 140), 22, Color(1, 1, 1, 0.75 * a), r.size.x)
+
+
+func _draw_clear_pop(acc: Color) -> void:
+	var u := clampf((t - state_t) / 0.35, 0.0, 1.0)
+	var e := 1.0 - pow(1.0 - u, 3.0)
+	draw_rect(Rect2(-60, -60, 840, 1500), Color(0, 0, 0, 0.6 * e))
+	var dy := (1.0 - e) * 120.0
+	var r := Rect2(70, 400 + dy, 580, 470)
+	_abox(r, Color(0.03, 0.04, 0.08, 0.95 * e))
+	_abox(r, Color(acc.r, acc.g, acc.b, 0.1 * e))
+	_aline(r, Color(acc.r, acc.g, acc.b, e), 3.0)
+	_txt(over_title, Vector2(r.position.x, r.position.y + 86), 52, Color(acc.r, acc.g, acc.b, e), r.size.x)
+	var ly := r.position.y + 150.0
+	for line in over_sub.split("\n"):
+		_txt(line, Vector2(r.position.x, ly), 24, Color(1, 1, 1, 0.85 * e), r.size.x)
+		ly += 36.0
+	if u < 1.0:
+		return
+	if mini_done:
+		_button(btn_cl_next, "COLLECT %d COINS" % coins, Color("ffc93c"), 28)
+		return
+	_button(btn_cl_next, "NEXT FLOOR", Color("6dff9a"), 30)
+	_button(btn_cl_menu, ("LEAVE WITH %d COINS" % coins) if mini else "MENU", Color(1, 1, 1, 0.75), 24)
+
+
+# ---------- puzzle mini-game (from the shop) ----------
+func _mini_rect(i: int) -> Rect2:
+	return Rect2(60, 360 + i * 150, 600, 130)
+
+
+func _mini_start(w: int) -> void:
+	mini = true
+	mini_world = w
+	mini_ret = shop_return
+	mini_done = false
+	mini_pick = false
+	mini_prev_save_off = save_off
+	save_off = true
+	mode = "puzzle"
+	if cls == "" or not class_open(cls):
+		cls = "scout"
+	_new_run(w * 3 + 1)
+	relics.clear()
+	_begin_floor()
+	floor_msg_t = t
+
+
+func _mini_win() -> void:
+	_mini_end("Boss beaten!")
+
+
+func _mini_end(why: String) -> void:
+	var g := maxi(0, coins)
+	bank += g
+	_save_meta()
+	mini = false
+	mini_done = false
+	save_off = mini_prev_save_off
+	walk.clear()
+	aim = -1
+	relics.clear()
+	mode = "adv"
+	shop_return = mini_ret
+	state = SHOP
+	mini_msg = "%s\n+%d coins added to your bank" % [why, g]
+	_sfx("coin")
 
 
 func _go_floor(fm: String) -> void:
@@ -2393,7 +2535,7 @@ func _save_sig() -> int:
 
 
 func _save_run() -> void:
-	if save_off:
+	if save_off or mini:
 		return
 	var d := {"ver": 1}
 	for k in SAVE_VARS:
@@ -2457,7 +2599,7 @@ func _load_run() -> bool:
 		_play_music(tidx())
 	else:
 		_play_music(tidx())
-	state = PLAY
+	state = CLEAR if clear_pend else PLAY
 	save_last_sig = _save_sig()
 	save_t = t
 	return true
@@ -2569,6 +2711,7 @@ func _wipe_progress() -> void:
 
 func _new_run(start_floor := 1) -> void:
 	floor_n = start_floor
+	clear_pend = false
 	coins = 0
 	run_kills = 0
 	run_best = 0
@@ -2627,7 +2770,15 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if state == INTRO:
 		if (event is InputEventMouseButton and event.pressed) or (event is InputEventKey and event.pressed) or (event is InputEventScreenTouch and event.pressed):
-			state = MODE
+			_intro_done()
+		return
+	if fade_to > 0.0 or (state == RELIC and relic_pick != -1):
+		return
+	if tutorial and state == PLAY and tut_dlg != "":
+		if event is InputEventMouseButton and event.pressed:
+			tut_dlg = ""
+			swipe_on = false
+			_sfx("ui")
 		return
 	if state == INV and inv_tab == 3 and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
@@ -2751,11 +2902,10 @@ func _gui_input(event: InputEvent) -> void:
 				save_info = ""
 				_sfx("blocked")
 			return
-		if btn_mode_p.has_point(p):
-			mode = "puzzle"
-			state = CLASS
-			_sfx("big")
-		elif btn_mode_a.has_point(p):
+		if btn_quit.has_point(p):
+			get_tree().quit()
+			return
+		if btn_mode_a.has_point(p):
 			mode = "adv"
 			state = CLASS
 			_sfx("big")
@@ -2814,13 +2964,26 @@ func _gui_input(event: InputEvent) -> void:
 				_sfx("blocked")
 		return
 	if state == CLEAR:
-		_finish_clear()
+		if t - state_t < 0.35:
+			return
+		if btn_cl_next.has_point(p):
+			_sfx("ui")
+			_fade_out(_mini_win if mini_done else _after_clear_fade)
+		elif btn_cl_menu.has_point(p) and not mini_done:
+			_sfx("ui")
+			if mini:
+				_mini_end("You left the puzzle run")
+			else:
+				clear_pend = true
+				_save_run()
+				state = MODE
 		return
 	if state == RELIC:
 		if btn_skip.has_point(p):
 			coins += _skip_val()
 			_sfx("coin")
-			_finish_clear()
+			relic_pick = -2
+			pick_t = t
 			return
 		for i in relic_choices.size():
 			if _relic_rect(i).has_point(p):
@@ -2829,7 +2992,8 @@ func _gui_input(event: InputEvent) -> void:
 				if mode == "adv":
 					_adv_relic_applied(id)
 				_sfx("big")
-				_finish_clear()
+				relic_pick = i
+				pick_t = t
 				return
 		return
 	if state == FORK:
@@ -2860,6 +3024,24 @@ func _gui_input(event: InputEvent) -> void:
 				return
 		return
 	if state == SHOP:
+		if mini_msg != "":
+			mini_msg = ""
+			_sfx("ui")
+			return
+		if mini_pick:
+			for wi in themes.size():
+				if _mini_rect(wi).has_point(p):
+					_sfx("big")
+					_mini_start(wi)
+					return
+			if btn_back.has_point(p):
+				mini_pick = false
+				_sfx("ui")
+			return
+		if btn_mini.has_point(p):
+			mini_pick = true
+			_sfx("ui")
+			return
 		if btn_back.has_point(p):
 			state = shop_return
 			_sfx("ui")
@@ -2940,7 +3122,20 @@ func _process(dt: float) -> void:
 		last_state = state
 		state_t = t
 	if state == INTRO and t - state_t > INTRO_LEN:
-		state = MODE
+		_intro_done()
+	if fade_to > 0.0 or fade_a > 0.0:
+		fade_a = move_toward(fade_a, fade_to, dt * 2.6)
+		if fade_to > 0.0 and fade_a >= 1.0:
+			fade_to = 0.0
+			var fcb := fade_cb
+			fade_cb = Callable()
+			if fcb.is_valid():
+				fcb.call()
+	if state == RELIC and relic_pick != -1 and fade_to == 0.0 and t - pick_t > 0.8:
+		_fade_out(_relic_done)
+	if tutorial and tut_dlg != "":
+		walk.clear()
+		joy_on = false
 	if bank_disp < 0.0 or absf(bank_disp - bank) < 1.0:
 		bank_disp = float(bank)
 	else:
@@ -3604,8 +3799,8 @@ func _sk_banner() -> void:
 		return
 	var a := minf(1.0, minf(k / 0.4, (4.0 - k) / 0.6))
 	var br := Rect2(110, 352, 500, 84)
-	draw_rect(br, Color(0.05, 0.06, 0.1, 0.88 * a))
-	draw_rect(br, Color(1.0, 0.85, 0.31, a), false, 3.0)
+	_abox(br, Color(0.05, 0.06, 0.1, 0.88 * a))
+	_aline(br, Color(1.0, 0.85, 0.31, a), 3.0)
 	_ctext("+%d SKILL POINT%s" % [sk_ban_n, "S" if sk_ban_n > 1 else ""], br.get_center() + Vector2(0, -12), 30, Color(1.0, 0.85, 0.31, a))
 	_ctext("Tap SKILLS to spend it", br.get_center() + Vector2(0, 20), 20, Color(1, 1, 1, 0.85 * a))
 
@@ -3994,8 +4189,8 @@ func _draw_lb(acc: Color) -> void:
 	for i in 2:
 		var tr := _tut_tabs(i)
 		var tc := Color("ffd84f") if i == lb_mode else Color(1, 1, 1, 0.5)
-		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == lb_mode else 0.06))
-		draw_rect(tr, tc, false, 2.0)
+		_abox(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == lb_mode else 0.06))
+		_aline(tr, tc, 2.0)
 		_ctext(names[i], tr.get_center(), 24, tc)
 	var mine := best if lb_mode == 0 else adv_best
 	var nm := lb_name if lb_name != "" else "(no name yet)"
@@ -4017,7 +4212,7 @@ func _draw_lb(acc: Color) -> void:
 			var rc := Rect2(40, y - 34, 640, 50)
 			if me:
 				_obox(rc, Color(1, 0.85, 0.3, 0.16))
-				draw_rect(rc, Color("ffd84f"), false, 2.0)
+				_aline(rc, Color("ffd84f"), 2.0)
 			var tc2 := Color("ffd84f") if me else Color.WHITE
 			var medal := [Color("ffd84f"), Color("c9d3f0"), Color("d08a4a")]
 			if i < 3:
@@ -4197,8 +4392,8 @@ func _draw_tut(acc: Color) -> void:
 		var tc := Color("ffd84f") if i == tut_mode else Color(1, 1, 1, 0.5)
 		if i == 2:
 			tc = Color("6dff9a")
-		draw_rect(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == tut_mode else 0.06))
-		draw_rect(tr, tc, false, 2.0)
+		_abox(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == tut_mode else 0.06))
+		_aline(tr, tc, 2.0)
 		_ctext(names[i], tr.get_center(), 24, tc)
 	var pages := _tut_pages(tut_mode)
 	tut_page = clampi(tut_page, 0, pages.size() - 1)
@@ -4466,6 +4661,9 @@ func _draw() -> void:
 		_fx_draw_top()
 		if state != PLAY:
 			_draw_overlay(acc)
+		_draw_tut_dlg()
+		_draw_floor_msg(acc)
+		_draw_fade()
 		return
 	draw_rect(Rect2(0, 0, 720, 1280), th["bg"])
 	var grid_r := Rect2(GX - 4, GY - 4, N * cell + 8, N * cell + 8)
@@ -4535,6 +4733,9 @@ func _draw() -> void:
 				draw_rect(r, th["dark"])
 				continue
 			draw_texture_rect(_floor_at(ti, x, y), r.grow(-1.0), false)
+			var dk0 := _deco_at(x, y)
+			if dk0 >= 0:
+				draw_texture_rect(spr_gen.floor_deco(ti, dk0), r.grow(-1.0), false)
 			if ring(c) == depth:
 				draw_rect(r.grow(-1.0), Color(0, 0, 0, 0.28))
 				if warn:
@@ -4701,6 +4902,8 @@ func _draw() -> void:
 	_fx_draw_top()
 	if state != PLAY:
 		_draw_overlay(acc)
+	_draw_floor_msg(acc)
+	_draw_fade()
 
 
 func _menu_tint(acc: Color) -> Color:
@@ -4791,8 +4994,28 @@ func _draw_menu_space() -> bool:
 
 
 func _obox(r: Rect2, c: Color) -> void:
-	draw_rect(r, Color(0.03, 0.04, 0.08, 0.93))
-	draw_rect(r, c)
+	_abox(r, Color(0.03, 0.04, 0.08, 0.93))
+	_abox(r, c)
+
+
+# angled-corner box, same corner cut as _panel (menu buttons)
+func _apts(r: Rect2) -> PackedVector2Array:
+	var c := minf(8.0, r.size.y * 0.25)
+	var x := r.position.x
+	var y := r.position.y
+	var w := r.size.x
+	var h := r.size.y
+	return PackedVector2Array([Vector2(x + c, y), Vector2(x + w - c, y), Vector2(x + w, y + c), Vector2(x + w, y + h - c), Vector2(x + w - c, y + h), Vector2(x + c, y + h), Vector2(x, y + h - c), Vector2(x, y + c)])
+
+
+func _abox(r: Rect2, col: Color) -> void:
+	draw_colored_polygon(_apts(r), col)
+
+
+func _aline(r: Rect2, col: Color, w := 2.0) -> void:
+	var pts := _apts(r)
+	pts.append(pts[0])
+	draw_polyline(pts, col, w)
 
 
 func _draw_menu_bg(tint: Color) -> void:
@@ -4877,7 +5100,7 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_menu_bg(_menu_tint(acc))
 	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC]:
 		_draw_menu_bg(_menu_tint(acc))
-	else:
+	elif state != CLEAR:
 		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
 	if state == INV:
 		_draw_inv(acc)
@@ -4896,15 +5119,12 @@ func _draw_overlay(acc: Color) -> void:
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
-		var mp := Color("9fb3d9")
-		_panel(btn_mode_p, mp, 0.2)
-		_txt("PUZZLE", Vector2(btn_mode_p.position.x + 24, btn_mode_p.position.y + 70), 44, mp, 280.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_para("Small tense rooms. Level up by beating monsters, then reach the gate before the dark swallows the board. Every step counts.", Vector2(btn_mode_p.position.x + 24, btn_mode_p.position.y + 118), 23, Color.WHITE, 276.0)
 		var ma := Color("7dffb0")
 		_panel(btn_mode_a, ma, 0.2)
-		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 70), 44, ma, 280.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 70), 52, ma, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_button(btn_tut, "HOW TO PLAY", Color("ffd84f"), 34, "help")
 		_button(btn_lb, "LEADERBOARD", Color("7fd8ff"), 34, "trophy")
+		_button(btn_quit, "QUIT", Color("ff8a8a"), 30)
 		if save_info != "":
 			_panel(btn_cont, Color("6dff9a"), 0.2)
 			_txt("CONTINUE SAVED RUN", Vector2(btn_cont.position.x, btn_cont.position.y + 32), 30, Color("6dff9a"), btn_cont.size.x)
@@ -4914,7 +5134,7 @@ func _draw_overlay(acc: Color) -> void:
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
 			_txt(xfer_msg, Vector2(0, 252), 24, Color("6dff9a"))
-		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 118), 23, Color.WHITE, 276.0)
+		_para("Explore sprawling stations in fog of war. Collect points to unlock the exit, outsmart hunters, find air pods, and open vaults. Watch your air!", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 130), 26, Color.WHITE, 600.0)
 	elif state == DEAD:
 		_txt(over_title, Vector2(0, 400), 64, Color("ff5d5d"))
 		var ly := 476
@@ -4931,9 +5151,7 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
 		_button(btn_shop, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 	elif state == CLEAR:
-		_txt(over_title, Vector2(0, 560), 64, acc)
-		_txt(over_sub, Vector2(0, 630), 26, Color.WHITE)
-		_txt("Tap to continue", Vector2(0, 700), 28, Color(1, 1, 1, 0.6))
+		_draw_clear_pop(acc)
 	elif state == RELIC:
 		_txt(over_title, Vector2(0, 230), 52, acc)
 		_txt(over_sub, Vector2(0, 276), 22, Color(1, 1, 1, 0.7))
@@ -4944,7 +5162,7 @@ func _draw_overlay(acc: Color) -> void:
 			var cursed := d.has("curse")
 			var col := Color("ff6a5c") if cursed else acc
 			_obox(rr, Color(col.r, col.g, col.b, 0.12))
-			draw_rect(rr, col, false, 2.0)
+			_aline(rr, col, 2.0)
 			var own := relic_n(String(d["id"]))
 			var title := _aname(String(d["id"]), String(d["name"])) + ("   (you have %d)" % own if own > 0 else "")
 			_txt(title, Vector2(rr.position.x + 22, rr.position.y + 40), 30, col, rr.size.x - 40, HORIZONTAL_ALIGNMENT_LEFT)
@@ -4976,6 +5194,14 @@ func _draw_overlay(acc: Color) -> void:
 					_txt(stxt, Vector2(rr.position.x + 22, rr.end.y - 10), 16, Color("ffd84f") if have else Color(1, 1, 1, 0.45), rr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
 					break
 		_button(btn_skip, "SKIP  (+%d coins)" % _skip_val(), Color(1, 1, 1, 0.75), 26)
+		if relic_pick != -1:
+			var pk2 := clampf((t - pick_t) / 0.3, 0.0, 1.0)
+			for i in relic_choices.size():
+				if i != relic_pick:
+					_abox(_relic_rect(i), Color(0, 0, 0, 0.65 * pk2))
+			var hr := btn_skip if relic_pick == -2 else _relic_rect(relic_pick)
+			_abox(hr, Color(1, 0.9, 0.4, 0.12 * pk2))
+			_aline(hr.grow(5.0), Color(1, 0.9, 0.4, 0.5 + 0.5 * absf(sin(t * 10.0))), 4.0)
 	elif state == FORK:
 		_txt("CHOOSE YOUR PATH", Vector2(0, 250), 54, acc)
 		_txt("Floor %d awaits" % (floor_n + 1), Vector2(0, 310), 26, Color(1, 1, 1, 0.7))
@@ -4984,9 +5210,9 @@ func _draw_overlay(acc: Color) -> void:
 			var dr := _door_rect(i)
 			var dcol: Color = dd["col"]
 			_obox(dr, Color(dcol.r, dcol.g, dcol.b, 0.12))
-			draw_rect(dr, dcol, false, 3.0)
+			_aline(dr, dcol, 3.0)
 			_obox(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), Color(dcol.r, dcol.g, dcol.b, 0.25))
-			draw_rect(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), dcol, false, 3.0)
+			_aline(Rect2(dr.position.x + 24, dr.position.y + 28, 60, 120), dcol, 3.0)
 			_txt(String(dd["name"]), Vector2(dr.position.x + 110, dr.position.y + 62), 36, dcol, 480.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(String(dd["desc"]), Vector2(dr.position.x + 110, dr.position.y + 106), 23, Color.WHITE, 480.0)
 	elif state == MARKET:
@@ -4999,7 +5225,7 @@ func _draw_overlay(acc: Color) -> void:
 			var can := coins >= int(it["price"]) and inv.size() < slots_n()
 			var mcol := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
 			_obox(mr, Color(mcol.r, mcol.g, mcol.b, 0.1))
-			draw_rect(mr, mcol, false, 2.0)
+			_aline(mr, mcol, 2.0)
 			_use_icon(uid, Vector2(mr.position.x + 56, mr.position.y + 67), 70)
 			_txt(_use_name(uid), Vector2(mr.position.x + 110, mr.position.y + 50), 30, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(String(use_defs[uid]["desc"]), Vector2(mr.position.x + 110, mr.position.y + 84), 19, Color(1, 1, 1, 0.75), 340.0)
@@ -5018,7 +5244,7 @@ func _draw_overlay(acc: Color) -> void:
 		var cc := Color(ccol.r, ccol.g, ccol.b) if copen else Color(1, 1, 1, 0.45)
 		var card := Rect2(100, 262, 520, 690)
 		_obox(card, Color(cc.r, cc.g, cc.b, 0.12))
-		draw_rect(card, cc, false, 3.0)
+		_aline(card, cc, 3.0)
 		_ctext(String(cd["name"]).to_upper(), Vector2(360, 318), 44, cc)
 		# idle animation: gentle breathing squash and sway
 		var isy := 1.0 + 0.03 * sin(t * 2.6)
@@ -5057,14 +5283,25 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_shop2, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
+	elif state == SHOP and mini_pick:
+		_txt("PUZZLE RUN", Vector2(0, 230), 56, Color("9fb3d9"))
+		_txt("3 floors and a boss. Keep every coin you find.", Vector2(0, 290), 24, Color.WHITE)
+		for wi in themes.size():
+			var wr := _mini_rect(wi)
+			var wc: Color = themes[wi]["accent"]
+			_obox(wr, Color(wc.r, wc.g, wc.b, 0.12))
+			_aline(wr, wc, 2.0)
+			_txt(String(themes[wi]["name"]), Vector2(wr.position.x + 24, wr.position.y + 56), 32, wc, wr.size.x - 48, HORIZONTAL_ALIGNMENT_LEFT)
+			_txt("Boss: %s" % String(themes[wi]["boss"]), Vector2(wr.position.x + 24, wr.position.y + 98), 22, Color(1, 1, 1, 0.75), wr.size.x - 48, HORIZONTAL_ALIGNMENT_LEFT)
+		_button(btn_back, "BACK", acc, 26)
 	elif state == SHOP:
 		_txt("SHOP", Vector2(0, 230), 56, Color("ffc93c"))
 		_txt("Bank: %d coins      Page %d / %d" % [bank, shop_page + 1, _shop_pages()], Vector2(0, 280), 24, Color.WHITE)
 		for ti in SHOP_TABS.size():
 			var tr2 := _shop_tab_rect(ti)
 			var tc2 := Color("ffc93c") if ti == shop_tab else Color(1, 1, 1, 0.5)
-			draw_rect(tr2, Color(tc2.r, tc2.g, tc2.b, 0.16 if ti == shop_tab else 0.06))
-			draw_rect(tr2, tc2, false, 2.0)
+			_abox(tr2, Color(tc2.r, tc2.g, tc2.b, 0.16 if ti == shop_tab else 0.06))
+			_aline(tr2, tc2, 2.0)
 			_ctext(String(SHOP_TABS[ti]), tr2.get_center(), 18, tc2)
 		var slist := _shop_list()
 		if slist.is_empty():
@@ -5081,7 +5318,7 @@ func _draw_overlay(acc: Color) -> void:
 			var can2 := (not maxed) and bank >= int(costs[lv])
 			var col2 := Color("6dff9a") if can2 else Color(1, 1, 1, 0.45)
 			_obox(rr2, Color(col2.r, col2.g, col2.b, 0.1))
-			draw_rect(rr2, col2, false, 2.0)
+			_aline(rr2, col2, 2.0)
 			var nm2 := _aname(String(d2["id"]), String(d2["name"]))
 			if costs.size() > 1:
 				nm2 += "  (%d/%d)" % [lv, costs.size()]
@@ -5092,6 +5329,16 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_prev, "< PREV", acc, 24)
 		_button(btn_next, "NEXT >", acc, 24)
 		_button(btn_back, "BACK", acc, 26)
+		_button(btn_mini, "PUZZLE RUN  (earn coins)", Color("9fb3d9"), 26)
+		if mini_msg != "":
+			draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.6))
+			var mr3 := Rect2(80, 480, 560, 240)
+			_panel(mr3, Color("ffc93c"), 0.2, false)
+			var my3 := mr3.position.y + 80.0
+			for ml in mini_msg.split("\n"):
+				_txt(ml, Vector2(mr3.position.x, my3), 30, Color("ffc93c") if my3 > mr3.position.y + 100.0 else Color.WHITE, mr3.size.x)
+				my3 += 52.0
+			_txt("Tap to continue", Vector2(mr3.position.x, mr3.end.y - 24), 20, Color(1, 1, 1, 0.6), mr3.size.x)
 
 
 # ---------- ADVENTURE MODE (sprawling map, fog of war, points gate, air) ----------
@@ -5316,51 +5563,42 @@ func _arena_spawn_shards(n: int) -> void:
 
 func _adv_gen_tutorial() -> void:
 	AW = 15
-	AH = 15
+	AH = 32
 	adv_open.resize(AW * AH)
 	adv_open.fill(0)
 	adv_seen.resize(AW * AH)
 	adv_seen.fill(0)
 	adv_rooms.clear()
-	mons.clear()
-	elite.clear()
-	items.clear()
-	spikes.clear()
-	haz.clear()
-	tur.clear()
-	corpses.clear()
-	coin_at.clear()
-	walls.clear()
-	portals.clear()
-	kinds.clear()
-	thief_held.clear()
-	vaults.clear()
-	stations.clear()
-	meds.clear()
-	merchants.clear()
-	mon_hp.clear()
-	affix.clear()
-	mstat.clear()
-	for r in [Rect2i(3, 11, 9, 3), Rect2i(3, 6, 9, 3), Rect2i(3, 1, 9, 3)]:
+	for dd in [mons, elite, items, spikes, haz, tur, corpses, coin_at, walls, portals, kinds, thief_held, vaults, stations, meds, merchants, mon_hp, affix, mstat]:
+		dd.clear()
+	for ry in [28, 23, 18, 13, 8, 3]:
+		var r := Rect2i(3, ry, 9, 3)
 		adv_rooms.append(r)
 		for x in range(r.position.x, r.end.x):
 			for y in range(r.position.y, r.end.y):
 				adv_open[_ai(Vector2i(x, y))] = 1
-	for cy in [4, 5, 9, 10]:
-		adv_open[_ai(Vector2i(7, cy))] = 1
-	start = Vector2i(7, 13)
+		if ry > 3:
+			for cy in [ry - 2, ry - 1]:
+				adv_open[_ai(Vector2i(7, cy))] = 1
+	start = Vector2i(7, 29)
 	pos = start
-	stairs = Vector2i(7, 1)
+	stairs = Vector2i(7, 3)
 	boss_floor = false
 	boss_cell = Vector2i(-1, -1)
-	adv_req = 3
-	adv_pts_total = 6
-	mons[Vector2i(7, 7)] = 1
-	mons[Vector2i(7, 3)] = 1
-	items[Vector2i(7, 2)] = "use_zap"
-	stations[Vector2i(4, 2)] = true
-	for cc in [Vector2i(5, 12), Vector2i(9, 12), Vector2i(7, 11)]:
+	adv_req = 5
+	adv_pts_total = 14
+	for cc in [Vector2i(4, 29), Vector2i(10, 29), Vector2i(7, 28)]:
 		coin_at[cc] = true
+	for sc in [Vector2i(6, 24), Vector2i(7, 24), Vector2i(8, 24)]:
+		spikes[sc] = true
+	items[Vector2i(10, 23)] = "pot"
+	mons[Vector2i(7, 19)] = 1
+	mons[Vector2i(7, 13)] = 1
+	items[Vector2i(5, 9)] = "use_zap"
+	mons[Vector2i(4, 8)] = 1
+	stations[Vector2i(10, 10)] = true
+	items[Vector2i(10, 8)] = "pod"
+	items[Vector2i(5, 4)] = "gear_hardcap"
 
 
 func _tut_map_start() -> void:
@@ -5369,6 +5607,7 @@ func _tut_map_start() -> void:
 	save_off = true
 	tutorial = true
 	tut_zone = -1
+	tut_dlg = ""
 	cls = "scout"
 	mode = "adv"
 	_new_run(1)
@@ -5377,7 +5616,6 @@ func _tut_map_start() -> void:
 	equip["ranged"] = "blaster"
 	bag.clear()
 	inv.clear()
-	inv.append("blink")
 	ammo = ammo_max()
 	ranged_mode = false
 	coins = 0
@@ -5456,28 +5694,58 @@ func _tut_map_end(done: bool) -> void:
 
 
 const TUT_HINTS := [
-	"Tap any tile to walk there, or swipe to step one tile. Walk up the corridor.",
-	"A monster! Walk into it to fight. The round button swaps melee and ranged: tap a monster in a clear line to shoot.",
-	"Tools: tap one in the bar to select it, tap again to use it. The CANCEL bar backs out.",
-	"O2 station: walk onto it to refill your air. Air drops with every step.",
-	"Exit open! Points unlock it. Walk to the gate at the top to finish.",
+	"Tap a tile to walk there, or swipe to step. Grab the coins!",
+	"Spikes hurt, so walk around them. Bottles give XP to level up.",
+	"A monster! Walk into it to fight. Its badge shows the risk: green is safe.",
+	"Tap the round button to swap to your gun, then tap a monster in a straight line. Shots use ammo.",
+	"Tools: walk over one to pick it up. Tap it in your bar, then tap again to use it.",
+	"Air drops with every step. Stand on an O2 station or grab air pods to refill.",
+	"Gear! Walk over it, then open the BAG to equip it.",
+	"Coins and kills give points. Enough points open the exit. Walk to the gate to finish!",
 ]
 
 
 func _tut_hint() -> void:
 	var z := 0
-	if pos.y <= 8:
+	if pos.y <= 25:
 		z = 1
-	if pos.y <= 5:
+	if pos.y <= 20:
 		z = 2
-	if absi(pos.x - 4) + absi(pos.y - 2) <= 2:
+	if pos.y <= 15:
 		z = 3
-	if adv_pts >= adv_req and pos.y <= 3:
+	if pos.y <= 10:
 		z = 4
-	if z == tut_zone:
+		if absi(pos.x - 10) + absi(pos.y - 10) <= 2:
+			z = 5
+	if pos.y <= 5:
+		z = 6
+	if adv_pts >= adv_req and pos.y <= 5:
+		z = 7
+	if z <= tut_zone:
 		return
 	tut_zone = z
 	msg = String(TUT_HINTS[z])
+	tut_dlg = msg
+	walk.clear()
+
+
+func _draw_tut_dlg() -> void:
+	if not tutorial or tut_dlg == "" or state != PLAY:
+		return
+	draw_rect(Rect2(-60, -60, 840, 1500), Color(0, 0, 0, 0.45))
+	var r := Rect2(60, 440, 600, 300)
+	_panel(r, Color("ffd84f"), 0.18, false)
+	_txt("TUTORIAL  %d / %d" % [tut_zone + 1, TUT_HINTS.size()], Vector2(r.position.x, r.position.y + 52), 24, Color("ffd84f"), r.size.x)
+	_para(tut_dlg, Vector2(r.position.x + 36, r.position.y + 110), 28, Color.WHITE, r.size.x - 72)
+	_txt("Tap to continue", Vector2(r.position.x, r.end.y - 24), 20, Color(1, 1, 1, 0.6), r.size.x)
+
+
+# ---------- floor details (looks only) ----------
+func _deco_at(x: int, y: int) -> int:
+	var h := _tile_hash(x + 311, y + 97)
+	if h % 100 < 5:
+		return (h / 100) % 4
+	return -1
 
 
 const WORLD_RULES := ["supply", "spore", "outage", "glare"]
@@ -5506,8 +5774,8 @@ func _draw_world_banner() -> void:
 	var a := clampf(minf(age / 0.3, (WORLD_BANNER_TIME - age) / 1.0), 0.0, 1.0)
 	var col: Color = WORLD_RULE_COL[banner_rule]
 	var r := Rect2(24, 330, 672, 124)
-	draw_rect(r, Color(0.02, 0.03, 0.07, 0.88 * a))
-	draw_rect(r, Color(col.r, col.g, col.b, a), false, 3.0)
+	_abox(r, Color(0.02, 0.03, 0.07, 0.88 * a))
+	_aline(r, Color(col.r, col.g, col.b, a), 3.0)
 	_txt("WORLD RULE", Vector2(r.position.x, r.position.y + 36), 28, Color(col.r, col.g, col.b, a), r.size.x)
 	_para(String(WORLD_RULE_TEXT[banner_rule]), Vector2(r.position.x + 20, r.position.y + 66), 22, Color(1, 1, 1, a), r.size.x - 40.0)
 
@@ -8360,7 +8628,7 @@ func _draw_trade(acc: Color) -> void:
 		var can := coins >= _eff_price(o) and not sold
 		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
 		_obox(rr, Color(col.r, col.g, col.b, 0.1))
-		draw_rect(rr, col, false, 2.0)
+		_aline(rr, col, 2.0)
 		if String(o["kind"]) == "gear":
 			var gd: Dictionary = gear_defs[gb(String(o["id"]))]
 			var gc := _gear_col(String(gd["slot"]))
@@ -9837,7 +10105,7 @@ func _adv_clear() -> void:
 	_sfx("clear")
 	var bonus := int(oxy / 20.0)
 	coins += bonus
-	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEAR" % floor_n
+	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEARED" % floor_n
 	var nxt := "floor %d" % (floor_n + 1)
 	if not arena and floor_n % 3 == 0:
 		nxt = "BOSS ARENA"
@@ -9846,7 +10114,7 @@ func _adv_clear() -> void:
 	else:
 		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
 	relic_choices = _roll_relics(1 if boss_floor else 0)
-	state = RELIC if relic_choices.size() > 0 else CLEAR
+	state = CLEAR
 
 
 func _adv_aim_valid(id: String, c: Vector2i) -> bool:
@@ -9964,7 +10232,7 @@ func _draw_med_menu(acc: Color) -> void:
 		var can := coins >= cost
 		var col := Color("6dff9a") if can else Color(1, 1, 1, 0.4)
 		_obox(rr, Color(col.r, col.g, col.b, 0.1))
-		draw_rect(rr, col, false, 2.0)
+		_aline(rr, col, 2.0)
 		_spr(spr_gen.icon("medstation"), Vector2(rr.position.x + 56, rr.position.y + 67), 72.0)
 		_txt("+%d HP" % amt, Vector2(rr.position.x + 110, rr.position.y + 52), 34, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_txt(String(o["name"]), Vector2(rr.position.x + 110, rr.position.y + 82), 20, Color("6dff9a"), 300.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -10726,6 +10994,9 @@ func _adv_draw() -> void:
 				_breach_fx(ctr, float(cx * 7 + cy * 3))
 			else:
 				draw_texture_rect(_floor_at(ti, cx, cy), r.grow(-1.0), false)
+				var dk1 := _deco_at(cx, cy)
+				if dk1 >= 0:
+					draw_texture_rect(spr_gen.floor_deco(ti, dk1), r.grow(-1.0), false)
 			if cracked.has(c) and crk_f == floor_n:
 				var cc := Color(0.9, 0.8, 1.0, 0.7)
 				draw_line(ctr + Vector2(-AC * 0.35, -AC * 0.2), ctr + Vector2(AC * 0.05, AC * 0.05), cc, 2.0)
@@ -11171,7 +11442,7 @@ func _draw_char_tab(acc: Color) -> void:
 	var psl := String(gear_defs[gb(prev)]["slot"]) if prev != "" else ""
 	var mr := _chr_model_rect()
 	_obox(mr, Color(1, 1, 1, 0.04))
-	draw_rect(mr, Color(1, 1, 1, 0.18), false, 2.0)
+	_aline(mr, Color(1, 1, 1, 0.18), 2.0)
 	_spr(_chr_tex(prev), mr.get_center() + Vector2(0, -4), 272.0)
 	_ctext("PREVIEW: tap EQUIP to wear it" if prev != "" else "tap the model to turn it", Vector2(mr.get_center().x, mr.end.y - 14), 15, Color("ffd84f") if prev != "" else Color(1, 1, 1, 0.4))
 	var wid := String(equip.get("ranged" if ranged_mode and _weapon_range() > 0 else "weapon", ""))
@@ -11203,8 +11474,8 @@ func _draw_char_tab(acc: Color) -> void:
 		var sh := minf(tsz.y + 12.0, 300.0)
 		chr_off = maxf(0.0, sy0 + sh - mr.end.y - 4.0 - 80.0)
 		var strip := Rect2(40, sy0, 640.0, sh)
-		draw_rect(strip, Color(0.02, 0.03, 0.08, 0.88))
-		draw_rect(strip, Color("ffd84f", 0.5), false, 1.0)
+		_abox(strip, Color(0.02, 0.03, 0.08, 0.88))
+		_aline(strip, Color("ffd84f", 0.5), 1.0)
 		_para(tt, strip.position + Vector2(8, 6 + font.get_ascent(14)), 14, Color("ffd84f"), 620.0)
 	inv_scroll_max = maxf(0.0, (_inv_view().size() - 1) * 110.0)
 	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
@@ -11214,7 +11485,7 @@ func _draw_char_tab(acc: Color) -> void:
 		var col := _gear_col(slot)
 		var hl := psl == slot
 		_obox(r, Color(col.r, col.g, col.b, 0.22 if hl else 0.08))
-		draw_rect(r, Color(col.r, col.g, col.b, 0.95 if hl else 0.55), false, 2.0)
+		_aline(r, Color(col.r, col.g, col.b, 0.95 if hl else 0.55), 2.0)
 		_ctext(slot.to_upper(), r.position + Vector2(70, 14), 14, col)
 		var gid := String(equip.get(slot, ""))
 		if gid == "":
@@ -11240,7 +11511,7 @@ func _draw_char_tab(acc: Color) -> void:
 		var rr := _chr_row_rect(idx)
 		var sel := idx == chr_sel
 		_obox(rr, Color(gc.r, gc.g, gc.b, 0.22 if sel else 0.08))
-		draw_rect(rr, Color(gc.r, gc.g, gc.b, 0.95 if sel else 0.55), false, 3.0 if sel else 2.0)
+		_aline(rr, Color(gc.r, gc.g, gc.b, 0.95 if sel else 0.55), 3.0 if sel else 2.0)
 		_spr(_gear_tex(bid), rr.position + Vector2(50, 51), 64.0)
 		_txt(String(gd2["name"]), rr.position + Vector2(98, 32), 24, _tier_col(int(gd2["tier"])), 290.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_txt(String(gd2["slot"]).to_upper(), rr.position + Vector2(98, 56), 16, gc, 90.0, HORIZONTAL_ALIGNMENT_LEFT)
@@ -11332,6 +11603,9 @@ func _owned_relics() -> Array:
 func _menu_leave() -> void:
 	if t - menu_armed < 3.0:
 		menu_armed = -10.0
+		if mini:
+			_mini_end("You left the puzzle run")
+			return
 		walk.clear()
 		aim = -1
 		_save_run()
@@ -11458,7 +11732,7 @@ func _draw_inv(acc: Color) -> void:
 		var cur := int(INV_TABS[i]) == mini(inv_tab, 3)
 		var tc := Color("ffd84f") if cur else Color(1, 1, 1, 0.5)
 		_obox(tr, Color(tc.r, tc.g, tc.b, 0.16 if cur else 0.06))
-		draw_rect(tr, tc, false, 2.0)
+		_aline(tr, tc, 2.0)
 		_ctext(tabs[i], tr.get_center(), 20, tc)
 	if inv_tab == 0:
 		var rows := [
@@ -11514,7 +11788,7 @@ func _draw_inv(acc: Color) -> void:
 			var y := 286.0 + i * 104.0
 			var col: Color = use_defs[id]["col"]
 			_obox(Rect2(40, y, 640, 94), Color(col.r, col.g, col.b, 0.1))
-			draw_rect(Rect2(40, y, 640, 94), col, false, 2.0)
+			_aline(Rect2(40, y, 640, 94), col, 2.0)
 			_use_icon(id, Vector2(86, y + 47), 52)
 			_txt(_use_name(id), Vector2(130, y + 38), 28, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(_atext("tool_" + id, String(use_defs[id]["desc"])), Vector2(130, y + 66), 19, Color(1, 1, 1, 0.7), 390.0)
@@ -11533,7 +11807,7 @@ func _draw_inv(acc: Color) -> void:
 			var cursed := d.has("curse")
 			var col := Color("ff6a5c") if cursed else acc
 			_obox(Rect2(40, y, 640, 120), Color(col.r, col.g, col.b, 0.1))
-			draw_rect(Rect2(40, y, 640, 120), col, false, 2.0)
+			_aline(Rect2(40, y, 640, 120), col, 2.0)
 			var n := relic_n(String(d["id"]))
 			_txt(_aname(String(d["id"]), String(d["name"])) + (" x%d" % n if n > 1 else "") + ("   CURSED" if cursed else ""), Vector2(58, y + 40), 30, col, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 			_para(_atext(String(d["id"]), String(d["desc"])), Vector2(58, y + 76), 21, Color(1, 1, 1, 0.8), 610.0)

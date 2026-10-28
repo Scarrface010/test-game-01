@@ -2558,41 +2558,106 @@ const STATION_FLOOR_LIGHT := 0.16   # how much lighter the Station floor is (0 =
 
 
 func floor_tile(ti: int, parity: int, variant: int) -> ImageTexture:
+	# every world floor: one cell = 4 flat tiles (2x2) with cartoon grout and a soft bevel
 	variant = variant % NV
 	var key := "floor%d_%d_%d" % [ti, parity, variant]
 	if cache.has(key):
 		return cache[key]
-	var art_f: ImageTexture = _atlas_cell("res://art/tile_atlas64.png", variant, ti * 2 + parity, 64)
-	if art_f != null:
-		if ti == 0:
-			var fim: Image = art_f.get_image()
-			var fov := Image.create(fim.get_width(), fim.get_height(), false, fim.get_format())
-			fov.fill(Color(0.75, 0.82, 1.0, STATION_FLOOR_LIGHT))
-			fim.blend_rect(fov, Rect2i(Vector2i.ZERO, fim.get_size()), Vector2i.ZERO)
-			art_f = ImageTexture.create_from_image(fim)
-		cache[key] = art_f
-		return art_f
-	var base: Color = themes[ti]["tile"] if parity == 0 else themes[ti]["tile2"]
-	var rng := RandomNumberGenerator.new()
-	rng.seed = ti * 1000 + parity * 100 + variant * 7 + 11
-	var cv := Cv.new(32, 32)
-	cv.rect(0, 0, 32, 32, base)
-	for i in 110:
-		var x := rng.randi_range(0, 31)
-		var y := rng.randi_range(0, 31)
-		cv.px(x, y, base.lightened(0.05) if rng.randf() < 0.5 else base.darkened(0.07))
+	var base: Color = themes[ti]["tile"]
 	if ti == 0:
-		_floor0(cv, base, rng, variant)
-	elif ti == 1:
-		_floor1(cv, base, rng, variant)
-	elif ti == 3:
-		_floor3(cv, base, rng, variant)
-	else:
-		_floor2(cv, base, rng, variant)
-	cv.img.fix_alpha_edges()
-	var t := cv.tex()
-	cache[key] = t
-	return t
+		base = base.lerp(Color(0.75, 0.82, 1.0), STATION_FLOOR_LIGHT)
+	base = base.lightened(0.02 * float((variant + parity) % 3))
+	var grout := base.darkened(0.5)
+	var hi := base.lightened(0.13)
+	var lo := base.darkened(0.16)
+	var im := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	im.fill(grout)
+	for qx in [0, 32]:
+		for qy in [0, 32]:
+			im.fill_rect(Rect2i(qx + 2, qy + 2, 28, 28), base)
+			im.fill_rect(Rect2i(qx + 2, qy + 2, 28, 2), hi)
+			im.fill_rect(Rect2i(qx + 2, qy + 2, 2, 28), hi)
+			im.fill_rect(Rect2i(qx + 2, qy + 28, 28, 2), lo)
+			im.fill_rect(Rect2i(qx + 28, qy + 2, 2, 28), lo)
+	var tx := ImageTexture.create_from_image(im)
+	cache[key] = tx
+	return tx
+
+
+# small cartoon details scattered on the floor (looks only), 4 per world
+func floor_deco(ti: int, k: int) -> ImageTexture:
+	var key := "fdeco%d_%d" % [ti, k]
+	if cache.has(key):
+		return cache[key]
+	var cv := Cv.new(32, 32)
+	var ox := 8 + (k * 7) % 12
+	var oy := 9 + (k * 5) % 12
+	match ti % 4:
+		0:
+			if k == 0:
+				cv.disc(ox + 3, oy + 3, 3.0, Color("9aa4c0"))
+				cv.line(ox + 1, oy + 3, ox + 5, oy + 3, Color("4a5270"))
+				cv.px(ox + 2, oy + 2, Color("e0e6ff"))
+			elif k == 1:
+				cv.line(ox, oy + 4, ox + 4, oy + 1, Color("3a3f55"), 2.0)
+				cv.line(ox + 4, oy + 1, ox + 9, oy + 5, Color("3a3f55"), 2.0)
+				cv.rect(ox + 9, oy + 4, 3, 3, Color("ffd84f"))
+			elif k == 2:
+				cv.poly([Vector2(ox, oy + 2), Vector2(ox + 8, oy), Vector2(ox + 10, oy + 7), Vector2(ox + 2, oy + 9)], Color("e8ecf5"))
+				cv.line(ox + 2, oy + 3, ox + 7, oy + 2, Color("9aa4c0"))
+				cv.line(ox + 3, oy + 6, ox + 8, oy + 5, Color("9aa4c0"))
+			else:
+				cv.ell(ox + 5, oy + 4, 5.0, 3.0, Color("1c2030"))
+				cv.px(ox + 3, oy + 3, Color("6a8bd8"))
+				cv.px(ox + 4, oy + 3, Color("a05ac8"))
+		1:
+			if k == 0:
+				for d in [-3, 0, 3]:
+					cv.line(ox + 4, oy + 8, ox + 4 + d, oy + 1 + absi(d), Color("5fc06a"), 2.0)
+			elif k == 1:
+				cv.ell(ox + 5, oy + 4, 5.0, 2.5, Color("4fae5a"))
+				cv.line(ox + 1, oy + 4, ox + 9, oy + 4, Color("2f7a3a"))
+			elif k == 2:
+				for d in [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2)]:
+					cv.disc(ox + 4 + d.x, oy + 4 + d.y, 1.8, Color("ff9ecb"))
+				cv.disc(ox + 4, oy + 4, 1.3, Color("ffe066"))
+			else:
+				cv.ell(ox + 4, oy + 4, 4.0, 3.0, Color("8a9088"))
+				cv.px(ox + 3, oy + 2, Color("d8ddd2"))
+		2:
+			if k == 0:
+				cv.rect(ox + 2, oy, 4, 9, Color("3f8a4a"))
+				cv.rect(ox + 3, oy - 2, 2, 3, Color("6a4a26"))
+				cv.px(ox + 3, oy + 2, Color("b8f0c0"))
+			elif k == 1:
+				cv.ell(ox + 5, oy + 4, 5.0, 3.5, Color("c9a26a"))
+				cv.ell(ox + 5, oy + 4, 3.0, 2.0, Color("8a6a3a"))
+				cv.ell(ox + 5, oy + 4, 1.5, 1.0, Color("c9a26a"))
+			elif k == 2:
+				cv.poly([Vector2(ox, oy + 3), Vector2(ox + 11, oy + 1), Vector2(ox + 11, oy + 4), Vector2(ox, oy + 6)], Color("9a7440"))
+				cv.line(ox + 2, oy + 4, ox + 9, oy + 3, Color("6a4a26"))
+			else:
+				cv.rect(ox, oy, 7, 9, Color("f4efe2"))
+				cv.disc(ox + 3, oy + 4, 1.5, Color("e04040"))
+		_:
+			if k == 0:
+				cv.poly([Vector2(ox, oy + 8), Vector2(ox + 3, oy), Vector2(ox + 6, oy + 8)], Color("b88cff"))
+				cv.line(ox + 3, oy + 1, ox + 3, oy + 7, Color("e6d0ff"))
+			elif k == 1:
+				cv.disc(ox + 3, oy + 3, 3.0, Color("7fe8ff"))
+				cv.px(ox + 2, oy + 2, Color.WHITE)
+			elif k == 2:
+				cv.poly([Vector2(ox, oy + 8), Vector2(ox + 2, oy + 2), Vector2(ox + 4, oy + 8)], Color("d58cff"))
+				cv.poly([Vector2(ox + 4, oy + 8), Vector2(ox + 7, oy - 1), Vector2(ox + 10, oy + 8)], Color("a070ff"))
+				cv.px(ox + 7, oy + 1, Color.WHITE)
+			else:
+				cv.rect(ox + 3, oy, 1, 7, Color("f0e0ff"))
+				cv.rect(ox, oy + 3, 7, 1, Color("f0e0ff"))
+				cv.px(ox + 3, oy + 3, Color.WHITE)
+	cv.outline(Color("120c1c"))
+	var tx := cv.tex()
+	cache[key] = tx
+	return tx
 
 
 func _floor0(cv: Cv, base: Color, rng: RandomNumberGenerator, v: int) -> void:
