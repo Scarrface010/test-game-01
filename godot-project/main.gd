@@ -267,6 +267,7 @@ var inv_scroll := 0.0
 var inv_filter := 0
 var inv_sort := 0
 var inv_scroll_max := 0.0
+var mods_open := false
 var chr_off := 0.0    # extra height of the modifiers strip in the gear tab
 var tut_back := MODE
 var tutorial := false
@@ -320,7 +321,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 65
+const BUILD := 66
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2817,7 +2818,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if state == RELIC:
 		if btn_skip.has_point(p):
-			coins += 3
+			coins += _skip_val()
 			_sfx("coin")
 			_finish_clear()
 			return
@@ -4974,7 +4975,7 @@ func _draw_overlay(acc: Color) -> void:
 					var stxt := ("SYNERGY ACTIVE: " + sytxt) if have else ("Synergy with %s: %s" % [oname, sytxt])
 					_txt(stxt, Vector2(rr.position.x + 22, rr.end.y - 10), 16, Color("ffd84f") if have else Color(1, 1, 1, 0.45), rr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
 					break
-		_button(btn_skip, "SKIP  (+3 coins)", Color(1, 1, 1, 0.75), 26)
+		_button(btn_skip, "SKIP  (+%d coins)" % _skip_val(), Color(1, 1, 1, 0.75), 26)
 	elif state == FORK:
 		_txt("CHOOSE YOUR PATH", Vector2(0, 250), 54, acc)
 		_txt("Floor %d awaits" % (floor_n + 1), Vector2(0, 310), 26, Color(1, 1, 1, 0.7))
@@ -5096,7 +5097,97 @@ func _draw_overlay(acc: Color) -> void:
 # ---------- ADVENTURE MODE (sprawling map, fog of war, points gate, air) ----------
 
 func adv_vis_r() -> int:
-	return 4 + relic_n("lantern") + relic_n("ember") + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight")) - (1 if _world_rule() == "glare" else 0)
+	if _blackout():
+		return 1
+	return 4 + relic_n("lantern") + relic_n("ember") + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight")) - (1 if _world_rule() == "glare" else 0) - (2 if _world_rule() == "outage" else 0)
+
+
+var cracked: Dictionary = {}
+var crk_f := -1
+
+
+func _by_wall(c: Vector2i) -> bool:
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			if (dx != 0 or dy != 0) and not _aopen(c + Vector2i(dx, dy)):
+				return true
+	return false
+
+
+var hull_holes: Dictionary = {}
+var hull_f := -1
+
+
+func _hull_tear() -> void:
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	dirs.shuffle()
+	for dv in dirs:
+		var hc: Vector2i = pos + dv * 3
+		if not _aopen(hc) or hc == stairs or mons.has(hc) or hull_holes.has(hc):
+			continue
+		hull_holes[hc] = true
+		_fx_ring(Vector2(hc), Color("5a8cff"), 1.8, 0.6, 6.0)
+		_shake(6.0, 0.35)
+		var moved_n := 0
+		for k in 2:
+			var n: Vector2i = pos + dv
+			if not _aopen(n) or mons.has(n) or vaults.has(n):
+				break
+			pos = n
+			moved_n += 1
+		walk.clear()
+		_adv_update_vis()
+		_pop(pos, "SUCKED %d" % moved_n if moved_n > 0 else "HELD ON", Color("5a8cff"))
+		msg = "Hull breach! The vacuum drags you toward the hole"
+		return
+
+
+func _breach_fx(ctr: Vector2, ph: float) -> void:
+	draw_circle(ctr, AC * 0.46, Color(0.5, 0.85, 1.0, 0.07))
+	for i in 4:
+		var q := fmod(t * 0.9 + i * 0.25 + ph, 1.0)
+		var a2 := ph + i * 1.7 + q * 2.0
+		var rr := AC * 0.5 * (1.0 - q)
+		draw_circle(ctr + Vector2(cos(a2), sin(a2)) * rr * 0.9, 2.2, Color(0.8, 0.95, 1.0, q))
+
+
+func _supply_drop() -> void:
+	var opts: Array[Vector2i] = []
+	for dx in range(-6, 7):
+		for dy in range(-6, 7):
+			var c := pos + Vector2i(dx, dy)
+			var d := maxi(absi(dx), absi(dy))
+			if d < 3 or not _aopen(c) or c == stairs or mons.has(c) or items.has(c) or coin_at.has(c) or spikes.has(c) or haz.has(c):
+				continue
+			opts.append(c)
+	if opts.is_empty():
+		return
+	var c2: Vector2i = opts[randi() % opts.size()]
+	if randf() < 0.5:
+		items[c2] = "pod"
+	else:
+		coin_at[c2] = true
+	_fx_ring(Vector2(c2), Color("ffd84f"), 1.6, 0.6, 6.0)
+	_fx_burst(Vector2(c2), Color("ffd84f"), 12, 2.6, 0.6, 5.0)
+	_pop(c2, "SUPPLY DROP", Color("ffd84f"))
+	msg = "Supply drop! A crate landed nearby"
+
+
+func _blackout() -> bool:
+	return _world_rule() == "outage" and adv_steps > 0 and adv_steps % 25 < 3
+
+
+func _in_room(c: Vector2i) -> bool:
+	for rm in adv_rooms:
+		if (rm as Rect2i).has_point(c):
+			return true
+	return false
+
+
+func _mon_seen(c: Vector2i) -> bool:
+	if not adv_vis.has(c):
+		return false
+	return _world_rule() != "outage" or maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 2
 
 
 func adv_oxy_max() -> float:
@@ -5389,18 +5480,20 @@ func _tut_hint() -> void:
 	msg = String(TUT_HINTS[z])
 
 
-const WORLD_RULES := ["leak", "spore", "black", "glare"]
+const WORLD_RULES := ["supply", "spore", "outage", "glare"]
 const WORLD_RULE_TEXT := {
 	"leak": "Vacuum leaks: corridors drain extra air. Rooms are safe.",
+	"hull": "Hull breach: air drains 3x faster. Every 30 steps the hull tears open nearby and the vacuum drags you 2 tiles toward it. Standing on a breach costs 5 air.",
+	"supply": "Supply drops: every 40 steps a crate of coins or air lands nearby.",
 	"spore": "Spore bursts: every 30 steps you are briefly poisoned.",
-	"black": "Black market: more merchants, but more thieves.",
-	"glare": "Crystal glare: you see 1 tile less, but kills give +25% XP.",
+	"outage": "Power outage: you see 2 tiles less, and enemies stay hidden until within 2 tiles. Every 25 steps a 3-step blackout leaves you seeing only adjacent tiles while Hunters move every turn.",
+	"glare": "Crystal storm: you see 1 tile less. Tiles crack as you walk; stepping on a cracked tile costs 3 health. Every 20 steps crystals shatter, hurting you unless you stand next to a wall. Kills give +25% XP.",
 }
 var guide_seen: Dictionary = {}
 var banner_rule := ""
 var banner_t0 := -100.0
 const WORLD_BANNER_TIME := 10.0
-const WORLD_RULE_COL := {"leak": Color("7fd8ff"), "spore": Color("b6ff6a"), "black": Color("ffc93c"), "glare": Color("e6c8ff")}
+const WORLD_RULE_COL := {"hull": Color("5a8cff"), "supply": Color("ffd84f"), "leak": Color("7fd8ff"), "spore": Color("b6ff6a"), "outage": Color("ff9a5b"), "glare": Color("e6c8ff")}
 
 
 # warning banner shown for ~10 s at the top of the map when a new world's rule starts
@@ -5422,7 +5515,10 @@ func _draw_world_banner() -> void:
 func _world_rule() -> String:
 	if mode != "adv" or tutorial or testroom or arena or themes.is_empty():
 		return ""
-	return String(WORLD_RULES[tidx() % WORLD_RULES.size()])
+	var wr := String(WORLD_RULES[tidx() % WORLD_RULES.size()])
+	if wr == "supply" and tidx() >= WORLD_RULES.size():
+		return "hull"
+	return wr
 
 
 func _adv_in_room(c: Vector2i) -> bool:
@@ -6151,10 +6247,10 @@ func _set_lines() -> String:
 	var out := ""
 	for sid in GEAR_SETS:
 		var n := set_n(String(sid))
-		if n <= 0:
+		if n < 2:
 			continue
 		var g: Array = GEAR_SETS[sid]
-		out += "[SET] %s %d/%d  %s2: %s   %s3: %s\n" % [g[0], n, (g[1] as Array).size(), "* " if n >= 2 else "", g[2], "* " if n >= 3 else "", g[3]]
+		out += "[SET] %s %d/%d  %s%s\n" % [g[0], n, (g[1] as Array).size(), g[2], ("   " + String(g[3])) if n >= 3 else ""]
 	return out
 
 
@@ -6662,6 +6758,10 @@ func _tool_spend(i: int) -> void:
 	inv.remove_at(i)
 
 
+func _skip_val() -> int:
+	return 3 + floor_n
+
+
 func _drone_fire() -> void:
 	var dts: Array = []
 	for dt0 in _near_mons(pos, 3, []):
@@ -6675,6 +6775,9 @@ func _drone_fire() -> void:
 		_fx_bolt(Vector2(pos) + Vector2(0, -0.4), Vector2(dt), Color("4fd1c5"))
 		var ddmg := maxi(1, int(float(p_atk()) * sk("drone") / 100.0 * _rally()))
 		_adv_damage_mon(dt, ddmg, Color("4fd1c5"))
+		if mons.has(dt) and not tur.has(dt) and not _boss_cell(dt) and ["hunter", "rager"].find(String(kinds.get(dt, ""))) < 0:
+			kinds[dt] = "hunter"
+			_pop(dt, "HUNTS YOU", Color("ff8a5b"))
 		if relic_n("uplink") > 0:
 			_uplink_apply(dt)
 			if syn("uplink", "storm"):
@@ -7536,7 +7639,7 @@ const SK_BR2 := [
 		["Hold the Line", "+%s armour while an enemy is next to you", "hold", [1, 2]],
 		["Rally", "Your drone and hacked turrets deal +%s%% damage", "rally", [25, 50]],
 		["Suppress", "Marked enemies deal %s%% less damage to you", "msupp", [20, 35]],
-		["Drone Companion", "Every 12 steps a drone zaps an enemy within 3 tiles (marked enemies first) for %s%% of your attack", "drone", [100, 200]]]],
+		["Drone Companion", "Every 12 steps a drone zaps an enemy within 3 tiles (marked enemies first) for %s%% of your attack. Enemies it zaps turn into Hunters", "drone", [100, 200]]]],
 	["WARP", Color("a68cff"), [
 		["Warp Beacon", "Each floor tops you up to %s Warp Beacon(s): use one to drop a beacon, use it again to warp back", "beacon", [1, 2]],
 		["Slipstream", "After any warp (Blink, Grapple, Rewind, Beacon) your next %s steps cost no air", "wslip", [3, 6]],
@@ -8561,7 +8664,7 @@ func _adv_mini_update() -> void:
 func _adv_vis_mons() -> Dictionary:
 	var out := {}
 	for c in mons:
-		if adv_vis.has(c):
+		if _mon_seen(c):
 			out[c] = true
 	return out
 
@@ -9099,6 +9202,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	else:
 		var base_air := 1.0 - (gear("airsave") + sk("airsave")) / 100.0
 		oxy -= base_air * (2.0 if relic_n("prism") > 0 and not moved else 1.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
+	if _world_rule() == "hull":
+		oxy -= 2.0 * (1.0 - (gear("airsave") + sk("airsave")) / 100.0)
 	if _world_rule() == "leak" and not _adv_in_room(pos):
 		oxy -= 0.25
 	if moved and corpses.has(pos) and relic_n("gravedigger") > 0 and not bool(corpses[pos].get("looted", false)):
@@ -9142,6 +9247,44 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	_adv_update_vis()
 	if spike_dmg > 0 and not _adv_spike_hurt(spike_dmg):
 		return
+	if _world_rule() == "hull":
+		if hull_f != floor_n:
+			hull_holes.clear()
+			hull_f = floor_n
+		if hull_holes.has(pos):
+			oxy = maxf(0.0, oxy - 5.0)
+			_pop(pos, "-5 AIR", Color("5a8cff"))
+		if adv_steps > 0 and adv_steps % 30 == 0:
+			_hull_tear()
+		elif adv_steps % 30 >= 27:
+			_pop(pos, "HULL CREAKS", Color("5a8cff"))
+	if _world_rule() == "supply" and adv_steps > 0 and adv_steps % 40 == 0:
+		_supply_drop()
+	if _world_rule() == "outage":
+		if adv_steps > 0 and adv_steps % 25 == 0:
+			_pop(pos, "BLACKOUT", Color("ff9a5b"))
+			msg = "Blackout! The lights are out and Hunters move fast"
+		elif adv_steps % 25 >= 22:
+			_pop(pos, "LIGHTS FLICKER", Color("ff9a5b"))
+	if _world_rule() == "glare":
+		if crk_f != floor_n:
+			cracked.clear()
+			crk_f = floor_n
+		if moved:
+			if cracked.has(pos):
+				_pop(pos, "CRACK", Color("e6c8ff"))
+				if not _adv_env_hurt(3, "The glass gives way! You lose %d health", "You fell through the cracked glass", "spike"):
+					return
+			cracked[pos] = true
+		var sl := 20 - adv_steps % 20
+		if sl <= 3 and sl > 0 and adv_steps % 20 != 0:
+			_pop(pos, "SHATTER IN %d" % sl, Color("e6c8ff"))
+		if adv_steps % 20 == 0:
+			_fx_ring(Vector2(pos), Color("e6c8ff"), 2.4, 0.6, 6.0)
+			if _by_wall(pos):
+				_pop(pos, "SHELTERED", Color("e6c8ff"))
+			elif not _adv_env_hurt(4 + floor_n / 3, "Crystals shatter! You lose %d health", "You were shredded by crystal shards", "spike"):
+				return
 	if _world_rule() == "spore" and adv_steps % 30 == 0:
 		poison_n = maxi(poison_n, 3)
 		poison_d = maxi(poison_d, 1)
@@ -9273,7 +9416,7 @@ func _adv_hunters() -> void:
 			if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
 				return
 			continue
-		if adv_steps % 2 != 0 and String(kinds[c]) != "rager":
+		if adv_steps % 2 != 0 and String(kinds[c]) != "rager" and not _blackout():
 			continue
 		if _rooted(c):
 			continue
@@ -9356,7 +9499,7 @@ func _adv_draw_shoot_lanes() -> void:
 
 func _adv_can_shoot(c: Vector2i) -> bool:
 	var rg := _shoot_range()
-	if rg <= 0 or ammo <= 0 or not mons.has(c) or not adv_vis.has(c):
+	if rg <= 0 or ammo <= 0 or not mons.has(c) or not _mon_seen(c):
 		return false
 	if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 1:
 		return false
@@ -10578,7 +10721,16 @@ func _adv_draw() -> void:
 				if wfa > 0.01:
 					draw_rect(r, Color(0, 0, 0, wfa))
 				continue
-			draw_texture_rect(_floor_at(ti, cx, cy), r.grow(-1.0), false)
+			if hull_holes.has(c) and hull_f == floor_n:
+				draw_rect(r, Color.BLACK)
+				_breach_fx(ctr, float(cx * 7 + cy * 3))
+			else:
+				draw_texture_rect(_floor_at(ti, cx, cy), r.grow(-1.0), false)
+			if cracked.has(c) and crk_f == floor_n:
+				var cc := Color(0.9, 0.8, 1.0, 0.7)
+				draw_line(ctr + Vector2(-AC * 0.35, -AC * 0.2), ctr + Vector2(AC * 0.05, AC * 0.05), cc, 2.0)
+				draw_line(ctr + Vector2(AC * 0.05, AC * 0.05), ctr + Vector2(AC * 0.3, -AC * 0.3), cc, 2.0)
+				draw_line(ctr + Vector2(AC * 0.05, AC * 0.05), ctr + Vector2(-AC * 0.05, AC * 0.38), cc, 2.0)
 			var bob := sin(t * 3.0 + cx * 1.7 + cy) * 2.0
 			if c == stairs:
 				var ok := adv_pts >= adv_req
@@ -10638,7 +10790,7 @@ func _adv_draw() -> void:
 				_draw_coin(ctr, bob, AC * 0.42, float(cx * 5 + cy * 3))
 			if corpses.has(c) and not mons.has(c) and c != stairs:
 				_draw_corpse(ctr, c)
-			if vis and mons.has(c):
+			if vis and mons.has(c) and _mon_seen(c):
 				mlist.append([c, ctr])
 			var ffa := _fog_a(c, 0.55)
 			if ffa > 0.01:
@@ -10721,15 +10873,15 @@ func _adv_draw() -> void:
 	if skill_pts > 0:
 		draw_circle(btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 13.0, Color("ff5d5d"))
 		_ctext(str(skill_pts), btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 16, Color.WHITE)
-	var xpf := clampf(float(xp) / float(xp_need()), 0.0, 1.0)
-	draw_rect(Rect2(40, 245, 240, 11), Color(1, 1, 1, 0.14))
-	draw_rect(Rect2(40, 245, 240.0 * xpf, 11), Color("ffd84f"))
-	_txt("XP %d/%d" % [xp, xp_need()], Vector2(288, 256), 14, Color("ffd84f"), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_hud_panels(acc, 124.0)
 	_wbox_draw()
 	_sk_banner()
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var xpf := clampf(float(xp) / float(xp_need()), 0.0, 1.0)
+	draw_rect(Rect2(40, 252, 200, 10), Color(1, 1, 1, 0.14))
+	draw_rect(Rect2(40, 252, 200.0 * xpf, 10), Color("ffd84f"))
+	_txt("EXP %d/%d" % [xp, xp_need()], Vector2(248, 263), 15, Color("ffd84f"), 110.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_adv_badges()
 	var low := oxy < oxy_max * 0.25
 	var acol := Color("3d9bff") if low else Color("7fd8ff")
@@ -10952,7 +11104,15 @@ func _chr_tex(prev: String) -> ImageTexture:
 	return spr_gen.player((cdef()["col"] as Color), cls, 0, chr_dir, eq)
 
 
+func _mods_btn_rect() -> Rect2:
+	return Rect2(40, _chr_model_rect().end.y + 4.0, 640.0, 40.0)
+
+
 func _chr_input(p: Vector2) -> void:
+	if chr_sel < 0 and _mods_btn_rect().has_point(p):
+		mods_open = not mods_open
+		_sfx("ui")
+		return
 	if _chr_model_rect().has_point(p):
 		chr_dir = {0: 3, 3: 1, 1: 0}.get(chr_dir, 0)
 		_sfx("ui")
@@ -11003,7 +11163,7 @@ func _chr_input(p: Vector2) -> void:
 
 
 func _draw_char_tab(acc: Color) -> void:
-	inv_scroll_max = maxf(0.0, _inv_view().size() * 110.0 - (CHR_LIST_BOT - 666.0 + 8.0))
+	inv_scroll_max = maxf(0.0, (_inv_view().size() - 1) * 110.0)
 	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
 	if chr_sel >= bag.size():
 		chr_sel = -1
@@ -11027,20 +11187,26 @@ func _draw_char_tab(acc: Color) -> void:
 			tt += "%s%s: %s\n" % [pre, TRAIT_DEFS[tid3]["n"], TRAIT_DEFS[tid3]["d"]]
 		for mid3 in gmods(tsrc):
 			tt += "%s%s: %s\n" % [pre, MOD_DEFS[mid3]["n"], MOD_DEFS[mid3]["d"]]
-	if prev != "":
-		tt = _cmp_line(prev) + "\n" + tt
 	tt += "\n" + _set_lines()
 	tt = tt.strip_edges()
-	chr_off = 0.0
+	var sy0 := mr.end.y + 4.0
+	if prev != "":
+		tt = _cmp_line(prev)
+	elif tt != "":
+		_button(_mods_btn_rect(), "HIDE MODIFIERS" if mods_open else "SHOW MODIFIERS", Color("ffd84f"), 18)
+		sy0 += 44.0
+		if not mods_open:
+			tt = ""
+	chr_off = maxf(0.0, sy0 - mr.end.y - 4.0 - 80.0) if tt == "" else 0.0
 	if tt != "":
 		var tsz := font.get_multiline_string_size(tt, HORIZONTAL_ALIGNMENT_LEFT, 620.0, 14)
 		var sh := minf(tsz.y + 12.0, 300.0)
-		chr_off = maxf(0.0, sh - 80.0)
-		var strip := Rect2(40, mr.end.y + 4.0, 640.0, sh)
+		chr_off = maxf(0.0, sy0 + sh - mr.end.y - 4.0 - 80.0)
+		var strip := Rect2(40, sy0, 640.0, sh)
 		draw_rect(strip, Color(0.02, 0.03, 0.08, 0.88))
 		draw_rect(strip, Color("ffd84f", 0.5), false, 1.0)
 		_para(tt, strip.position + Vector2(8, 6 + font.get_ascent(14)), 14, Color("ffd84f"), 620.0)
-	inv_scroll_max = maxf(0.0, _inv_view().size() * 110.0 - (CHR_LIST_BOT - 666.0 - chr_off + 8.0))
+	inv_scroll_max = maxf(0.0, (_inv_view().size() - 1) * 110.0)
 	inv_scroll = clampf(inv_scroll, 0.0, inv_scroll_max)
 	for i in 6:
 		var slot := String(CHR_SLOTS[i])
@@ -11088,7 +11254,7 @@ func _draw_char_tab(acc: Color) -> void:
 	if inv_scroll_max > 0.0:
 		var tot := _inv_view().size() * 110.0
 		var vh := CHR_LIST_BOT - CHR_LIST_TOP - chr_off
-		var bh := vh * vh / tot
+		var bh := clampf(vh * vh / (tot + vh), 30.0, vh)
 		var by := CHR_LIST_TOP + chr_off + (vh - bh) * inv_scroll / inv_scroll_max
 		draw_rect(Rect2(692, by, 6, bh), Color(1, 1, 1, 0.35))
 		_ctext("drag to scroll", Vector2(360, 1100), 16, Color(1, 1, 1, 0.4))
@@ -11653,7 +11819,7 @@ func _batch_selftest() -> int:
 		bad += 1
 	ups["belt"] = 0
 	# world rule per floor
-	var want := {1: "leak", 4: "spore", 7: "black", 10: "glare", 13: "leak"}
+	var want := {1: "supply", 4: "spore", 7: "outage", 10: "glare", 13: "leak"}
 	for wf in want:
 		floor_n = int(wf)
 		if _world_rule() != String(want[wf]):
