@@ -343,7 +343,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 69
+const BUILD := 70
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -5455,6 +5455,10 @@ func _hull_tear() -> void:
 		_adv_update_vis()
 		_pop(pos, "SUCKED %d" % moved_n if moved_n > 0 else "HELD ON", Color("5a8cff"))
 		msg = "Hull breach! The vacuum drags you toward the hole"
+		if moved_n > 0 and spikes.has(pos):
+			var hsx := spike_x()
+			if hsx > 0:
+				_adv_spike_hurt(maxi(1, int(round(float(2 + floor_n / 2 + level / 4) * float(hsx) / 2.0))))
 		return
 
 
@@ -12774,6 +12778,16 @@ func _make_sfx() -> void:
 func _play_music(ti: int) -> void:
 	if music_player == null:
 		return
+	if ResourceLoader.exists("res://art/music/main_theme.mp3"):
+		if music_player.playing and music_theme == -2:
+			return
+		var mm := load("res://art/music/main_theme.mp3") as AudioStreamMP3
+		if mm != null:
+			mm.loop = true
+			music_theme = -2
+			music_player.stream = mm
+			music_player.play()
+			return
 	if music_theme == ti and music_player.playing:
 		return
 	if music_cache.has(ti):

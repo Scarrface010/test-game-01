@@ -1101,6 +1101,11 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	for l in layers:
 		base.blend_rect(l, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	_hip_trinket(base, eq, col)
+	if cls == "brute" and col == 0:
+		var bs := base.duplicate() as Image
+		bs.resize(int(HW * 0.93), int(HH * 0.93), Image.INTERPOLATE_LANCZOS)
+		base.fill(Color(0, 0, 0, 0))
+		base.blend_rect(bs, Rect2i(0, 0, bs.get_width(), bs.get_height()), Vector2i((HW - bs.get_width()) / 2, HH - bs.get_height()))
 	var wid := String(eq.get("weapon", ""))
 	var hi_wpn: Image = null
 	if USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
