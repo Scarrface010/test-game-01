@@ -343,7 +343,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 68
+const BUILD := 69
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -4646,44 +4646,75 @@ func _mod_label() -> String:
 var draw_count := 0
 
 
-const INTRO_LEN := 4.6
+const INTRO_LEN := 6.0
+const INTRO_STARS := [Vector3(0.7699, 0.5683, 578), Vector3(0.4027, 0.4893, 476), Vector3(0.1592, 0.0892, 285), Vector3(0.0575, 0.1144, 249), Vector3(0.6661, 0.5650, 193), Vector3(0.4189, 0.0412, 115), Vector3(0.5387, 0.6589, 115), Vector3(0.3444, 0.3438, 110), Vector3(0.3360, 0.4435, 107), Vector3(0.5439, 0.3467, 102), Vector3(0.4691, 0.6590, 101), Vector3(0.5544, 0.4402, 100), Vector3(0.6896, 0.5369, 97), Vector3(0.3494, 0.6950, 93), Vector3(0.4171, 0.6269, 85), Vector3(0.2938, 0.5763, 83), Vector3(0.4111, 0.3306, 82), Vector3(0.4573, 0.5862, 82), Vector3(0.2348, 0.5748, 78), Vector3(0.2392, 0.5156, 68), Vector3(0.2734, 0.5826, 62), Vector3(0.5514, 0.6222, 56), Vector3(0.3662, 0.3267, 50), Vector3(0.5762, 0.4735, 50)]
+# x, y (fraction of bg image), radius (fraction of bg width)
+const INTRO_PLANETS := [Vector3(0.6958, 0.3049, 0.0581), Vector3(0.1783, 0.4557, 0.0587), Vector3(0.7945, 0.4670, 0.0515), Vector3(0.6286, 0.6001, 0.0260)]
+var intro_tex: Dictionary = {}
 
 
+func _intro_tex(n: String) -> Texture2D:
+	if not intro_tex.has(n):
+		var p := "res://art/intro/%s" % n
+		intro_tex[n] = load(p) if ResourceLoader.exists(p) else null
+	return intro_tex[n]
+
+
+# Intro: art/intro/bg.jpg (1125x2000 corridor + sky, title and planets cut out), planets drift/spin,
+# stars twinkle, two shooting stars, title (art/intro/title.png) drops in lower down and floats.
 func _draw_intro() -> void:
 	var u := t - state_t
 	var W := size.x
 	var H := size.y
 	draw_rect(Rect2(0, 0, W, H), Color(0.03, 0.04, 0.09))
-	var fade_in := clampf(u / 0.8, 0.0, 1.0)
-	for i in 70:
-		var sx := fmod(float(i) * 97.3 + 31.0, W)
-		var sy := fmod(float(i) * 211.7 + u * (6.0 + float(i % 5) * 3.0), H)
-		var tw := 0.25 + 0.55 * (0.5 + 0.5 * sin(u * 2.0 + float(i)))
-		draw_rect(Rect2(sx, sy, 2.0 + float(i % 3), 2.0 + float(i % 3)), Color(0.7, 0.85, 1.0, tw * fade_in))
-	var cx := W * 0.5
-	var cy := H * 0.36
-	var gr := clampf(u / 1.4, 0.0, 1.0)
-	gr = 1.0 - (1.0 - gr) * (1.0 - gr)
-	var R := 150.0 * gr
-	var pulse := 0.5 + 0.5 * sin(u * 3.0)
-	draw_circle(Vector2(cx, cy), R * 1.25, Color(0.2, 0.5, 0.8, 0.10 + 0.05 * pulse))
-	draw_circle(Vector2(cx, cy), R, Color(0.05, 0.09, 0.16))
-	draw_arc(Vector2(cx, cy), R, 0.0, TAU, 64, Color("7fd8ff"), 6.0)
-	draw_arc(Vector2(cx, cy), R * 0.82, u * 0.8, u * 0.8 + TAU * 0.7, 48, Color(0.5, 0.85, 1.0, 0.7), 4.0)
-	draw_arc(Vector2(cx, cy), R * 0.64, -u * 1.2, -u * 1.2 + TAU * 0.5, 40, Color("ffd84f"), 4.0)
-	for k in 8:
-		var a := float(k) * TAU / 8.0 + u * 0.3
-		draw_line(Vector2(cx, cy) + Vector2.from_angle(a) * R * 0.95, Vector2(cx, cy) + Vector2.from_angle(a) * R * 1.12, Color("7fd8ff"), 5.0)
-	var tu := clampf((u - 1.2) / 0.9, 0.0, 1.0)
-	var te := 1.0 - (1.0 - tu) * (1.0 - tu)
-	var ty := H * 0.62
-	_txt("POCKET", Vector2(-(1.0 - te) * 80.0, ty), 104, Color(1, 1, 1, te))
-	_txt("STATION", Vector2((1.0 - te) * 80.0, ty + 100.0), 104, Color(1.0, 0.85, 0.31, te))
-	var su := clampf((u - 2.4) / 0.8, 0.0, 1.0)
-	_txt("tap to skip", Vector2(0, H - 70.0), 22, Color(1, 1, 1, 0.45 * su))
+	var bg := _intro_tex("bg.jpg")
+	if bg == null:
+		return
+	var zoom := 1.06 - 0.06 * clampf(u / INTRO_LEN, 0.0, 1.0)
+	var sc := maxf(W / 1125.0, H / 2000.0) * zoom
+	var iw := 1125.0 * sc
+	var ih := 2000.0 * sc
+	var o := Vector2((W - iw) * 0.5, (H - ih) * 0.5)
+	draw_texture_rect(bg, Rect2(o, Vector2(iw, ih)), false)
+	for i in INTRO_PLANETS.size():
+		var ptx := _intro_tex("planet%d.png" % i)
+		if ptx == null:
+			continue
+		var pl: Vector3 = INTRO_PLANETS[i]
+		var pc := o + Vector2(pl.x * iw + sin(u * 0.7 + i * 1.7) * 6.0 * sc, pl.y * ih + cos(u * 0.9 + i * 2.3) * 9.0 * sc)
+		var pr := pl.z * iw
+		draw_set_transform(pc, u * (0.12 if i % 2 == 0 else -0.09), Vector2.ONE)
+		draw_texture_rect(ptx, Rect2(-pr, -pr, 2.0 * pr, 2.0 * pr), false)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	for i in INTRO_STARS.size():
+		var sv: Vector3 = INTRO_STARS[i]
+		var sp := o + Vector2(sv.x * iw, sv.y * ih)
+		var tw := pow(0.5 + 0.5 * sin(u * (1.6 + fmod(i * 0.37, 1.3)) + i * 2.1), 3.0)
+		var L := (6.0 + sqrt(sv.z) * 1.2) * sc * (0.6 + 0.9 * tw)
+		var sc_col := Color(1, 1, 1, 0.85 * tw)
+		draw_circle(sp, L * 0.35, Color(0.7, 0.85, 1.0, 0.25 * tw))
+		draw_line(sp - Vector2(L, 0), sp + Vector2(L, 0), sc_col, 2.0)
+		draw_line(sp - Vector2(0, L), sp + Vector2(0, L), sc_col, 2.0)
+	for k in 2:
+		var su := (u - (1.2 + k * 2.4)) / 0.7
+		if su > 0.0 and su < 1.0:
+			var dir := Vector2(1.0, 0.45).normalized()
+			var head := Vector2(W * (0.12 + 0.45 * k), H * (0.06 + 0.08 * k)) + dir * su * W * 0.45
+			draw_line(head - dir * 140.0 * sc, head, Color(1, 1, 1, 0.8 * (1.0 - su)), 3.0)
+	var ttx := _intro_tex("title.png")
+	if ttx != null:
+		var tu := clampf((u - 0.6) / 0.9, 0.0, 1.0)
+		var e := 1.0 + 2.70158 * pow(tu - 1.0, 3.0) + 1.70158 * pow(tu - 1.0, 2.0)
+		var tw2 := minf(W * 0.88, iw * 0.80)
+		var th := tw2 * 486.0 / 1273.0
+		var ty := H * 0.36 - th * 0.5 + sin(u * 1.6) * 6.0 * tu
+		draw_texture_rect(ttx, Rect2((W - tw2) * 0.5, lerpf(-th - 40.0, ty, e), tw2, th), false, Color(1, 1, 1, clampf(tu * 3.0, 0.0, 1.0)))
+	var su2 := clampf((u - 2.4) / 0.8, 0.0, 1.0)
+	_txt("tap to skip", Vector2(0, H - 70.0), 22, Color(1, 1, 1, 0.45 * su2))
+	var fi := 1.0 - clampf(u / 0.6, 0.0, 1.0)
 	var fo := clampf((u - (INTRO_LEN - 0.5)) / 0.5, 0.0, 1.0)
-	if fo > 0.0:
-		draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, fo))
+	if maxf(fi, fo) > 0.0:
+		draw_rect(Rect2(0, 0, W, H), Color(0, 0, 0, maxf(fi, fo)))
 
 func _draw() -> void:
 	draw_count += 1
@@ -8561,7 +8592,7 @@ func _rand_tool() -> String:
 
 func _adv_give_gear(id: String) -> bool:
 	var slot := String(gear_defs[gb(id)]["slot"])
-	if not equip.has(slot) or String(equip[slot]) == "":
+	if not tutorial and (not equip.has(slot) or String(equip[slot]) == ""):
 		var oh := hp_cap()
 		var oo := oxy_max
 		equip[slot] = id
