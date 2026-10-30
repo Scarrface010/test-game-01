@@ -321,7 +321,7 @@ var set_filt := 1   # always smooth
 var set_ret := 8
 var btn_inset := Rect2(510, 76, 190, 56)
 var set_shake := 1
-var set_mus := 0     # music volume step: 0 = 100%, 1 = 60%, 2 = 30%, 3 = off
+var set_mus := 1     # music volume step: 0 = 100%, 1 = 60%, 2 = 30%, 3 = off
 var set_sfxv := 0    # sound effects volume step, same scale
 var set_vib := 1     # vibration on phones
 var set_big := 0     # 1 = large buttons
@@ -343,7 +343,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 70
+const BUILD := 71
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -454,7 +454,7 @@ func _ready() -> void:
 		set_fps = int(cfg.get_value("ui", "fps", 60)) if int(cfg.get_value("ui", "fps", 60)) in [30, 60, 120] else 60
 		set_filt = 1
 		set_shake = clampi(int(cfg.get_value("ui", "shake", 1)), 0, 1)
-		set_mus = clampi(int(cfg.get_value("ui", "music", 0)), 0, 3)
+		set_mus = clampi(int(cfg.get_value("ui", "music", 1)), 0, 3)
 		set_sfxv = clampi(int(cfg.get_value("ui", "sfxvol", 0)), 0, 3)
 		set_vib = clampi(int(cfg.get_value("ui", "vibrate", 1)), 0, 1)
 		set_big = 0
@@ -10168,6 +10168,7 @@ func _adv_haz_trigger(id: String, c: Vector2i, dv: Vector2i) -> bool:
 		walk.clear()
 		_sfx("alarm")
 	elif id == "warp":
+		haz.erase(c)  # one-shot: a pad in the exit corridor must not trap the player
 		var dest := Vector2i(-1, -1)
 		for k in 40:
 			var n2 := Vector2i(c.x + randi_range(-8, 8), c.y + randi_range(-8, 8))
