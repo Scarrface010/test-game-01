@@ -150,9 +150,9 @@ var ups: Dictionary = {"c_brute": 0, "c_mystic": 0, "c_gunslinger": 0, "c_gamble
 const OLD_SHOP_COSTS := {"vet": [15, 35, 60], "iron": [20, 40, 70], "packed": [45], "lucky": [50], "pockets": [40, 90], "treasure": [25, 55, 100], "oil": [25, 50, 85], "toolbox": [30, 70], "gate": [60, 120], "steel": [35], "haggle": [30], "head": [75, 150], "ash": [120], "interest": [40, 80, 130], "kit": [40, 90]}
 # Drop-pool packs: traits and relics that stay out of drops until the pack is bought.
 const PACKS := {
-	"p_elem": {"t": ["ignite", "volatile", "static", "arc", "frostbite", "shatter", "toxin", "plague"], "r": ["pyro", "storm", "frost", "toxi"]},
-	"p_blood": {"t": ["siphon", "bloodlust", "execute", "adrenaline", "barrier"], "r": ["bloodpact", "hood"]},
-	"p_combo": {"t": ["rampage", "rhythm", "marked", "deadly", "harvest"], "r": ["overclock"]},
+	"p_elem": {"t": ["ignite", "volatile", "static", "arc", "frostbite", "shatter", "toxin", "plague", "stormfront", "conduit", "inferno", "flashpoint", "permafrost", "icicle", "rot", "contagion", "stormcaller"], "r": ["pyro", "storm", "frost", "toxi"]},
+	"p_blood": {"t": ["siphon", "bloodlust", "execute", "adrenaline", "barrier", "vampedge"], "r": ["bloodpact", "hood"]},
+	"p_combo": {"t": ["rampage", "rhythm", "marked", "deadly", "harvest", "echostep"], "r": ["overclock"]},
 	"p_relic": {"t": [], "r": ["deadeye", "plating", "hazmat", "gravedigger", "thornmail", "scrapper"]},
 	"p_fort": {"t": [], "r": ["midas", "scavenger", "luckychip", "amidas"]},
 	"p_surv": {"t": [], "r": ["aegis", "boots", "lantern", "slowdark"]},
@@ -343,7 +343,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 72
+const BUILD := 73
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -724,9 +724,9 @@ func _make_defs() -> void:
 		{"id": "c_gambler", "name": "Gambler Class", "desc": "Unlock the Gambler: 2 random relics, 4 cards", "costs": [240]},
 		{"id": "kit", "name": "Starter Kit", "desc": "Adventure: begin each run with random starter gear", "costs": [160, 360]},
 		{"id": "toolbox", "name": "Toolbox", "desc": "Start every run with a random tool", "costs": [120, 280]},
-		{"id": "p_elem", "name": "Elemental Pack", "desc": "8 fire, shock, cryo and toxic traits + 4 relics", "costs": [80]},
-		{"id": "p_blood", "name": "Bloodthirst Pack", "desc": "5 heal, execute and kill traits + 3 relics", "costs": [70]},
-		{"id": "p_combo", "name": "Combo Pack", "desc": "5 streak, crit and XP traits + 1 relic", "costs": [70]},
+		{"id": "p_elem", "name": "Elemental Pack", "desc": "17 fire, shock, cryo and toxic traits + 4 relics", "costs": [80]},
+		{"id": "p_blood", "name": "Bloodthirst Pack", "desc": "6 heal, execute and kill traits + 3 relics", "costs": [70]},
+		{"id": "p_combo", "name": "Combo Pack", "desc": "6 streak, crit, XP and step traits + 1 relic", "costs": [70]},
 		{"id": "p_relic", "name": "Relic Cache", "desc": "7 utility relics join the relic pool", "costs": [60]},
 	{"id": "p_fort", "name": "Fortune Pack", "desc": "3 coin, tool and crit relics join the relic pool", "costs": [70]},
 	{"id": "p_surv", "name": "Survivor Pack", "desc": "4 shield, spike and dark-control relics join the pool", "costs": [70]},
@@ -2010,7 +2010,7 @@ func _act_desc(cid: String) -> String:
 			"brute": "Iron Stance: blocks the next 2 hits. Recharges in 30 steps.",
 			"mystic": "Hex Mark: your next hit deals double damage. Recharges in 35 steps.",
 			"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
-			"gunslinger": "Ricochet: your next shot bounces to a second enemy within 3 tiles. Recharges in 25 steps.",
+			"gunslinger": "Ricochet: your next shot deals double damage and bounces to a second enemy within 3 tiles for the same damage. Recharges in 25 steps.",
 		}.get(cid, "")
 	return {
 		"scout": "Deep Breath: pushes the dark back 3 steps. Recharges in 40 steps.",
@@ -2253,7 +2253,7 @@ func _act_gunslinger() -> bool:
 		if act_rico:
 			return _act_fail("Ricochet is already loaded")
 		act_rico = true
-		msg = "Ricochet loaded: your next shot bounces to a second target"
+		msg = "Ricochet loaded: your next shot deals double damage and bounces to a second target for the same damage"
 		_pop(pos, "LOADED", Color("ff9a4f"))
 		_act_fx(Color("ff9a4f"))
 		_sfx("ui")
@@ -2292,7 +2292,7 @@ func _act_gunslinger() -> bool:
 	return true
 
 
-func _act_ricochet(from: Vector2i, dmg: int) -> void:
+func _act_ricochet(from: Vector2i, dmg: int, quiet := false) -> void:
 	var best := Vector2i(-1, -1)
 	var bd := 99
 	for m in mons.keys():
@@ -2303,12 +2303,14 @@ func _act_ricochet(from: Vector2i, dmg: int) -> void:
 			best = m
 			bd = d
 	if bd == 99:
-		msg += "  (no second target for the ricochet)"
+		if not quiet:
+			msg += "  (no second target for the ricochet)"
 		return
 	_fx_bolt(Vector2(from), Vector2(best), Color("ffd84f"))
 	_pop(best, "RICOCHET", Color("ffd84f"))
 	_adv_damage_mon(best, dmg, Color("ffd84f"))
-	msg += "  It ricochets for %d!" % dmg
+	if not quiet:
+		msg += "  It ricochets for %d!" % dmg
 
 
 func _act_mystic() -> bool:
@@ -5511,7 +5513,7 @@ func _mon_seen(c: Vector2i) -> bool:
 
 
 func adv_oxy_max() -> float:
-	return 90.0 + 10.0 * int(cdef()["per"]) + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air") + 10.0 * float(pk.get("air", 0)) + 2.0 * float(level - START_LEVEL) + 8.0 * float(up("tank"))
+	return 90.0 + 10.0 * int(cdef()["per"]) + 15.0 * relic_n("slowdark") - 15.0 * relic_n("glass") + gear("air") + sk("air") + 10.0 * float(pk.get("air", 0)) + 2.0 * float(level - START_LEVEL) + 8.0 * float(up("tank")) + air_bonus
 
 
 func adv_pod_amt() -> float:
@@ -6613,7 +6615,7 @@ func hp_cap() -> int:
 
 
 func sh_cap() -> int:
-	var c := sh_max + int(gear("shield")) + int(sk("shield")) + 3 * int(pk.get("shield", 0))
+	var c := sh_max + int(gear("shield")) + int(sk("maxsh")) + 3 * int(pk.get("shield", 0))
 	return c / 4 if relic_n("ocell") > 0 else c
 
 
@@ -6630,7 +6632,7 @@ func p_atk() -> int:
 
 
 func _p_atk_raw() -> int:
-	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0)) + (int(sk("berserk")) if hp * 2 < hp_cap() else 0)
+	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0))
 
 
 func _ranged_atk() -> int:
@@ -6768,6 +6770,12 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 			mom_steps += 1
 		msg += "   You dodge %s!" % who
 		return true
+	if _any_tr("parry") and mons.has(src) and randf() < 0.15:
+		_pop(pos, "PARRY", Color("c8f1ff"))
+		_adv_damage_mon(src, maxi(1, p_atk() / 2), Color("c8f1ff"))
+		msg += "   You parry %s!" % who
+		_sfx("shield")
+		return true
 	_buzz(35)
 	if act_stance > 0:
 		act_stance -= 1
@@ -6781,6 +6789,8 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	var absorbed := mini(sh, d)
 	sh -= absorbed
 	hp -= d - absorbed
+	if _any_tr("reprisal"):
+		repr_ready = true
 	if gm("reactive") and hp > 0:
 		sh = mini(sh_cap(), sh + 2)
 	_pop(pos, "-%d" % d, Color("ff6a6a") if absorbed < d else Color("7db2ff"))
@@ -6800,7 +6810,7 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	if mons.has(src) and String(affix.get(src, "")) == "leech":
 		mon_hp[src] = mini(mon_hp_max(src), mon_hp_now(src) + d)
 		_pop(src, "+%d" % d, Color("ff5d8a"))
-	var th := thorns_dmg()
+	var th := thorns_dmg() + (maxi(1, int(round(float(d) * sk("thorns") / 100.0))) if sk("thorns") > 0.0 else 0)
 	if th > 0 and mons.has(src):
 		_adv_damage_mon(src, th)
 		if syn("bloodpact", "thornmail") and hp > 0:
@@ -6864,6 +6874,8 @@ func _adv_damage_mon(c: Vector2i, dmg: int, col := Color("ff9a3c")) -> void:
 		_pop(c, "HEX x2", Color("c07cff"))
 	if sk("mark") > 0.0 and _mk(c):
 		dmg = int(round(float(dmg) * (1.0 + sk("mark") / 100.0)))
+	if _any_tr("rot") and mstat.has(c) and mstat[c].has("psn"):
+		dmg = int(round(float(dmg) * 1.15))
 	var left := mon_hp_now(c) - dmg
 	_pop(c, "-%d" % dmg, col)
 	_fx_hit(c, false, false)
@@ -6879,6 +6891,9 @@ func _adv_damage_mon(c: Vector2i, dmg: int, col := Color("ff9a3c")) -> void:
 # ---------------------------------------------------------------- weapon traits, monster affixes, status effects
 var affix: Dictionary = {}    # Vector2i -> affix id on a monster
 var mstat: Dictionary = {}    # Vector2i -> {"burn": [steps, dmg], "psn": [stacks, steps], "stun": steps, "chill": true}
+var kb_pend := Vector2i(-1, -1)
+var hair_free := false
+var repr_ready := false
 var tr_streak := 0            # hits in a row without being damaged
 var tr_hits := 0              # hits landed this floor (Rhythm)
 var tr_last := Vector2i(-1, -1)
@@ -6886,13 +6901,13 @@ var tr_mark := 0              # consecutive hits on the same target
 var tr_depth := 0
 
 const TRAIT_DEFS := {
-	"ignite": {"n": "Ignite", "d": "Hits set the enemy ablaze: 2+ damage a step for 3 steps", "t": ["fire"]},
+	"ignite": {"n": "Ignite", "d": "Hits set the enemy ablaze: 2 damage a step for 3 steps, +1 more every 2 floors", "t": ["fire"]},
 	"volatile": {"n": "Volatile", "d": "Kills explode, hurting nearby enemies for 40% of the victim's HP", "t": ["fire", "kill"]},
 	"static": {"n": "Static", "d": "25% chance to stun on hit (it loses its next action)", "t": ["shock"]},
 	"arc": {"n": "Arc Chain", "d": "Hits arc to another enemy within 2 tiles for 50% damage", "t": ["shock"]},
 	"frostbite": {"n": "Frostbite", "d": "The first hit on each enemy freezes it for a step", "t": ["cryo"]},
 	"shatter": {"n": "Shatter", "d": "+50% damage to stunned or frozen enemies", "t": ["cryo", "shock"]},
-	"toxin": {"n": "Toxin", "d": "Hits poison: 1 damage a step per stack, up to 4 stacks. Poison hurts more the deeper you go (x2 on floor 8, x3 on floor 16)", "t": ["toxic"]},
+	"toxin": {"n": "Toxin", "d": "Hits poison: 1 damage a step per stack, up to 4 stacks. Poison hurts more the deeper you go (x3 on floor 8, x5 on floor 16)", "t": ["toxic"]},
 	"plague": {"n": "Plague", "d": "Poisoned enemies spread poison to neighbours when they die", "t": ["toxic", "kill"]},
 	"siphon": {"n": "Siphon", "d": "Heal 20% of the damage you deal (at least 1)", "t": ["blood"]},
 	"bloodlust": {"n": "Bloodlust", "d": "Kills heal 10% of your max health", "t": ["blood", "kill"]},
@@ -6901,7 +6916,7 @@ const TRAIT_DEFS := {
 	"ambush": {"n": "Ambush", "d": "Double damage against enemies at full health", "t": ["raw"]},
 	"sharp": {"n": "Keen Edge", "d": "+12% crit chance", "t": ["crit"]},
 	"deadly": {"n": "Deadly Crits", "d": "Crits deal triple damage instead of double", "t": ["crit"]},
-	"rampage": {"n": "Rampage", "d": "+1 damage per hit in a row without being hurt (max +5)", "t": ["streak"]},
+	"rampage": {"n": "Rampage", "d": "+3% damage per hit in a row without being hurt (max +15%)", "t": ["streak"]},
 	"rhythm": {"n": "Rhythm", "d": "Every 4th hit deals double damage", "t": ["streak"]},
 	"marked": {"n": "Marked", "d": "Each hit on the same enemy deals +1 more (max +4)", "t": ["streak"]},
 	"cleave": {"n": "Cleave", "d": "Melee hits also strike enemies beside the target for 50%", "t": ["melee"]},
@@ -6909,13 +6924,40 @@ const TRAIT_DEFS := {
 	"overkill": {"n": "Overkill", "d": "Excess damage on a kill carries to a nearby enemy", "t": ["kill"]},
 	"bounty": {"n": "Bounty", "d": "Kills drop extra coins", "t": ["econ", "kill"]},
 	"harvest": {"n": "Soul Harvest", "d": "+30% XP from kills", "t": ["econ", "kill"]},
-	"adrenaline": {"n": "Adrenaline", "d": "Kills restore 3 air", "t": ["kill"]},
-	"barrier": {"n": "Barrier", "d": "Kills grant +3 shield", "t": ["kill", "defense"]},
+	"adrenaline": {"n": "Adrenaline", "d": "Kills restore 20 air", "t": ["kill"]},
+	"barrier": {"n": "Barrier", "d": "Kills grant +8 shield", "t": ["kill", "defense"]},
 	"thorned": {"n": "Spiked", "d": "Reflect 2 damage (more on deeper floors) when hit", "t": ["defense"]},
 	"duelist": {"n": "Duelist", "d": "+10% dodge chance", "t": ["defense"]},
 	"echoslam": {"n": "Echo Slam", "d": "Every 4th hit strikes twice", "t": ["streak"], "min": 4},
 	"rooting": {"n": "Rooting", "d": "50% chance on hit to root the enemy: it can't move on its next turn", "t": ["control"]},
 	"tireless": {"n": "Efficient Rounds", "d": "15% chance a shot uses no ammo", "t": ["ranged"]},
+	"stormfront": {"n": "Storm Front", "d": "Killing a stunned enemy stuns the enemies next to it for 2 steps", "t": ["shock", "kill"]},
+	"conduit": {"n": "Conduit", "d": "Crits stun the enemy for 2 steps", "t": ["shock", "crit"]},
+	"inferno": {"n": "Inferno", "d": "Burning enemies spread their burn to a neighbour each step (50% chance)", "t": ["fire"]},
+	"flashpoint": {"n": "Flashpoint", "d": "A burn deals double damage on its first tick", "t": ["fire"]},
+	"permafrost": {"n": "Permafrost", "d": "Every 3rd hit on a chilled enemy freezes it solid for 2 steps", "t": ["cryo"]},
+	"icicle": {"n": "Icicle", "d": "Hitting a frozen enemy splashes 50% damage to the enemies beside it", "t": ["cryo"]},
+	"rot": {"n": "Rot", "d": "Poisoned enemies take +15% damage from all sources", "t": ["toxic"]},
+	"contagion": {"n": "Contagion", "d": "Hitting a poisoned enemy spreads a poison stack to a neighbour", "t": ["toxic"]},
+	"stormcaller": {"n": "Storm Caller", "d": "When an enemy carries 3 different elements, lightning hits it for 5x your damage (once per enemy)", "t": ["shock"]},
+	"heavy": {"n": "Heavy Hitter", "d": "+40% damage, but every hit costs 1 extra air", "t": ["raw"]},
+	"firstblood": {"n": "First Blood", "d": "The first hit on each floor deals triple damage", "t": ["raw"]},
+	"underdog": {"n": "Underdog", "d": "+30% damage while 3 or more enemies are in view", "t": ["raw"]},
+	"crush": {"n": "Crush", "d": "+50% damage to rooted enemies or enemies with their back to a wall", "t": ["raw"]},
+	"gambler": {"n": "Gambler's Edge", "d": "20% chance to deal double damage, 10% chance to deal none", "t": ["raw"]},
+	"ricochet": {"n": "Ricochet", "d": "30% chance a shot bounces to a second enemy for 50% damage", "t": ["ranged"]},
+	"sniper": {"n": "Sniper", "d": "+1 damage per tile of distance (max +4)", "t": ["ranged"]},
+	"hairtrig": {"n": "Hair Trigger", "d": "The first shot after a melee kill uses no ammo", "t": ["ranged", "kill"]},
+	"hollow": {"n": "Hollow Point", "d": "+30% damage to full-health enemies, but shots reach 1 tile less", "t": ["ranged"]},
+	"scav": {"n": "Scavenger Rounds", "d": "Shots that kill have a 25% chance to refund the ammo", "t": ["ranged", "kill"]},
+	"knockback": {"n": "Knockback", "d": "30% chance to knock the enemy back 1 tile", "t": ["control"]},
+	"intimidate": {"n": "Intimidate", "d": "Enemies you leave under 30% health skip their next action", "t": ["control"]},
+	"pin": {"n": "Pin", "d": "Rooted enemies take +25% damage", "t": ["control"]},
+	"parry": {"n": "Parry", "d": "15% chance to block a hit and counter for half your attack", "t": ["defense"]},
+	"reprisal": {"n": "Reprisal", "d": "After you are hit, your next hit deals +50% damage", "t": ["defense"]},
+	"regen": {"n": "Regenerator", "d": "Heal 1 health every 5 steps (2 when below half health)", "t": ["defense"]},
+	"vampedge": {"n": "Vampire Edge", "d": "Crits make enemies bleed, and your bleeds heal you for 25% of their damage", "t": ["blood"]},
+	"echostep": {"n": "Echo Step", "d": "Every 6th step costs no air", "t": ["streak"]},
 }
 
 # Gear mods for helmet / armour / boots / trinket (stored in the same "@" list as weapon traits).
@@ -7033,7 +7075,7 @@ func _on_warp(from: Vector2i) -> void:
 		if from.x >= 0 and from != pos:
 			for bc in _near_mons(from, 1, []):
 				if mons.has(bc) and _st_ok(bc):
-					_st_get(bc)["bleed"] = [maxi(3, int(sk("bleed"))), 1 + floor_n / 6]
+					_st_get(bc)["bleed"] = [maxi(3, int(sk("bleed"))), _bleed_dmg(bc)]
 					_pop(bc, "BLEED", Color("ff4d6d"))
 	if sk("wslip") > 0.0:
 		mom_steps += int(sk("wslip"))
@@ -7138,7 +7180,7 @@ func _uplink_apply(c: Vector2i) -> void:
 		return
 	var wt := gtr(String(equip.get("weapon", "")))
 	if wt.has("ignite"):
-		_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 6)
+		_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 2)
 	if wt.has("toxin"):
 		_st_poison(c, 1)
 	if wt.has("static") and randf() < 0.25 + sk("conduct") / 100.0:
@@ -7525,8 +7567,21 @@ func dodge_chance() -> float:
 	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0) + (10.0 if gcoin_buff() == 1 else 0.0)
 
 
+func _bleed_dmg(c: Vector2i) -> int:
+	if sk("bleed") > 0.0:
+		return maxi(1, mon_hp_max(c) / 10)
+	return 1 + floor_n / 6
+
+
+func _repo_bonus() -> int:
+	var hi := int(sk("repo"))
+	if hi <= 0:
+		return 0
+	return randi_range(1 if hi <= 10 else 10, hi)
+
+
 func thorns_dmg() -> int:
-	return (3 if sh > 0 and set_on("riot", 3) else 0) + int(gear("thorns")) + int(sk("thorns")) + ((2 + floor_n / 6) if has_tr("thorned") else 0) + 2 * relic_n("thornmail")
+	return (3 if sh > 0 and set_on("riot", 3) else 0) + int(gear("thorns")) + ((2 + floor_n / 6) if has_tr("thorned") else 0) + 2 * relic_n("thornmail")
 
 
 func _stunned(c: Vector2i) -> bool:
@@ -7571,7 +7626,7 @@ func _st_burn(c: Vector2i, steps: int, dmg: int) -> void:
 	if not mons.has(c) or not _st_ok(c):
 		return
 	var m := 2 if relic_n("pyro") > 0 and tag_n("fire") > 0 else 1
-	_st_get(c)["burn"] = [steps + (2 if m > 1 else 0), dmg * m]
+	_st_get(c)["burn"] = [steps + (2 if m > 1 else 0), dmg * m, 1 if _any_tr("flashpoint") else 0]
 	_fx_burst(Vector2(c), Color("ff7a45"), 6, 2.4, 0.4, 4.0)
 
 
@@ -7613,16 +7668,51 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		if tl.has("shatter") and _stunned(c):
 			mul += 0.5 + (0.5 if relic_n("frost") > 0 else 0.0)
 		if tl.has("rampage"):
-			add += mini(5 + 3 * relic_n("overclock"), tr_streak)
+			mul += 0.03 * float(mini(5 + 3 * relic_n("overclock"), tr_streak))
 		if tl.has("marked"):
 			add += mini(4, tr_mark if tr_last == c else 0)
 		if tl.has("rhythm") and (tr_hits + 1) % 4 == 0:
 			mul += 1.0
+	var gz := false
+	if not tl.is_empty():
+		if tl.has("heavy"):
+			mul += 0.4
+		if tl.has("firstblood") and tr_hits == 0:
+			mul += 2.0
+		if tl.has("underdog"):
+			var vn := 0
+			for vm in mons:
+				if vm != pos and adv_vis.has(vm):
+					vn += 1
+			if vn >= 3:
+				mul += 0.3
+		if tl.has("crush") and (_rooted(c) or not _aopen(c + Vector2i(signi(c.x - pos.x), signi(c.y - pos.y)))):
+			mul += 0.5
+		if tl.has("pin") and _rooted(c):
+			mul += 0.25
+		if tl.has("rot") and mstat.has(c) and mstat[c].has("psn"):
+			mul += 0.15
+		if shooting and tl.has("sniper"):
+			add += mini(4, maxi(absi(c.x - pos.x), absi(c.y - pos.y)))
+		if shooting and tl.has("hollow") and mon_hp_now(c) >= mon_hp_max(c):
+			mul += 0.3
+		if tl.has("gambler"):
+			var gr := randf()
+			if gr < 0.2:
+				mul += 1.0
+				_pop(c, "DOUBLE", Color("ffd84f"))
+			elif gr < 0.3:
+				gz = true
+	if repr_ready and _any_tr("reprisal"):
+		mul += 0.5
+		repr_ready = false
 	add += mini(4, tag_kinds()) * relic_n("prism")
 	if sk("finish") > 0.0 and mon_hp_now(c) * 2 <= mon_hp_max(c):
 		mul += sk("finish") / 100.0
 	if sk("opener") > 0.0 and mon_hp_now(c) >= mon_hp_max(c):
 		mul += sk("opener") / 100.0
+	if sk("berserk") > 0.0 and hp * 2 < hp_cap():
+		mul += sk("berserk") / 100.0
 	if sk("pain") > 0.0:
 		mul += sk("pain") * float(int((hp_cap() - hp) * 10 / maxi(1, hp_cap()))) / 100.0
 	if syn("pyro", "frost") and _stunned(c) and mstat[c].has("chill") and mstat[c].has("burn"):
@@ -7648,6 +7738,9 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		_pop(c, "HEX x2", Color("c07cff"))
 	if mstat.has(c) and mstat[c].has("corr"):
 		d = int(round(float(d) * 1.5))
+	if gz:
+		_pop(c, "WHIFF", Color("9aa3c7"))
+		return 0
 	return d
 
 
@@ -7669,11 +7762,12 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 		ammo = mini(ammo_max(), ammo + 1)
 		_pop(pos, "+1 AMMO", Color("6dff9a"))
 	if crit and left > 0 and sk("bleed") > 0.0 and mons.has(c) and _st_ok(c):
-		_st_get(c)["bleed"] = [int(sk("bleed")), 1 + floor_n / 6]
+		_st_get(c)["bleed"] = [int(sk("bleed")), _bleed_dmg(c)]
 		_pop(c, "BLEED", Color("ff4d6d"))
 	if tl.is_empty() or tr_depth > 2:
 		return left
 	var el_pre := _elems(c)
+	var els := _wels()
 	tr_depth += 1
 	if tl.has("siphon"):
 		_tr_heal(int(float(maxi(1, int(dealt * 0.2)) * (2 if relic_n("bloodpact") > 0 else 1)) * (1.0 + sk("bpact") / 100.0)))
@@ -7685,14 +7779,14 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 			if float(left) <= float(mon_hp_max(c)) * thr:
 				left = 0
 				_pop(c, "EXECUTED", Color("ff4a4a"))
-		if left > 0 and tl.has("ignite"):
-			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 6)
-		if left > 0 and tl.has("static") and randf() < 0.25 + sk("conduct") / 100.0:
+		if left > 0 and els.has("fire"):
+			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 2)
+		if left > 0 and els.has("shock") and randf() < 0.25 + sk("conduct") / 100.0:
 			_st_stun(c, 1 + relic_n("storm"))
-		if left > 0 and tl.has("frostbite") and _st_ok(c) and not bool(_st_get(c).get("chill", false)):
+		if left > 0 and els.has("cryo") and _st_ok(c) and not bool(_st_get(c).get("chill", false)):
 			mstat[c]["chill"] = true
 			_st_stun(c, 1)
-		if left > 0 and tl.has("toxin"):
+		if left > 0 and els.has("toxic"):
 			_st_poison(c, 1)
 		if left > 0 and tl.has("rooting") and randf() < 0.5:
 			_st_root(c, 1)
@@ -7722,12 +7816,13 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 		left -= maxi(1, dealt)
 		_pop(c, "ECHO -%d" % maxi(1, dealt), Color("c9a2ff"))
 		_fx_ring(Vector2(c), Color("c9a2ff"), 0.8, 0.3, 3.0)
-		if left > 0 and tl.has("ignite"):
-			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 6)
-		if left > 0 and tl.has("static") and randf() < 0.25 + sk("conduct") / 100.0:
+		if left > 0 and els.has("fire"):
+			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 2)
+		if left > 0 and els.has("shock") and randf() < 0.25 + sk("conduct") / 100.0:
 			_st_stun(c, 1 + relic_n("storm"))
-		if left > 0 and tl.has("toxin"):
+		if left > 0 and els.has("toxic"):
 			_st_poison(c, 1)
+	left = _tr_new_hit(c, dealt, crit, ranged, left, el_pre)
 	left = _react(c, el_pre, left)
 	if left <= 0 and tl.has("overkill"):
 		var ex := -left
@@ -7741,6 +7836,14 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 
 func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 	var tl := wtr()
+	if tl.has("stormfront") and _stunned(c) and tr_depth <= 3:
+		for sfo in _near_mons(c, 1, []):
+			_st_stun(sfo, 2)
+	if shooting and tl.has("scav") and randf() < 0.25:
+		ammo = mini(ammo_max(), ammo + 1)
+		_pop(pos, "+1 AMMO", Color("6dff9a"))
+	if not shooting and _rhas("hairtrig"):
+		hair_free = true
 	if tr_depth <= 3 and set_on("void", 3):
 		tr_depth += 1
 		for vo in _near_mons(c, 2, []):
@@ -7765,11 +7868,11 @@ func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 	if tl.has("bloodlust"):
 		_tr_heal(int(float(maxi(1, hp_cap() / 10) * echo) * (1.0 + sk("bpact") / 100.0)))
 	if tl.has("adrenaline"):
-		oxy = minf(oxy_max, oxy + 3.0 * echo)
-		_pop(pos, "+%d AIR" % (3 * echo), Color("7fd8ff"))
+		oxy = minf(oxy_max, oxy + 20.0 * echo)
+		_pop(pos, "+%d AIR" % (20 * echo), Color("7fd8ff"))
 	if tl.has("barrier"):
-		sh = mini(sh_cap(), sh + 3 * echo)
-		_pop(pos, "+%d SHIELD" % (3 * echo), Color("7db2ff"))
+		sh = mini(sh_cap(), sh + 8 * echo)
+		_pop(pos, "+%d SHIELD" % (8 * echo), Color("7db2ff"))
 	if tl.has("bounty"):
 		var cn := (1 + floor_n / 5) * echo * coin_val()
 		coins += cn
@@ -7785,8 +7888,80 @@ func _tr_on_kill(c: Vector2i, mxh: int) -> void:
 		_pop(c, "+%d coin" % coin_val(), Color("ffc93c"))
 
 
+func _wels() -> Array:
+	var out: Array = []
+	for e in ["fire", "shock", "cryo", "toxic"]:
+		if tag_n(e) > 0:
+			out.append(e)
+	return out
+
+
+func _any_tr(id: String) -> bool:
+	return mode == "adv" and (gtr(String(equip.get("weapon", ""))).has(id) or gtr(String(equip.get("ranged", ""))).has(id))
+
+
+func _rhas(id: String) -> bool:
+	return mode == "adv" and gtr(String(equip.get("ranged", ""))).has(id)
+
+
+func _tr_step_traits() -> void:
+	if kb_pend.x >= 0:
+		var kc := kb_pend
+		kb_pend = Vector2i(-1, -1)
+		if mons.has(kc):
+			var kd := Vector2i(signi(kc.x - pos.x), signi(kc.y - pos.y))
+			var kn := kc + kd
+			if kd != Vector2i.ZERO and _aopen(kn) and not mons.has(kn) and not vaults.has(kn) and kn != pos:
+				_adv_move_mon(kc, kn)
+				_pop(kn, "KNOCKBACK", Color("ffd84f"))
+	if _any_tr("regen") and adv_steps % 5 == 0:
+		_tr_heal(2 if hp * 2 < hp_cap() else 1)
+	if _any_tr("echostep") and adv_steps % 6 == 0:
+		mom_steps += 1
+
+
+func _tr_new_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int, el_pre: Array) -> int:
+	var tl := wtr()
+	if tl.has("heavy"):
+		oxy = maxf(0.0, oxy - 1.0)
+	if tl.has("icicle") and el_pre.has("cryo"):
+		for io in _near_mons(c, 1, []):
+			_adv_damage_mon(io, maxi(1, dealt / 2), Color("9fe8ff"))
+	if tl.has("ricochet") and ranged and randf() < 0.3:
+		_act_ricochet(c, maxi(1, dealt / 2), true)
+	if left <= 0 or not mons.has(c):
+		return left
+	if tl.has("conduit") and crit:
+		_st_stun(c, 2)
+	if tl.has("permafrost") and mstat.has(c) and mstat[c].has("chill") and not _stunned(c):
+		var ph := int(mstat[c].get("pfh", 0)) + 1
+		if ph >= 3:
+			ph = 0
+			_st_stun(c, 2)
+			_pop(c, "FROZEN SOLID", Color("9fe8ff"))
+		mstat[c]["pfh"] = ph
+	if tl.has("contagion") and mstat.has(c) and mstat[c].has("psn"):
+		var cn := _near_mons(c, 1, [])
+		if cn.size() > 0:
+			_st_poison(cn[0], 1)
+	if tl.has("intimidate") and not _boss_cell(c) and not tur.has(c) and _st_ok(c) and not _stunned(c) and float(left) <= float(mon_hp_max(c)) * 0.3:
+		_st_get(c)["stun"] = 1
+		_pop(c, "SCARED", Color("ffb36b"))
+	if tl.has("vampedge") and crit and _st_ok(c):
+		_st_get(c)["bleed"] = [3, _bleed_dmg(c)]
+		_pop(c, "BLEED", Color("ff4d6d"))
+	if tl.has("knockback") and not _boss_cell(c) and not tur.has(c) and randf() < 0.3:
+		kb_pend = c
+	if tl.has("stormcaller") and _st_ok(c) and not bool(_st_get(c).get("sc", false)) and _elems(c).size() >= 3:
+		mstat[c]["sc"] = true
+		left -= dealt * 5
+		_pop(c, "STORM x5", Color("ffe14f"))
+	return left
+
+
 func _tr_tick() -> void:
 	# end of the player's step: damage over time and status wear-off
+	_tr_step_traits()
 	if mstat.is_empty() and affix.is_empty():
 		return
 	for c in mstat.keys():
@@ -7796,16 +7971,23 @@ func _tr_tick() -> void:
 		var st: Dictionary = mstat[c]
 		if st.has("burn"):
 			var b: Array = st["burn"]
-			_adv_damage_mon(c, int(b[1]), Color("ff7a45"))
+			_adv_damage_mon(c, int(b[1]) * (2 if b.size() > 2 and int(b[2]) == 1 else 1), Color("ff7a45"))
 			if not mons.has(c):
 				mstat.erase(c)
 				continue
+			if b.size() > 2:
+				b[2] = 0
+			if _any_tr("inferno") and randf() < 0.5:
+				for io in _near_mons(c, 1, []):
+					if not mstat.has(io) or not mstat[io].has("burn"):
+						_st_burn(io, 2, int(b[1]))
+						break
 			b[0] = int(b[0]) - 1
 			if int(b[0]) <= 0:
 				st.erase("burn")
 		if st.has("psn"):
 			var p: Array = st["psn"]
-			_adv_damage_mon(c, int(p[0]) * (1 + floor_n / 8) * (2 if syn("pyro", "toxi") and st.has("burn") else 1), Color("8aff6a"))
+			_adv_damage_mon(c, int(p[0]) * (1 + 2 * (floor_n / 8)) * (2 if syn("pyro", "toxi") and st.has("burn") else 1), Color("8aff6a"))
 			if not mons.has(c):
 				mstat.erase(c)
 				continue
@@ -7815,6 +7997,10 @@ func _tr_tick() -> void:
 		if st.has("bleed"):
 			var bl: Array = st["bleed"]
 			_adv_damage_mon(c, int(bl[1]), Color("ff4d6d"))
+			if sk("crimson") >= 20.0:
+				_tr_heal(maxi(1, int(bl[1]) / 2))
+			if _any_tr("vampedge"):
+				_tr_heal(maxi(1, int(bl[1]) / 4))
 			if relic_n("bedge") > 0:
 				var bh := int(gear("leech") + sk("leech"))
 				if has_tr("siphon"):
@@ -7881,6 +8067,7 @@ var skills: Dictionary = {}    # node id -> rank (0-2)
 var skill_pts := 0
 var sk_sel := ""
 var sk_wind := false           # Second Wind used this floor
+var air_bonus := 0.0
 var sk_phx := false            # Phoenix used this run
 var sk_ban_n := 0
 var sk_ban_t0 := -100.0
@@ -7900,16 +8087,16 @@ const SK_BR := [
 	["VITALITY", Color("ff6a5c"), [
 		["Sturdy Frame", "+%s max health", "hp", [5, 10]],
 		["Plating", "+%s armour", "armor", [1, 2]],
-		["Spiked Plating", "Enemies that hit you take %s damage", "thorns", [1, 3]],
+		["Spiked Plating", "Enemies that hit you take %s%% of the damage back", "thorns", [10, 15]],
 		["Trauma Kit", "Medkits heal %s%% more", "medk", [25, 50]],
-		["Field Generator", "+%s starting shield", "shield", [4, 8]],
+		["Max Shields", "+%s max shields", "maxsh", [8, 16]],
 		["Last Stand", "Below 30%% health you take %s%% less damage", "laststand", [30, 50]]]],
 	["OFFENSE", Color("ffb347"), [
 		["Edge", "+%s melee attack", "atk", [1, 2]],
 		["Precision", "+%s%% crit chance", "crit", [6, 12]],
 		["Siphon Core", "Heal %s on every hit", "leech", [1, 2]],
 		["Finisher", "+%s%% damage to enemies under half health", "finish", [25, 50]],
-		["Berserker", "+%s attack while under half health", "berserk", [2, 4]],
+		["Berserker", "+%s%% damage while under half health", "berserk", [15, 25]],
 		["Overdrive", "Crits deal %s%% more damage", "critmult", [50, 100]]]],
 	["RANGED", Color("6dff9a"), [
 		["Marksman", "+%s damage with ranged weapons", "rdmg", [2, 3]],
@@ -7928,7 +8115,7 @@ const SK_BR := [
 	["TACTICS", Color("c07cff"), [
 		["Evasion Matrix", "+%s%% dodge chance", "dodge", [5, 10]],
 		["Opening Strike", "+%s%% damage to enemies at full health", "opener", [40, 80]],
-		["Momentum", "After a kill your next %s step(s) cost no air", "momentum", [1, 2]],
+		["Momentum", "After a kill your next %s step(s) cost no air", "momentum", [3, 6]],
 		["Utility Belt", "+%s tool slot(s)", "slots", [1, 2]],
 		["Quartermaster", "Every new floor starts with %s free random tool(s)", "quarter", [1, 2]],
 		["Phoenix", "Once per run, a killing blow leaves you at %s%% health instead", "phoenix", [30, 60]]]],
@@ -7936,7 +8123,7 @@ const SK_BR := [
 		["Deep Lungs", "+%s max air", "air", [12, 24]],
 		["Easy Breathing", "%s%% less air used per step", "airsave", [6, 12]],
 		["Pod Boost", "Air pods give %s%% more air", "pod", [25, 50]],
-		["Air Siphon", "Every kill restores %s air", "airkill", [1, 2]],
+		["Air Siphon", "Every kill raises your max air by %s", "airkill", [1, 2]],
 		["Recycler", "O2 stations also heal %s%% of max health (3 times per floor)", "stationheal", [15, 30]],
 		["Deep Breath", "Adds a BREATHE button: spend half your current air to heal %s%% of max health (2 uses per floor)", "breathe", [25, 50]]]],
 ]
@@ -7945,11 +8132,11 @@ const SK_BR := [
 const SK_BR2 := [
 	["BLOODWORK", Color("ff4d6d"), [
 		["Blood Price", "Kills heal %s%% of max health", "kheal", [5, 10]],
-		["Hemorrhage", "Crits make enemies bleed 1+ damage a step for %s steps", "bleed", [3, 5]],
+		["Hemorrhage", "Crits make enemies bleed for 10%% of their max health a step, for %s steps", "bleed", [3, 5]],
 		["Transfusion", "Healing past max health becomes shield (up to %s per heal)", "transf", [4, 8]],
 		["Pain Engine", "+%s%% damage for every 10%% of health you are missing", "pain", [3, 5]],
 		["Blood Pact", "Siphon and Bloodlust traits heal %s%% more", "bpact", [50, 100]],
-		["Crimson Engine", "Medkits don't work, but all healing is doubled and kills heal %s%% of max health", "crimson", [10, 20]]]],
+		["Crimson Engine", "Medkits don't work, but all healing is doubled and kills heal %s%% of max health. Rank 2: bleeding enemies heal you for 50%% of the bleed damage", "crimson", [10, 20]]]],
 	["ELEMENTAL", Color("ff5fd2"), [
 		["Kindling", "Your burns last +%s step(s)", "kindle", [1, 2]],
 		["Conductor", "+%s%% stun chance from Static", "conduct", [10, 20]],
@@ -7958,9 +8145,9 @@ const SK_BR2 := [
 		["Attunement", "Found weapons are %s%% more likely to roll elemental traits", "attune", [25, 50]],
 		["Elemental Reactions", "Mixing elements on an enemy triggers reactions: fire+cryo Steam, shock+toxic Corrode, fire+toxic Detonate, shock+cryo Shatter (power x%s)", "react", [1, 1.5]]]],
 	["ENGINEERING", Color("4fd1c5"), [
-		["Tinkerer", "%s%% chance a tool isn't used up", "tinker", [15, 30]],
+		["Tinkerer", "%s%% chance a tool isn't used up", "tinker", [25, 50]],
 		["Overclocked", "Using a tool gives +%s shield", "overclk", [4, 8]],
-		["Power Cell", "Your class power recharges %s%% faster", "pcell", [15, 30]],
+		["Power Cell", "Your class power recharges %s%% faster", "pcell", [25, 50]],
 		["Supply Line", "The first visit to each merchant gives %s free tool(s)", "supply", [1, 2]],
 		["Field Repair", "O2 stations give +%s shield (3 times per floor)", "frepair", [5, 10]],
 		["Auto-Fabricator", "Every %sth coin you pick up builds a random tool into a free slot (if your slots are full, gain 4 shield instead)", "fab", [6, 4]]]],
@@ -7968,19 +8155,19 @@ const SK_BR2 := [
 		["Dismantle", "Selling gear also gives %s scrap per tier", "dismantle", [1, 2]],
 		["Reforge", "In the BAG, reroll an item's traits or mods for %s scrap per tier", "reforge", [3, 2]],
 		["Vault Cracker", "Vaults give %s extra tool(s)", "vault", [1, 2]],
-		["Repo Man", "Thieves you kill drop %sx what they stole", "repo", [2, 3]],
+		["Repo Man", "Thieves you kill drop a random extra amount of coins, up to %s (at least 1, or 10 at rank 2)", "repo", [10, 20]],
 		["Appraiser", "Gear sells for %s%% more", "apprais", [25, 50]],
 		["Masterwork", "Found gear rolls +1 trait or mod, with a %s%% chance of a higher tier", "master", [5, 15]]]],
 	["COMMAND", Color("8fa8ff"), [
 		["Mark Target", "Your first hit on an enemy marks it: marked enemies take +%s%% damage from all sources", "mark", [15, 30]],
 		["Turret Hack", "Bump an enemy turret to hack it: it turns on its friends for %s steps", "thack", [6, 12]],
-		["Hold the Line", "+%s armour while an enemy is next to you", "hold", [1, 2]],
+		["Hold the Line", "+%s armour while an enemy is next to you", "hold", [2, 4]],
 		["Rally", "Your drone and hacked turrets deal +%s%% damage", "rally", [25, 50]],
 		["Suppress", "Marked enemies deal %s%% less damage to you", "msupp", [20, 35]],
 		["Drone Companion", "Every 12 steps a drone zaps an enemy within 3 tiles (marked enemies first) for %s%% of your attack. Enemies it zaps turn into Hunters", "drone", [100, 200]]]],
 	["WARP", Color("a68cff"), [
-		["Warp Beacon", "Each floor tops you up to %s Warp Beacon(s): use one to drop a beacon, use it again to warp back", "beacon", [1, 2]],
-		["Slipstream", "After any warp (Blink, Grapple, Rewind, Beacon) your next %s steps cost no air", "wslip", [3, 6]],
+		["Warp Beacon", "Each floor you get %s Warp Beacon: use one to drop a beacon, use it again to warp back. Rank 2: warping to the beacon heals 25%% of max health", "beacon", [1, 1]],
+		["Slipstream", "After any warp (Blink, Grapple, Rewind, Beacon) your next %s steps cost no air", "wslip", [6, 12]],
 		["Phase Shield", "Warping gives +%s shield", "wshield", [8, 16]],
 		["Rift", "Warping leaves a rift that hits enemies next to where you left for %s%% of your attack", "rift", [100, 200]],
 		["Warp Lungs", "Warping restores %s air", "wair", [25, 50]],
@@ -8826,6 +9013,7 @@ func _adv_init_run() -> void:
 	pk = {}
 	sk_sel = ""
 	sk_phx = false
+	air_bonus = 0.0
 	mom_steps = 0
 	level = start_lvl()
 	xp = 0
@@ -8891,7 +9079,7 @@ func _adv_begin() -> void:
 	hp = mini(hp, hp_cap())
 	root_n = 0
 	anchor_used = false
-	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")) + int(sk("shield")))
+	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")))
 	sk_wind = false
 	shield = false
 	mon_hp.clear()
@@ -9074,7 +9262,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	run_kills += 1
 	var back := 0
 	if thief_held.has(nc):
-		back = int(thief_held[nc]) * maxi(1, int(sk("repo")))
+		back = int(thief_held[nc]) + _repo_bonus()
 		coins += back
 	var was_elite := elite.has(nc)
 	var was_affix := affix.has(nc)
@@ -9091,7 +9279,9 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	mom_steps += int(sk("momentum")) + (2 if gm("sprinter") else 0)
 	if gm("vampmesh"):
 		_p_heal(2)
-	if sk("airkill") > 0.0 and oxy < oxy_max:
+	if sk("airkill") > 0.0:
+		air_bonus += sk("airkill")
+		oxy_max = adv_oxy_max()
 		oxy = minf(oxy_max, oxy + sk("airkill"))
 	if relic_n("scrubber") > 0 and oxy < oxy_max * 0.5:
 		oxy = minf(oxy_max, oxy + 3.0)
@@ -9810,7 +10000,7 @@ func _shoot_range() -> int:
 	var w := _weapon_range()
 	if w <= 0:
 		return 0
-	return w + int(gear("rangeb")) + relic_n("deadeye") + int(sk("rrange"))
+	return maxi(1, w + int(gear("rangeb")) + relic_n("deadeye") + int(sk("rrange")) - (1 if _rhas("hollow") else 0))
 
 
 func _haz_mult() -> float:
@@ -9905,11 +10095,15 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		_sfx("blocked")
 		return
 	var is_boss := boss_floor and c == boss_cell
-	if randf() * 100.0 < sk("noammo") + gear("noammo") + (15.0 if has_tr("tireless") else 0.0):
+	var hfree := hair_free
+	hair_free = false
+	if hfree or randf() * 100.0 < sk("noammo") + gear("noammo") + (15.0 if has_tr("tireless") else 0.0):
 		_pop(pos, "FREE SHOT", Color("6dff9a"))
 	else:
 		ammo = maxi(0, ammo - (2 if relic_n("heavyammo") > 0 else 1))
 	var dmg := _tr_hit_mod(c, _ranged_hv())
+	if act_rico:
+		dmg *= 2
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
 		dmg = int(round(float(dmg) * crit_mult()))
@@ -10522,6 +10716,8 @@ func _adv_use_slot(i: int) -> void:
 		_adv_step(bdst, true)
 		if state == PLAY:
 			msg = "Warped to your beacon"
+			if sk_rank("o5n0") >= 2:
+				_tr_heal(maxi(1, hp_cap() / 4))
 			_on_warp(bfrom)
 			if relic_n("anchor") > 0 and not anchor_used:
 				anchor_used = true
@@ -11776,7 +11972,7 @@ func _inv_extra_rows() -> Array:
 		["#OFFENSE"],
 		["CRIT CHANCE", "%d%%" % int(round(crit_chance())), "Chance for a hit to crit."],
 		["CRIT DAMAGE", "x%.1f" % crit_mult(), "Damage multiplier when you crit."],
-		["BERSERKER", "+%d" % int(sk("berserk")), "Extra attack while under half health."],
+		["BERSERKER", "+%d%%" % int(sk("berserk")), "Extra damage while under half health."],
 		["OPENING STRIKE", "+%d%%" % int(sk("opener")), "Bonus damage to enemies at full health."],
 		["LIFESTEAL", "%d per hit" % leech, "Health restored on every hit."],
 		["KILL HEAL", "%d" % int(gear("killheal")), "Health restored when you kill."],
@@ -11787,7 +11983,7 @@ func _inv_extra_rows() -> Array:
 		["MAX AMMO", "%d" % ammo_max(), "Most ammo you can carry."],
 		["AMMO DROPS", "%d%%" % int(sk("ammodrop")), "Chance for a kill to drop ammo."],
 		["FREE SHOTS", "%d%%" % int(sk("noammo")), "Chance a shot uses no ammo."],
-		["THORNS", "%d" % thorns_dmg(), "Damage reflected when you are hit."],
+		["THORNS", "%d" % thorns_dmg() + ("  +%d%%" % int(sk("thorns")) if sk("thorns") > 0.0 else ""), "Damage reflected when you are hit."],
 		["#DEFENCE"],
 		["DODGE", "%d%%" % int(round(dodge_chance())), "Chance to avoid a hit completely."],
 		["SHOT DEFENCE", "-%d" % sdef, "Damage removed from enemy ranged shots."],
@@ -11802,7 +11998,7 @@ func _inv_extra_rows() -> Array:
 		["FREE SHOT", "%d%%" % int(gear("noammo") + sk("noammo")), "Chance a ranged shot uses no ammo."],
 		["POD AIR", "%d" % int(adv_pod_amt()), "Air restored by each air pod."],
 		["BREATHS", ("%d left" % can_n) if sk("breathe") > 0 else "none", "Deep breaths left this floor (heal for half your air)."],
-		["AIR PER KILL", "%d" % int(sk("airkill")), "Air restored by every kill."],
+		["AIR PER KILL", "%d" % int(sk("airkill")), "Max air gained by every kill."],
 		["MOMENTUM", "%d" % int(sk("momentum")), "Free steps after each kill."],
 		["#EXPLORING"],
 		["SIGHT", "%d" % adv_vis_r(), "How far you see around you."],
