@@ -303,7 +303,7 @@ var test_unlocked := false
 var set_taps := 0
 var set_tap_t := -10.0
 var test_prev_save_off := false
-const BTN_TEST := Rect2(110, 1196, 500, 64)
+const BTN_TEST := Rect2(110, 1196, 245, 64)
 const SET_TITLE := Rect2(160, 150, 400, 80)
 var tut_prev_save_off := false
 var inv_more := false
@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 77
+const BUILD := 78
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2979,6 +2979,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if state == MODE:
 		if btn_codex.has_point(p):
+			cx_ret = MODE
 			_cx_open()
 			return
 		if btn_lb.has_point(p):
@@ -4019,6 +4020,8 @@ func _layout_buttons() -> void:
 	btn_menu = btn_inv
 	btn_reset = btn_inv
 	btn_skill = Rect2(btn_inv.position.x - 6.0 - w, 40, w, h)
+	btn_inset = Rect2(btn_invmenu.end.x + 8.0, 40, 150, h)
+	btn_incx = Rect2(290, 40, 140, h)
 
 
 # Adventure bottom cluster (thumb zone): tool row, then badges + class power + weapon toggle.
@@ -4041,6 +4044,15 @@ func _settings_input(p: Vector2) -> void:
 		if set_taps >= 5:
 			test_unlocked = true
 			_sfx("big")
+		return
+	if test_unlocked and BTN_UNLOCK.has_point(p):
+		if t - ua_armed < 3.0:
+			ua_armed = -10.0
+			_unlock_all()
+			_sfx("big")
+		else:
+			ua_armed = t
+			_sfx("ui")
 		return
 	if test_unlocked and BTN_TEST.has_point(p):
 		test_pending = true
@@ -4123,7 +4135,8 @@ func _draw_settings(acc: Color) -> void:
 		_txt(String(hints[i]), Vector2(0, r.end.y + 30), 23, Color(1, 1, 1, 0.7))
 	_button(btn_sv_back, "BACK", Color("ffd84f"), 28, "back")
 	if test_unlocked:
-		_button(BTN_TEST, "TEST ROOM (all gear)", Color("ff8af0"), 26)
+		_button(BTN_TEST, "TEST ROOM", Color("ff8af0"), 24)
+		_button(BTN_UNLOCK, "TAP AGAIN!" if t - ua_armed < 3.0 else "UNLOCK ALL", Color("ff5d5d") if t - ua_armed < 3.0 else Color("ffd84f"), 24)
 
 
 func _para_fit(s: String, p: Vector2, size: int, col: Color, w: float, max_lines: int) -> void:
@@ -12343,6 +12356,10 @@ func _inv_input(p: Vector2) -> void:
 	if btn_invmenu.has_point(p):
 		_menu_leave()
 		return
+	if btn_incx.has_point(p):
+		cx_ret = INV
+		_cx_open()
+		return
 	if btn_inset.has_point(p):
 		set_ret = INV
 		state = SETTINGS
@@ -12444,6 +12461,7 @@ func _draw_inv(acc: Color) -> void:
 	var armed := t - menu_armed < 3.0
 	_button(btn_invmenu, "SURE?" if armed else "MENU", Color("ff8a8a") if armed else acc)
 	_button(btn_inset, "SETTINGS", Color("c9d3f0"), 18)
+	_button(btn_incx, "CODEX", Color("c9a2ff"), 20)
 	_txt("INVENTORY", Vector2(0, 150), 52, acc)
 	var tabs := ["CHARACTER", "STATS", "TOOLS", "RELICS"]
 	for i in 4:
@@ -15967,7 +15985,7 @@ func _cx_input(p: Vector2) -> void:
 			cx_scroll = 0.0
 			_cx_layout()
 		else:
-			state = MODE
+			state = cx_ret
 		_sfx("ui")
 		return
 	if btn_cx_t0.has_point(p) or btn_cx_t1.has_point(p):
@@ -16064,3 +16082,51 @@ func _roll_base(rid: String, rng: RandomNumberGenerator) -> String:
 	for k3 in out:
 		parts.append("%s=%d" % [k3, int(out[k3])])
 	return rid + ("@" if rid.contains("@") else "@@") + ",".join(parts)
+
+
+var cx_ret := MODE
+var btn_incx := Rect2(290, 40, 140, 64)
+
+
+const BTN_UNLOCK := Rect2(365, 1196, 245, 64)
+var ua_armed := -10.0
+
+
+# Testing: unlock every shop item, master every class, open all threat levels and research, mark everything found.
+func _unlock_all() -> void:
+	for sd in shop_defs:
+		ups[String(sd["id"])] = (sd["costs"] as Array).size()
+	for d in class_defs:
+		var cid := String(d["id"])
+		mxp[cid] = maxi(int(mxp.get(cid, 0)), _mx_base(MX_MAX))
+		if String(mspec.get(cid, "")) == "":
+			mspec[cid] = "a"
+		if String(msub.get(cid, "")) == "":
+			msub[cid] = "1"
+		hz_max[cid] = HZ.size()
+	for wd in WS_DEFS:
+		ws[String(wd[0])] = int(wd[5])
+	cores += 100
+	bank += 10000
+	var st: Dictionary = cx.get("st", {})
+	st["bosses"] = maxi(int(st.get("bosses", 0)), 5)
+	st["floors"] = maxi(int(st.get("floors", 0)), 25)
+	cx["st"] = st
+	var gs: Dictionary = cx.get("gear", {})
+	for gd in gear_list:
+		gs[String(gd["id"])] = 1
+	cx["gear"] = gs
+	var ts: Dictionary = cx.get("tr", {})
+	for k in TRAIT_DEFS:
+		ts[String(k)] = 1
+	cx["tr"] = ts
+	var ms: Dictionary = cx.get("md", {})
+	for k2 in MOD_DEFS:
+		ms[String(k2)] = 1
+	cx["md"] = ms
+	var rs: Dictionary = cx.get("rl", {})
+	for rd in relic_defs:
+		rs[String(rd["id"])] = 1
+	cx["rl"] = rs
+	cp_dirty = true
+	_save_meta()
