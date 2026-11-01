@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO, MASTERY, CODEX }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO, MASTERY, CODEX, WORKSHOP }
 const GEAR_SLOTS := ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]
 
 const BAG_MAX := 12
@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 75
+const BUILD := 76
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -353,7 +353,7 @@ var save_last_sig := 0
 var save_t := 0.0
 var save_off := false
 const SAVE_PATH := "user://run.sav"
-const SAVE_VARS := ["mode", "cls", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
+const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
 	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
@@ -401,7 +401,7 @@ var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 790, 400, 76)
 var btn_shop := Rect2(160, 880, 400, 76)
 var btn_back := Rect2(250, 1010, 220, 64)
-var btn_shop2 := Rect2(380, 1100, 300, 76)
+var btn_shop2 := Rect2(480, 1100, 200, 76)
 var btn_prev := Rect2(40, 1010, 190, 64)
 var btn_next := Rect2(490, 1010, 190, 64)
 
@@ -715,6 +715,10 @@ func _make_defs() -> void:
 		{"id": "mystic", "name": "Mystic", "desc": "A shield every floor and +1 item slot. Starts with a Shadow Cloak.", "col": Color("c07cff"), "lvl": 0, "per": 0, "kit": ["cloak"]},
 		{"id": "gambler", "name": "Gambler", "desc": "Begins with 2 random relics (maybe cursed!) and sees 4 relic cards, not 3.", "col": Color("ffd84f"), "lvl": 0, "per": 0, "kit": []},
 		{"id": "gunslinger", "name": "Gunslinger", "desc": "Starts with an Ammo Pack, but the dark is 1 step faster.", "col": Color("ff9a4f"), "lvl": 0, "per": -1, "kit": ["ammopack"]},
+		{"id": "engineer", "name": "Engineer", "desc": "A combat drone follows you and zaps enemies. Starts with a Pulse Scanner.", "col": Color("4fd1c5"), "lvl": 0, "per": 0, "kit": ["scan"]},
+		{"id": "medic", "name": "Medic", "desc": "Medkits heal 50% more and kills heal 3% of max health. Starts with a Nano Injector.", "col": Color("ff8a9a"), "lvl": 0, "per": 0, "kit": ["nano"]},
+		{"id": "hacker", "name": "Hacker", "desc": "Bump enemy turrets to hack them for 8 steps. Starts with a Decoy Beacon.", "col": Color("6dff9a"), "lvl": 0, "per": 0, "kit": ["decoy"]},
+		{"id": "salvager", "name": "Salvager", "desc": "+1 starting level. Selling gear gives scrap and sells for 25% more. Starts with a Plating Kit.", "col": Color("c9a36b"), "lvl": 1, "per": 0, "kit": ["plate"]},
 	]
 	door_defs = {
 		"standard": {"name": "Steady Path", "desc": "A normal floor.", "col": Color("9fb3d9")},
@@ -761,7 +765,7 @@ func _shop_refund(old: Dictionary) -> int:
 
 
 func class_open(id: String) -> bool:
-	return id == "scout" or up("c_" + id) > 0
+	return id == "scout" or up("c_" + id) > 0 or _deed_done(id)
 
 
 func _pack_open(kind: String, id: String) -> bool:
@@ -1001,15 +1005,15 @@ func _player_tex(frame := 0, dir := -1, geared := true) -> ImageTexture:
 	var eq: Dictionary = {}
 	if geared and mode == "adv":
 		for sl in equip:
-			eq[sl] = gb(String(equip[sl]))
+			eq[sl] = _gart(gb(String(equip[sl])))
 		if ranged_mode and _weapon_range() > 0 and eq.has("ranged"):
 			eq["weapon"] = eq["ranged"]
-	return spr_gen.player((cdef()["col"] as Color), cls, frame, dd, eq)
+	return spr_gen.player((cdef()["col"] as Color), _cls_art(cls), frame, dd, eq)
 
 
 func _gear_tex(id: String) -> ImageTexture:
 	var sl := String(gear_defs[gb(id)]["slot"])
-	return spr_gen.gear_icon(gb(id), "weapon" if sl == "ranged" else sl)
+	return spr_gen.gear_icon(_gart(gb(id)), "weapon" if sl == "ranged" else sl)
 
 
 func _item_tex(kind: String) -> ImageTexture:
@@ -2031,6 +2035,10 @@ func _act_desc(cid: String) -> String:
 			"mystic": "Hex Mark: your next hit deals double damage. Recharges in 35 steps.",
 			"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
 			"gunslinger": "Ricochet: your next shot deals double damage and bounces to a second enemy within 3 tiles for the same damage. Recharges in 25 steps.",
+			"engineer": "Arc Pulse: zaps every enemy within 2 tiles for your attack and stuns them for a step. Recharges in 30 steps.",
+			"medic": "Field Surgery: heals 30% of max health and cures acid, frost and burns. Recharges in 45 steps.",
+			"hacker": "Override: hacks every turret within 5 tiles and stuns enemies within 2 tiles for 2 steps. Recharges in 40 steps.",
+			"salvager": "Magnet Pulse: pulls in every coin within 6 tiles. Recharges in 30 steps.",
 		}.get(cid, "")
 	return {
 		"scout": "Deep Breath: pushes the dark back 3 steps. Recharges in 40 steps.",
@@ -2131,6 +2139,10 @@ const ACTS := {
 	"gambler": {"n": "Reshuffle", "cd": 50},
 	"gunslinger": {"n": "Ricochet", "cd": 25},
 	"mystic": {"n": "Hex Mark", "cd": 35},
+	"engineer": {"n": "Arc Pulse", "cd": 30},
+	"medic": {"n": "Field Surgery", "cd": 45},
+	"hacker": {"n": "Override", "cd": 40},
+	"salvager": {"n": "Magnet Pulse", "cd": 30},
 }
 
 
@@ -2220,11 +2232,21 @@ func _act_use() -> void:
 			ok = _act_gunslinger()
 		"mystic":
 			ok = _act_mystic()
+		"engineer":
+			ok = _act_engineer()
+		"medic":
+			ok = _act_medic()
+		"hacker":
+			ok = _act_hacker()
+		"salvager":
+			ok = _act_salvager()
 	if ok:
 		if gm("overcell"):
 			sh = mini(sh_cap(), sh + 4)
 		_mx_power_used()
 		act_cd = int(ceil(float(ACTS[cls]["cd"]) * _mx_cd_mult() * (0.8 if gm("cdgem") else 1.0) * (1.0 - (sk("pcell") + gear("pcell")) / 100.0) * (0.5 if relic_n("ocell") > 0 else 1.0)))
+		act_cd = maxi(0, act_cd - pw_refund)
+		pw_refund = 0
 
 
 func _act_scout() -> bool:
@@ -2952,6 +2974,9 @@ func _gui_input(event: InputEvent) -> void:
 	if state == CODEX:
 		_cx_input(p)
 		return
+	if state == WORKSHOP:
+		_ws_input(p)
+		return
 	if state == MODE:
 		if btn_codex.has_point(p):
 			_cx_open()
@@ -3009,7 +3034,13 @@ func _gui_input(event: InputEvent) -> void:
 				cls_page += 1
 				_sfx("ui")
 			return
+		if btn_hz_m.has_point(p) or btn_hz_p.has_point(p):
+			_hz_tap(String(class_defs[cls_page]["id"]), btn_hz_p.has_point(p))
+			return
 		if btn_cpick.has_point(p):
+			if DEEDS.has(String(class_defs[cls_page]["id"])) and not class_open(String(class_defs[cls_page]["id"])):
+				_sfx("blocked")
+				return
 			if not class_open(String(class_defs[cls_page]["id"])):
 				shop_return = CLASS
 				shop_tab = 0
@@ -3024,6 +3055,11 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			_new_run()
 			_first_tut()
+			return
+		if btn_work.has_point(p):
+			_ct_fill()
+			state = WORKSHOP
+			_sfx("ui")
 			return
 		if btn_mast.has_point(p):
 			mx_cls = String(class_defs[cls_page]["id"])
@@ -3215,7 +3251,7 @@ func _process(dt: float) -> void:
 		bank_disp = float(bank)
 	else:
 		bank_disp = move_toward(bank_disp, float(bank), maxf(2.0, absf(bank_disp - bank) * dt * 5.0))
-	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS or state == MASTERY or state == CODEX:
+	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS or state == MASTERY or state == CODEX or state == WORKSHOP:
 		modulate.a = clampf(0.3 + (t - state_t) * 6.0, 0.0, 1.0)
 	elif modulate.a < 1.0:
 		modulate.a = 1.0
@@ -4788,7 +4824,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS or state == MASTERY or state == CODEX:
+	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS or state == MASTERY or state == CODEX or state == WORKSHOP:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -5210,7 +5246,7 @@ func _draw_menu_hero(acc: Color) -> void:
 func _draw_overlay(acc: Color) -> void:
 	if state == MODE:
 		_draw_menu_bg(_menu_tint(acc))
-	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC, MASTERY, CODEX]:
+	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC, MASTERY, CODEX, WORKSHOP]:
 		_draw_menu_bg(_menu_tint(acc))
 	elif state != CLEAR:
 		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
@@ -5232,6 +5268,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_mastery(acc)
 	elif state == CODEX:
 		_draw_codex(acc)
+	elif state == WORKSHOP:
+		_draw_workshop(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -5369,9 +5407,9 @@ func _draw_overlay(acc: Color) -> void:
 		var isy := 1.0 + 0.03 * sin(t * 2.6)
 		var isx := 1.0 + (1.0 - isy) * 0.8
 		var ipx := 200.0
-		_spr_ex(spr_gen.player(ccol, cid, 0, 0, {}), Vector2(360, 446 - (isy - 1.0) * ipx * 0.5), ipx, Color.WHITE if copen else Color(0.45, 0.45, 0.5, 0.9), 1.0, 0.02 * sin(t * 1.3), isx, isy)
+		_spr_ex(spr_gen.player(ccol, _cls_art(cid), 0, 0, {}), Vector2(360, 446 - (isy - 1.0) * ipx * 0.5), ipx, Color.WHITE if copen else Color(0.45, 0.45, 0.5, 0.9), 1.0, 0.02 * sin(t * 1.3), isx, isy)
 		if copen:
-			_txt(String(CLASS_BLURB.get(cid, "")), Vector2(100, 578), 22, cc, 520.0)
+			_txt(String(CLASS_BLURB.get(cid, NEW_BLURB.get(cid, ""))), Vector2(100, 578), 22, cc, 520.0)
 			var dtxt := ""
 			if mode != "adv":
 				var dk := int(cd["per"])
@@ -5393,14 +5431,16 @@ func _draw_overlay(acc: Color) -> void:
 			if cd["kit"].size() == 0:
 				_txt("none", Vector2(190, 928), 18, Color(1, 1, 1, 0.5), 100.0, HORIZONTAL_ALIGNMENT_LEFT)
 		else:
-			_para("LOCKED. Unlock this class in the SHOP.", Vector2(124, 640), 24, Color(1, 1, 1, 0.6), 472.0)
+			_para(_lock_text(cid), Vector2(124, 640), 24, Color(1, 1, 1, 0.6), 472.0)
 		_button(btn_cl_l, "<", acc if cls_page > 0 else Color(1, 1, 1, 0.2), 56)
 		_button(btn_cl_r, ">", acc if cls_page < class_defs.size() - 1 else Color(1, 1, 1, 0.2), 56)
-		for i in class_defs.size():
+		_hz_row(cid)
+		for i in (0 if mode == "adv" else class_defs.size()):
 			draw_circle(Vector2(360 + (i - (class_defs.size() - 1) * 0.5) * 30.0, 978), 8.0 if i == cls_page else 5.0, cc if i == cls_page else Color(1, 1, 1, 0.3))
-		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else "LOCKED - OPEN SHOP", cc if copen else Color("ffc93c"), 28)
+		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else _lock_btn(cid), cc if copen else Color("ffc93c"), 28)
 		_button(btn_shop2, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 		_button(btn_mast, "MASTERY", Color("ffd84f"), 28)
+		_button(btn_work, "WORKSHOP", Color("ff4fd8"), 28)
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP and mini_pick:
@@ -5465,7 +5505,7 @@ func _draw_overlay(acc: Color) -> void:
 func adv_vis_r() -> int:
 	if _blackout():
 		return 1
-	return 4 + relic_n("lantern") + relic_n("ember") + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight")) - (1 if _world_rule() == "glare" else 0) - (2 if _world_rule() == "outage" else 0)
+	return 4 + relic_n("lantern") + relic_n("ember") + (1 if cls == "scout" else 0) + int(gear("sight")) + int(sk("sight")) - _an_sight() - (1 if _world_rule() == "glare" else 0) - (2 if _world_rule() == "outage" else 0)
 
 
 var cracked: Dictionary = {}
@@ -6665,7 +6705,7 @@ func gear(stat: String) -> float:
 
 
 func hp_cap() -> int:
-	return int(float(_hp_cap_base()) * (1.25 if gm("heartstation") else 1.0))
+	return int(float(_hp_cap_base()) * (1.25 if gm("heartstation") else 1.0) * (_hz_frag() if mode == "adv" else 1.0))
 
 
 func _hp_cap_base() -> int:
@@ -6739,6 +6779,7 @@ func mon_atk(c: Vector2i) -> int:
 		a += armor_total() / 3 + (floor_n - 1) / 2
 		if _is_frenzied(c):
 			a += maxi(2, a / 2)
+		a += _hz_atk(c)
 	return a
 
 
@@ -6752,6 +6793,7 @@ func mon_hp_max(c: Vector2i) -> int:
 		h = int(h * (1.0 + minf(0.6, 0.03 * float(threat()))) * (1.0 + 0.12 * float(floor_n - 1)))
 		if String(affix.get(c, "")) == "brute":
 			h *= 2
+		h = int(float(h) * _hz_hp(c))
 	return h
 
 
@@ -6791,7 +6833,7 @@ func _adv_mname(c: Vector2i) -> String:
 	var th := cur_theme()
 	var names: Array = th["mons"]
 	if boss_floor and c == boss_cell:
-		return String(th["boss"])
+		return ("Ascended " if mode == "adv" and floor_n > 20 else "") + String(th["boss"])
 	if String(kinds.get(c, "")) == "shard":
 		return "Crystal Shard"
 	if String(kinds.get(c, "")) == "drone":
@@ -7177,7 +7219,7 @@ var sup_done: Dictionary = {}
 
 
 func _p_heal(n: int) -> void:
-	var h := int(round(float(n) * (2.0 if sk("crimson") > 0.0 else 1.0) * (1.25 if gm("lifeline") else 1.0)))
+	var h := int(round(float(n) * (2.0 if sk("crimson") > 0.0 else 1.0) * (1.25 if gm("lifeline") else 1.0) * _hz_heal()))
 	var room := hp_cap() - hp
 	var tfc := int(sk("transf")) + (4 if gm("reservec") else 0)
 	if h > room and tfc > 0:
@@ -7602,6 +7644,8 @@ func _roll_mods(rng: RandomNumberGenerator, tier: int, slot: String) -> String:
 		n = 2
 	if sk("master") > 0.0:
 		n += 1
+	if tier >= 6:
+		n += 1
 	var pool: Array = []
 	var hipool: Array = []
 	for mid in MOD_DEFS:
@@ -7720,6 +7764,8 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 	else:
 		n = 2 if r < 0.4 else 3
 	if sk("master") > 0.0:
+		n += 1
+	if tier >= 6:
 		n += 1
 	if n == 0:
 		return ""
@@ -8605,7 +8651,7 @@ func _oxy_dead() -> bool:
 
 
 func _eff_price(o: Dictionary) -> int:
-	return maxi(1, int(round(float(o["price"]) * (1.0 - sk("haggle") / 100.0))))
+	return maxi(1, int(round(float(o["price"]) * (1.0 - sk("haggle") / 100.0) * _hz_price())))
 
 
 var sk_off := Vector2.ZERO
@@ -8954,6 +9000,21 @@ func _make_gear() -> void:
 		{"id": "voidheart", "slot": "trinket", "name": "Void Heart", "tier": 5, "price": 152, "stats": {"hp": 26, "killheal": 6, "atk": 2}},
 		{"id": "infinitylens", "slot": "trinket", "name": "Infinity Lens", "tier": 5, "price": 150, "stats": {"crit": 20, "xp": 40, "rangeb": 1}},
 		{"id": "midasengine", "slot": "trinket", "name": "Midas Engine", "tier": 5, "price": 148, "stats": {"coin": 4, "xp": 30, "pod": 20}},
+		{"id": "riftblade", "slot": "weapon", "name": "Rift Blade", "tier": 6, "price": 220, "art": "oblivion", "stats": {"atk": 17, "crit": 30, "leech": 4}},
+		{"id": "titanbreaker", "slot": "weapon", "name": "Titan Breaker", "tier": 6, "price": 218, "art": "starmaul", "stats": {"atk": 21, "crit": 12}},
+		{"id": "singlance", "slot": "weapon", "name": "Singularity Lance", "tier": 6, "price": 226, "art": "eventrail", "stats": {"atk": 16, "range": 6, "crit": 30}},
+		{"id": "abysscrown", "slot": "helmet", "name": "Abyssal Crown", "tier": 6, "price": 214, "art": "eclipsecrown", "stats": {"armor": 4, "hp": 14, "sight": 2, "xp": 45}},
+		{"id": "riftplate", "slot": "armour", "name": "Rift Plate", "tier": 6, "price": 230, "art": "horizonplate", "stats": {"armor": 9, "hp": 30, "shield": 14, "thorns": 5}},
+		{"id": "nullweave", "slot": "armour", "name": "Null Weave", "tier": 6, "price": 220, "art": "starweave", "stats": {"armor": 6, "hp": 18, "dodge": 18, "shield": 10}},
+		{"id": "riftstriders", "slot": "boots", "name": "Rift Striders", "tier": 6, "price": 216, "art": "wormhole", "stats": {"airsave": 50, "dodge": 18, "sight": 1, "hazres": 40}},
+		{"id": "abyssheart", "slot": "trinket", "name": "Abyssal Heart", "tier": 6, "price": 222, "art": "voidheart", "stats": {"hp": 34, "killheal": 8, "atk": 3}},
+		{"id": "omnilens", "slot": "trinket", "name": "Omni Lens", "tier": 6, "price": 218, "art": "infinitylens", "stats": {"crit": 26, "xp": 50, "rangeb": 1}},
+		{"id": "starkiller", "slot": "weapon", "name": "Starkiller", "tier": 7, "price": 300, "art": "oblivion", "stats": {"atk": 23, "crit": 35, "leech": 5}},
+		{"id": "worldender", "slot": "weapon", "name": "World Ender", "tier": 7, "price": 306, "art": "eventrail", "stats": {"atk": 21, "range": 7, "crit": 35}},
+		{"id": "corecrown", "slot": "helmet", "name": "Crown of the Core", "tier": 7, "price": 296, "art": "eclipsecrown", "stats": {"armor": 6, "hp": 20, "sight": 3, "xp": 60}},
+		{"id": "coreplate", "slot": "armour", "name": "Core Plate", "tier": 7, "price": 310, "art": "horizonplate", "stats": {"armor": 12, "hp": 42, "shield": 18, "thorns": 7}},
+		{"id": "voidwalkers", "slot": "boots", "name": "Void Walkers", "tier": 7, "price": 298, "art": "wormhole", "stats": {"airsave": 60, "dodge": 22, "sight": 2, "hazres": 60}},
+		{"id": "coreheart", "slot": "trinket", "name": "Heart of the Core", "tier": 7, "price": 304, "art": "voidheart", "stats": {"hp": 44, "killheal": 10, "atk": 4, "coin": 4}},
 	]
 	gear_defs.clear()
 	for d in gear_list:
@@ -8968,6 +9029,10 @@ func _gear_col(slot: String) -> Color:
 
 
 func _tier_col(t: int) -> Color:
+	if t >= 7:
+		return Color("7ffcff")
+	if t >= 6:
+		return Color("ff4fd8")
 	if t >= 5:
 		return Color("ff6a4f")
 	if t >= 4:
@@ -9006,7 +9071,11 @@ func _adv_roll_gear(rng: RandomNumberGenerator, bonus := 0) -> String:
 		tier = 2 if r < 0.1 else (3 if r < 0.4 else (4 if r < 0.8 else 5))
 	if randf() * 100.0 < sk("master"):
 		tier += 1
-	tier = clampi(tier + bonus, 1, 5 if floor_n >= 13 else 4)
+	if floor_n >= 19 and r > 0.55:
+		tier += 1
+	if floor_n >= 26 and r > 0.85:
+		tier += 1
+	tier = clampi(tier + bonus, 1, 7 if floor_n >= 26 else (6 if floor_n >= 19 else (5 if floor_n >= 13 else 4)))
 	var pool: Array = []
 	for d in gear_list:
 		if int(d["tier"]) == tier:
@@ -9391,6 +9460,7 @@ func _adv_begin() -> void:
 	adr_used = false
 	echoc_used = false
 	_cx_scan()
+	_an_announce()
 	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")))
 	sk_wind = false
 	shield = false
@@ -9605,6 +9675,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		scrap += 2
 		_pop(nc, "+2 SCRAP", Color("c9a36b"))
 	var mult := 1.0 + 0.5 * relic_n("blade")
+	mult += _an_xp()
 	if _world_rule() == "glare":
 		mult += 0.25
 	if was_elite:
@@ -9634,7 +9705,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	if kh > 0:
 		_p_heal(kh)
 	if was_elite or is_boss or was_affix:
-		if randf() < (1.0 if (is_boss or bounty_hit) else ((0.3 if was_elite else 0.12) + sk("drop") / 100.0)):
+		if randf() < (1.0 if (is_boss or bounty_hit) else ((0.3 if was_elite else 0.12) + sk("drop") / 100.0 + (1.0 if was_elite and _an("hunt") else 0.0))):
 			var gid := _adv_roll_gear(null, 1 if is_boss else 0)
 			if _adv_give_gear(gid):
 				msg += "  Dropped: " + gname(gid) + (" [" + gtrait_line(gid) + "]" if gtrait_line(gid) != "" else "")
@@ -10012,7 +10083,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		coin_at.erase(nc)
 		pick_c = nc
 		pick_kind = "coin"
-		var cv := coin_val()
+		var cv := coin_val() * _an_coin()
 		if lucky_n > 0:
 			lucky_n -= 1
 			cv *= 2
@@ -10064,6 +10135,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if rw_hist.size() > 9:
 		rw_hist.pop_front()
 	_act_tick()
+	_an_step()
 	if relic_n("ammofab") > 0 and _weapon_range() > 0:
 		fab_steps += 1
 		if fab_steps >= 8:
@@ -10081,6 +10153,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		oxy -= extra
 	else:
 		var base_air := 1.0 - (gear("airsave") + sk("airsave")) / 100.0
+		base_air *= _hz_air()
 		oxy -= base_air * (2.0 if relic_n("prism") > 0 and not moved else 1.0) + (0.5 if relic_n("glass") > 0 else 0.0) + extra
 	if _world_rule() == "hull":
 		oxy -= 2.0 * (1.0 - (gear("airsave") + sk("airsave")) / 100.0)
@@ -12004,15 +12077,15 @@ func _chr_row_visible(k: int) -> bool:
 func _chr_tex(prev: String) -> ImageTexture:
 	var eq: Dictionary = {}
 	for sl in equip:
-		eq[sl] = gb(String(equip[sl]))
+		eq[sl] = _gart(gb(String(equip[sl])))
 	var psl := ""
 	if prev != "":
 		psl = String(gear_defs[gb(prev)]["slot"])
-		eq[psl] = gb(prev)
+		eq[psl] = _gart(gb(prev))
 	var show_rng := psl == "ranged" or (ranged_mode and psl != "weapon")
 	if show_rng and eq.has("ranged"):
 		eq["weapon"] = eq["ranged"]
-	return spr_gen.player((cdef()["col"] as Color), cls, 0, chr_dir, eq)
+	return spr_gen.player((cdef()["col"] as Color), _cls_art(cls), 0, chr_dir, eq)
 
 
 func _mods_btn_rect() -> Rect2:
@@ -13481,7 +13554,7 @@ var cx_scroll := 0.0
 var cx_max := 0.0
 var cx_lay: Array = []
 var btn_sk_view := Rect2(20, 214, 200, 54)
-var btn_mast := Rect2(40, 1100, 300, 76)
+var btn_mast := Rect2(40, 1100, 200, 76)
 var btn_codex := Rect2(50, 1032, 620, 80)
 var btn_mx_l := Rect2(20, 100, 90, 70)
 var btn_mx_r := Rect2(610, 100, 90, 70)
@@ -13637,6 +13710,114 @@ const CK := {
 				"1": {"n": "OUTLAW", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Dead or Alive", "Kills cut Ricochet's recharge by %s steps", "killcd", [3]]},
 				"2": {"n": "PISTOLERO", "d": "+6% crit.", "s": {"crit": 6}, "k": ["Gun Kata", "+%s%% damage to all attacks while an enemy is next to you", "adjdmg", [25]]}}},
 	},
+	"engineer": {
+		"core": [
+			["Calibration", "Your drone and hacked turrets deal +%s%% damage", "rally", [25, 50]],
+			["Toolkit", "%s%% chance a tool isn't used up", "tinker", [10, 20]],
+			["Capacitor", "Using a tool gives %s shield", "overclk", [3, 6]],
+			["Arc Coils", "Arc Pulse deals +%s%% damage", "arcp", [25, 50]],
+			["Field Repair", "O2 stations give +%s shield (3 times per floor)", "frepair", [4, 8]],
+			["Overclock", "Your class power recharges %s%% faster", "pcell", [15, 30]]],
+		"a": {"n": "MECHANIST", "d": "Your drone fires every 6 steps and drone kills drop coins. +1 tool slot.", "s": {"apx_merc": 1, "slots": 1},
+			"nodes": [
+				["Supply Line", "The first visit to each merchant gives %s free tool(s)", "supply", [1, 2]],
+				["Target Painter", "Your first hit marks enemies: +%s%% damage taken", "mark", [10, 20]],
+				["Tinker", "%s%% chance a tool isn't used up", "tinker", [10, 15]],
+				["Hull Patch", "+%s max shields", "maxsh", [6, 12]]],
+			"subs": {
+				"1": {"n": "DRONE MASTER", "d": "Drone and hacked turrets +25% damage.", "s": {"rally": 25}, "k": ["Heavy Drone", "Your drone deals another %s%% of your attack", "drone", [100]]},
+				"2": {"n": "TECHNICIAN", "d": "10% chance a tool isn't used up.", "s": {"tinker": 10}, "k": ["Arc Foundry", "Every tool you use hits each enemy within %s tiles with a random element", "apx_arc", [2]]}}},
+		"b": {"n": "DEMOLITIONIST", "d": "+1 attack and Arc Pulse sets enemies on fire.", "s": {"atk": 1, "arcburn": 1},
+			"nodes": [
+				["Shrapnel", "Kills explode for %s%% of the victim's max health to enemies next to it", "blast", [15, 30]],
+				["Thermite", "Your burns last +%s step(s)", "kindle", [1, 2]],
+				["Blast Plating", "+%s armour", "armor", [1, 2]],
+				["Big Bang", "Arc Pulse reaches %s more tile(s)", "arcr", [1, 2]]],
+			"subs": {
+				"1": {"n": "SAPPER", "d": "Enemies that hit you take 15% of the damage back.", "s": {"thorns": 15}, "k": ["Chain Reaction", "Every Arc Pulse kill cuts its recharge by %s steps", "arckill", [8]]},
+				"2": {"n": "BOMBARDIER", "d": "Kills explode for 15% of the victim's max health.", "s": {"blast": 15}, "k": ["Carpet Bomb", "Arc Pulse deals +%s%% damage", "arcp", [75]]}}},
+	},
+	"medic": {
+		"core": [
+			["Triage", "Medkits heal %s%% more", "medk", [25, 50]],
+			["Vital Signs", "+%s max health", "hp", [5, 10]],
+			["Antiseptic", "Field Surgery heals +%s%% of max health", "surg", [10, 20]],
+			["Adrenal Shot", "Field Surgery gives %s air", "surgair", [15, 30]],
+			["Recovery", "Kills heal %s%% of max health", "kheal", [2, 4]],
+			["Lifeline", "Once per run, a killing blow leaves you at %s%% health instead", "phoenix", [30, 50]]],
+		"a": {"n": "SURGEON", "d": "+10 max health, and healing past max becomes shield (up to 4).", "s": {"hp": 10, "transf": 4},
+			"nodes": [
+				["Steady Hands", "+%s%% crit chance", "crit", [5, 10]],
+				["Scalpel", "+%s%% damage to enemies under half health", "finish", [15, 30]],
+				["Transfusion", "Healing past max health becomes shield (up to %s per heal)", "transf", [4, 8]],
+				["Blood Bank", "Kills heal %s%% of max health", "kheal", [2, 4]]],
+			"subs": {
+				"1": {"n": "FIELD DOCTOR", "d": "O2 stations also heal 15% of max health.", "s": {"stationheal": 15}, "k": ["Miracle Worker", "Field Surgery heals another %s%% of max health", "surg", [25]]},
+				"2": {"n": "PLAGUE DOCTOR", "d": "Poison can stack 2 higher.", "s": {"catal": 2}, "k": ["Contagion", "Field Surgery poisons every enemy within 3 tiles for %s stacks", "surgpsn", [3]]}}},
+		"b": {"n": "GUARDIAN", "d": "+8 max shields and +1 armour.", "s": {"maxsh": 8, "armor": 1},
+			"nodes": [
+				["Barrier", "+%s max shields", "maxsh", [6, 12]],
+				["Bulwark", "+%s armour while an enemy is next to you", "hold", [1, 2]],
+				["Phase Shield", "Field Surgery gives %s shield", "surgsh", [6, 12]],
+				["Last Stand", "Below 30%% health you take %s%% less damage", "laststand", [15, 30]]],
+			"subs": {
+				"1": {"n": "PALADIN", "d": "Enemies that hit you take 15% of the damage back.", "s": {"thorns": 15}, "k": ["Retribution", "Enemies that hit you take another %s%% of the damage back", "thorns", [40]]},
+				"2": {"n": "SENTINEL", "d": "+6% dodge.", "s": {"dodge": 6}, "k": ["Aegis Field", "Kills give %s shield", "killsh", [3]]}}},
+	},
+	"hacker": {
+		"core": [
+			["Backdoor", "Hacked turrets stay on your side %s more steps", "thack", [4, 8]],
+			["Packet Sniffer", "+%s sight radius", "sight", [1, 2]],
+			["Exploit", "Your first hit marks enemies: +%s%% damage taken", "mark", [10, 20]],
+			["Overclocked Rig", "Your class power recharges %s%% faster", "pcell", [15, 30]],
+			["Firewall", "Marked enemies deal %s%% less damage to you", "msupp", [15, 25]],
+			["System Crash", "Override stuns for %s more step(s)", "ovstun", [1, 2]]],
+		"a": {"n": "NETRUNNER", "d": "Override reaches 2 more tiles. +5% crit.", "s": {"ovr": 2, "crit": 5},
+			"nodes": [
+				["Signal Boost", "Override reaches %s more tile(s)", "ovr", [1, 2]],
+				["Rally Code", "Your drone and hacked turrets deal +%s%% damage", "rally", [25, 50]],
+				["Zero Day", "+%s%% damage to enemies at full health", "opener", [20, 40]],
+				["Daemon", "Every 12 steps a drone zaps an enemy within 3 tiles for %s%% of your attack", "drone", [50, 100]]],
+			"subs": {
+				"1": {"n": "GHOST", "d": "+8% dodge.", "s": {"dodge": 8}, "k": ["Ghost Protocol", "After you dodge, your next hit deals %s%% more damage", "dodgedmg", [100]]},
+				"2": {"n": "BOTNET", "d": "Drone and hacked turrets +25% damage.", "s": {"rally": 25}, "k": ["Swarm Logic", "Override marks every enemy within %s tiles", "ovmark", [5]]}}},
+		"b": {"n": "SABOTEUR", "d": "Stunned enemies take +25% damage.", "s": {"stundmg": 25},
+			"nodes": [
+				["Short Circuit", "+%s%% stun chance from shock", "conduct", [10, 20]],
+				["EMP Rounds", "+%s%% damage to stunned enemies", "stundmg", [15, 30]],
+				["Static Field", "Hits have a %s%% chance to arc to an enemy within 2 tiles for half damage", "chain", [10, 20]],
+				["Kill Switch", "+%s%% damage to enemies under half health", "finish", [15, 30]]],
+			"subs": {
+				"1": {"n": "GLITCH", "d": "+8% crit.", "s": {"crit": 8}, "k": ["Corrupt", "Crits make enemies bleed for %s steps (10%% of their max health a step)", "bleed", [3]]},
+				"2": {"n": "BLACKOUT", "d": "Override stuns 1 step longer.", "s": {"ovstun": 1}, "k": ["Blackout", "Override also deals %s%% of your attack to every enemy it stuns", "ovdmg", [150]]}}},
+	},
+	"salvager": {
+		"core": [
+			["Scrap Collector", "Selling gear also gives %s scrap per tier", "dismantle", [1, 2]],
+			["Appraiser", "Gear sells for %s%% more", "apprais", [15, 30]],
+			["Magnetism", "Magnet Pulse reaches %s more tiles", "magr", [2, 4]],
+			["Pickpocket", "Coins are worth +%s each", "coin", [1, 2]],
+			["Reforge", "In the BAG, reroll an item's traits or mods for %s scrap per tier", "reforge", [3, 2]],
+			["Masterwork", "Found gear rolls +1 trait or mod, with a %s%% chance of a higher tier", "master", [5, 15]]],
+		"a": {"n": "SCRAPPER", "d": "+1 armour, and kills give 1 shield.", "s": {"armor": 1, "killsh": 1},
+			"nodes": [
+				["Scrap Armour", "+%s armour", "armor", [1, 2]],
+				["Bulwark", "+%s armour while an enemy is next to you", "hold", [1, 2]],
+				["Reinforce", "+%s max health", "hp", [6, 12]],
+				["Spiked Scrap", "Enemies that hit you take %s%% of the damage back", "thorns", [10, 20]]],
+			"subs": {
+				"1": {"n": "JUNKER", "d": "+8 max shields.", "s": {"maxsh": 8}, "k": ["Junk Shield", "Magnet Pulse gives %s shield", "magsh", [10]]},
+				"2": {"n": "WRECKER", "d": "+2 attack.", "s": {"atk": 2}, "k": ["Wrecking Ball", "+%s%% damage to elites, affixed enemies and bosses", "bigdmg", [35]]}}},
+		"b": {"n": "PROSPECTOR", "d": "Coins are worth +1 and vaults give an extra tool.", "s": {"coin": 1, "vault": 1},
+			"nodes": [
+				["Bounty", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
+				["Haggler", "Shops charge %s%% less", "haggle", [5, 10]],
+				["Treasure Sense", "+%s%% gear drop chance from elites and affixed enemies", "drop", [10, 20]],
+				["Lucky Find", "Kills have a %s%% chance to drop a pile of coins", "jackpot", [6, 12]]],
+			"subs": {
+				"1": {"n": "MAGNATE", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Gold Rush", "Magnet Pulse coins are worth %s times as much", "maggold", [2]]},
+				"2": {"n": "RELIC HUNTER", "d": "+10% gear drop chance.", "s": {"drop": 10}, "k": ["Deep Pockets", "+%s tool slot", "slots", [1]]}}},
+	},
 }
 
 
@@ -13717,6 +13898,8 @@ func _cls_pass() -> Dictionary:
 		cp_cls = cls
 		cp = {}
 		cp_lv = mx_level(cls)
+		_cp_add(CLS_BASE.get(cls, {}))
+		_cp_add(_ws_stats())
 		for i in cp_lv:
 			var k := String(MX_REW[i])
 			if k == "hp":
@@ -13771,6 +13954,8 @@ func _pw_lines(cid: String) -> Array:
 			return ["also builds a tool in an empty slot (works with no tools)", "also pays 3 + floor coins", "fills every empty slot and gives 8 shield"]
 		"gunslinger":
 			return ["loading refunds 2 ammo", "the shot bounces 1 extra time", "bounces 1 more time and recharges 25% faster"]
+	if NEW_PW.has(cid):
+		return NEW_PW[cid]
 	return ["-", "-", "-"]
 
 
@@ -13780,8 +13965,10 @@ func _mx_cd_mult() -> float:
 	var m := 1.0
 	if mx_level(cls) >= MX_MAX:
 		m *= 0.9
-	if _pw() >= 3 and cls in ["scout", "mystic", "gunslinger"]:
+	if _pw() >= 3 and cls in ["scout", "mystic", "gunslinger", "medic", "hacker"]:
 		m *= 0.75
+	if _an("surge"):
+		m *= 0.5
 	return m
 
 
@@ -13826,6 +14013,7 @@ func _mx_gain(n: int) -> void:
 		return
 	var old := mx_level(cls)
 	var os := mx_stars(cls)
+	n = int(round(float(n) * _ex_mx_mult()))
 	mxp[cls] = int(mxp.get(cls, 0)) + n
 	run_mxp += n
 	var nl := mx_level(cls)
@@ -13847,6 +14035,7 @@ func _mx_init_run() -> void:
 	dodge_ready = false
 	run_mxp = 0
 	cp_dirty = true
+	_ex_init_run()
 	if not _mx_on():
 		return
 	_cx_st("runs", 1)
@@ -13964,7 +14153,7 @@ func _mx_hit_mul(c: Vector2i) -> float:
 		m += sk("eldmg") / 100.0
 	if sk("adjdmg") > 0.0 and not _near_mons(pos, 1, []).is_empty():
 		m += sk("adjdmg") / 100.0
-	return m
+	return m + _ex_hit_mul(c)
 
 
 func _mx_on_hit(c: Vector2i, dealt: int, left: int) -> int:
@@ -13994,6 +14183,7 @@ func _mx_dodged() -> void:
 
 
 func _mx_kill(nc: Vector2i, is_boss: bool) -> void:
+	_ex_kill(nc, is_boss)
 	if _mx_on():
 		var el := elite.has(nc)
 		_mx_gain(1 + (2 if el else 0) + (1 if affix.has(nc) else 0) + (20 if is_boss else 0))
@@ -14029,6 +14219,7 @@ func _mx_floor_clear() -> void:
 	_cx_st("floors", 1)
 	_cx_build(floor_n)
 	_cx_scan()
+	_ex_floor_clear()
 	_save_meta()
 
 
@@ -14037,20 +14228,21 @@ func _mx_death() -> void:
 		return
 	_cx_st("deaths", 1)
 	_cx_scan()
+	_ex_death()
 
 
 func _mx_bank_bonus(delta: int) -> int:
 	if not _mx_on() or delta <= 0:
 		return 0
-	return delta * (mx_level(cls) + mini(25, mx_stars(cls))) / 100
+	return delta * (mx_level(cls) + mini(25, mx_stars(cls)) + 15 * hz_run + 2 * _ws("w_bank")) / 100
 
 
 func _mx_death_line(b: int) -> String:
 	var lv := mx_level(cls)
 	var s := "%s Mastery %d   +%d mastery XP" % [_cls_name(cls), lv, run_mxp]
 	if b > 0:
-		s += "   (+%d mastery coins)" % b
-	return s
+		s += "   (+%d bonus coins)" % b
+	return s + _ex_death_line()
 
 
 func _mx_save(cfg: ConfigFile) -> void:
@@ -14058,6 +14250,7 @@ func _mx_save(cfg: ConfigFile) -> void:
 	cfg.set_value("mx", "spec", mspec)
 	cfg.set_value("mx", "sub", msub)
 	cfg.set_value("mx", "cx", cx)
+	_ex_save(cfg)
 
 
 func _mx_load(cfg: ConfigFile) -> void:
@@ -14073,11 +14266,12 @@ func _mx_load(cfg: ConfigFile) -> void:
 	var d = cfg.get_value("mx", "cx", {})
 	if d is Dictionary:
 		cx = d
+	_ex_load(cfg)
 	cp_dirty = true
 
 
 func _mx_pack() -> Dictionary:
-	return {"xp": mxp.duplicate(), "spec": mspec.duplicate(), "sub": msub.duplicate(), "cx": cx.duplicate(true)}
+	return {"xp": mxp.duplicate(), "spec": mspec.duplicate(), "sub": msub.duplicate(), "cx": cx.duplicate(true), "ex": _ex_pack()}
 
 
 func _mx_unpack(d) -> void:
@@ -14095,6 +14289,7 @@ func _mx_unpack(d) -> void:
 	var icx: Dictionary = d.get("cx", {})
 	if not icx.is_empty():
 		cx = icx.duplicate(true)
+	_ex_unpack(d.get("ex", {}))
 	cp_dirty = true
 
 
@@ -14103,6 +14298,7 @@ func _mx_wipe() -> void:
 	mspec = {}
 	msub = {}
 	cx = {}
+	_ex_wipe()
 	cp_dirty = true
 
 
@@ -14268,6 +14464,8 @@ func _mx_sub_rect(i: int) -> Rect2:
 func _draw_mastery(acc: Color) -> void:
 	var cid := mx_cls
 	var col := _cls_col(cid)
+	_obox(Rect2(24, 90, 672, 1086), Color(col.r, col.g, col.b, 0.06))
+	_aline(Rect2(24, 90, 672, 1086), Color(col.r, col.g, col.b, 0.7), 2.0)
 	var lv := mx_level(cid)
 	_button(btn_mx_l, "<", col, 40)
 	_button(btn_mx_r, ">", col, 40)
@@ -14489,6 +14687,7 @@ func _cx_input(p: Vector2) -> void:
 
 
 func _draw_codex(acc: Color) -> void:
+	_obox(Rect2(24, CX_TOP - 4.0, 672, CX_BOT - CX_TOP + 8.0), Color(acc.r, acc.g, acc.b, 0.06))
 	for ln in cx_lay:
 		var y: float = CX_TOP + float(ln[0]) - cx_scroll
 		var h: float = ln[4]
@@ -14497,7 +14696,7 @@ func _draw_codex(acc: Color) -> void:
 		_para(String(ln[2]), Vector2(40, y + float(ln[1])), int(ln[1]), ln[3], 640.0)
 	draw_rect(Rect2(0, 0, 720, CX_TOP - 6.0), Color("0a0c14"))
 	draw_rect(Rect2(0, CX_BOT, 720, 400), Color("0a0c14"))
-	draw_line(Vector2(0, CX_TOP - 6.0), Vector2(720, CX_TOP - 6.0), Color(1, 1, 1, 0.15), 2.0)
+	_aline(Rect2(24, CX_TOP - 4.0, 672, CX_BOT - CX_TOP + 8.0), Color(acc.r, acc.g, acc.b, 0.7), 2.0)
 	_txt("CODEX", Vector2(0, 130), 52, acc)
 	_button(btn_cx_t0, "PROGRESS", Color("ffd84f") if cx_tab == 0 else Color(1, 1, 1, 0.45), 24)
 	_button(btn_cx_t1, "GUIDE", Color("7fd8ff") if cx_tab == 1 else Color(1, 1, 1, 0.45), 24)
@@ -14614,6 +14813,7 @@ func _cx_prog_lines() -> Array:
 			rn.append(_aname(String(rd["id"]), String(rd["name"])))
 	L.append(["s", "RELICS  %d / %d" % [rn.size(), rt], W])
 	L.append(["g", ", ".join(rn) if rn.size() > 0 else "Nothing found yet", G])
+	L.append_array(_ex_prog_lines())
 	return L
 
 
@@ -14755,6 +14955,7 @@ func _cx_guide_lines() -> Array:
 		L.append(["g", String(WORLD_RULE_TEXT[wk]), W])
 	L.append(["h", "SKILL WEB TIPS", Y])
 	L.append(["p", "You get a skill point every 3 levels. Inner branches start at the centre; keystones (diamonds) cost 2 points and need a rank 2 node next to them. Outer hybrid branches sit between two inner branches, and apex nodes need both neighbouring outer keystones (3 points). Respec costs coins and refunds everything, including class nodes.", W])
+	L.append_array(_ex_guide_lines())
 	return L
 
 
@@ -14809,6 +15010,7 @@ func _mx_selftest() -> void:
 	print("codex progress lines %d guide lines %d height %d" % [pl.size(), gl.size(), int(cx_max)])
 	if pl.size() < 20 or gl.size() < 100:
 		bad += 1
+	bad += _ex_selftest()
 	skills.clear()
 	mxp = keep_x
 	mspec = keep_s
@@ -14819,3 +15021,836 @@ func _mx_selftest() -> void:
 	mode = "puzzle"
 	cls = "scout"
 	print("MX TEST DONE bad=%d" % bad)
+
+
+# ===== B76: deed classes, threat levels, workshop + cores + contracts, the deep station =====
+
+var hz_run := 0                 # threat level of the current run
+var hz_max: Dictionary = {}     # class id -> highest threat unlocked
+var hz_sel: Dictionary = {}     # class id -> threat picked on class select
+var cores := 0                  # boss cores (second currency)
+var ws: Dictionary = {}         # workshop research ranks
+var ct: Array = []              # active contracts
+var run_elites := 0
+var run_bosses := 0
+var run_cores := 0
+var run_cts := 0
+var pw_refund := 0
+var an_key := -1
+var an_cur: Array = []
+var btn_work := Rect2(260, 1100, 200, 76)
+var btn_hz_m := Rect2(150, 954, 80, 44)
+var btn_hz_p := Rect2(490, 954, 80, 44)
+var btn_ws_back := Rect2(160, 1184, 400, 70)
+
+const CLS_BASE := {
+	"engineer": {"drone": 100},
+	"medic": {"medk": 50, "kheal": 3},
+	"hacker": {"thack": 8},
+	"salvager": {"dismantle": 1, "apprais": 25},
+}
+const NEW_BLURB := {
+	"engineer": "Brings a drone to every fight",
+	"medic": "Keeps everyone - mostly you - alive",
+	"hacker": "Turns the station against itself",
+	"salvager": "Nothing is junk, everything is money",
+}
+const NEW_PW := {
+	"engineer": ["deals 150% of your attack", "reaches 3 tiles", "stuns for 2 steps and gives 6 shield"],
+	"medic": ["heals 10% more", "also gives 8 shield", "also gives 20 air and recharges 25% faster"],
+	"hacker": ["stun reaches 3 tiles", "also marks every enemy within 4 tiles (+15% damage)", "stuns 1 step longer and recharges 25% faster"],
+	"salvager": ["reaches 2 more tiles", "also gives 2 scrap", "pulled coins are worth double"],
+}
+const DEEDS := {
+	"engineer": ["Defeat 5 bosses in total", "bosses", 5],
+	"medic": ["Clear 25 floors in total", "floors", 25],
+	"hacker": ["Reach Mastery 10 with any class", "mx10", 1],
+	"salvager": ["Find 40 different gear pieces", "gear", 40],
+}
+# Threat level modifiers, cumulative: [name, text, kind, value]
+const HZ := [
+	["Hardened", "Enemies +10% health", "hp", 10],
+	["Vicious", "Enemies hit 1 harder", "atk", 1],
+	["Thin Air", "Air drains 10% faster", "air", 10],
+	["Hardened II", "Enemies +10% health", "hp", 10],
+	["Warlords", "Bosses +25% health", "boss", 25],
+	["Scarce Meds", "Healing -15%", "heal", 15],
+	["Vicious II", "Enemies hit 1 harder", "atk", 1],
+	["Inflation", "Shops +20% prices", "price", 20],
+	["Thin Air II", "Air drains 10% faster", "air", 10],
+	["Fragile", "-10% max health", "frag", 10],
+	["Hardened III", "Enemies +15% health", "hp", 15],
+	["Elite Guard", "Elites hit 2 harder", "elite", 2],
+	["Scarce Meds II", "Healing -15%", "heal", 15],
+	["Vicious III", "Enemies hit 2 harder", "atk", 2],
+	["Warlords II", "Bosses +25% health", "boss", 25],
+	["Thin Air III", "Air drains 15% faster", "air", 15],
+	["Fragile II", "-10% max health", "frag", 10],
+	["Hardened IV", "Enemies +15% health", "hp", 15],
+	["Inflation II", "Shops +20% prices", "price", 20],
+	["Nightmare", "Enemies +20% health and hit 1 harder", "night", 0],
+]
+# Workshop research: [id, name, text (%s = total), stat ("" = special), per rank, max, coin base, growth, cores per rank]
+const WS_DEFS := [
+	["w_hull", "Hull Plating", "+%s max health", "hp", 1, 40, 40, 1.12, 0],
+	["w_o2", "O2 Reserves", "+%s max air", "air", 2, 40, 40, 1.12, 0],
+	["w_train", "Field Training", "+%s%% XP", "xp", 3, 20, 60, 1.15, 0],
+	["w_bank", "Salvage Rights", "+%s%% coins banked", "", 2, 50, 80, 1.12, 0],
+	["w_crit", "Targeting AI", "+%s%% crit chance", "crit", 1, 15, 70, 1.15, 0],
+	["w_dodge", "Evasion Drills", "+%s%% dodge chance", "dodge", 1, 10, 90, 1.18, 0],
+	["w_deal", "Insider Deals", "Shops charge %s%% less", "haggle", 2, 10, 100, 1.2, 0],
+	["w_mast", "Mastery Accelerator", "+%s%% mastery XP", "", 10, 10, 150, 1.25, 1],
+	["w_atk", "Weapon Lab", "+%s attack", "atk", 1, 5, 200, 1.5, 2],
+	["w_arm", "Armour Lab", "+%s armour", "armor", 1, 3, 250, 1.6, 3],
+	["w_sp", "Neural Link", "+%s starting skill points", "", 1, 5, 300, 1.5, 3],
+	["w_slot", "Pocket Dimension", "+%s tool slots", "slots", 1, 2, 500, 2.0, 8],
+]
+const AN_DEFS := {
+	"rich": ["Rich Veins", "Coins are worth double"],
+	"volatile": ["Volatile Hull", "Kills explode for 25% of the victim's max health to enemies next to it"],
+	"market": ["Black Market", "Shops charge 30% less"],
+	"lowg": ["Low Gravity", "Air drains 20% slower"],
+	"surge": ["Power Surge", "Your class power recharges twice as fast"],
+	"bounty": ["Bounty Night", "Every kill drops 1 + floor/10 coins"],
+	"hunt": ["Elite Hunt", "Elites always drop gear"],
+	"nanite": ["Nanite Cloud", "You heal 1 health every 4 steps"],
+	"rad": ["Radiation", "Every 12 steps you take 2 + floor/5 damage unless your shield is up (it can't kill you)"],
+	"frenzy": ["Blood Moon", "Enemies hit 2 harder, but kills give +50% XP"],
+	"fog": ["Void Fog", "You see 1 tile less"],
+	"decay": ["Hull Decay", "Air drains 25% faster"],
+}
+const AN_MILD := ["rich", "volatile", "market", "lowg", "surge", "bounty", "hunt", "nanite"]
+const AN_HARSH := ["rad", "frenzy", "fog", "decay"]
+
+
+func _cls_art(cid: String) -> String:
+	return String({"engineer": "brute", "medic": "mystic", "hacker": "scout", "salvager": "gambler"}.get(cid, cid))
+
+
+func _gart(b: String) -> String:
+	if gear_defs.has(b):
+		return String(gear_defs[b].get("art", b))
+	return b
+
+
+# ----- deed classes -----
+
+func _deed_prog(cid: String) -> Vector2i:
+	var dd: Array = DEEDS[cid]
+	var st: Dictionary = cx.get("st", {})
+	var cur := 0
+	match String(dd[1]):
+		"bosses":
+			cur = int(st.get("bosses", 0))
+		"floors":
+			cur = int(st.get("floors", 0))
+		"gear":
+			cur = (cx.get("gear", {}) as Dictionary).size()
+		"mx10":
+			for d in class_defs:
+				if not DEEDS.has(String(d["id"])) and mx_level(String(d["id"])) >= 10:
+					cur = 1
+	return Vector2i(mini(cur, int(dd[2])), int(dd[2]))
+
+
+func _deed_done(id: String) -> bool:
+	if not DEEDS.has(id):
+		return false
+	var p := _deed_prog(id)
+	return p.x >= p.y
+
+
+func _lock_text(cid: String) -> String:
+	if DEEDS.has(cid):
+		var p := _deed_prog(cid)
+		return "LOCKED. Deed: %s  (%d / %d)" % [String(DEEDS[cid][0]), p.x, p.y]
+	return "LOCKED. Unlock this class in the SHOP."
+
+
+func _lock_btn(cid: String) -> String:
+	return "LOCKED - DO THE DEED" if DEEDS.has(cid) else "LOCKED - OPEN SHOP"
+
+
+# ----- new class powers -----
+
+func _act_engineer() -> bool:
+	var p := _pw()
+	var r := 2 + (1 if p >= 2 else 0) + int(sk("arcr"))
+	var hit: Array = []
+	for c in _near_mons(pos, r, []):
+		if adv_vis.has(c):
+			hit.append(c)
+	if hit.is_empty():
+		return _act_fail("No enemies within %d tiles" % r)
+	var dmg := maxi(1, int(float(p_atk()) * ((1.5 if p >= 1 else 1.0) + sk("arcp") / 100.0)))
+	var kills := 0
+	for c in hit:
+		if not mons.has(c):
+			continue
+		_fx_bolt(Vector2(pos), Vector2(c), Color("4fd1c5"))
+		if _st_ok(c):
+			_st_stun(c, 2 if p >= 3 else 1)
+		if sk("arcburn") > 0.0:
+			_st_burn(c, 3 + int(sk("kindle")), 2 + floor_n / 2)
+		_adv_damage_mon(c, dmg, Color("4fd1c5"))
+		if not mons.has(c):
+			kills += 1
+	if p >= 3:
+		sh = mini(sh_cap(), sh + 6)
+	pw_refund = kills * int(sk("arckill"))
+	msg = "Arc Pulse hits %d enemies for %d" % [hit.size(), dmg]
+	_pop(pos, "ARC PULSE", Color("4fd1c5"))
+	_act_fx(Color("4fd1c5"))
+	_sfx("elite")
+	return true
+
+
+func _act_medic() -> bool:
+	var p := _pw()
+	var pct := 30.0 + (10.0 if p >= 1 else 0.0) + sk("surg")
+	_p_heal(maxi(1, int(float(hp_cap()) * pct / 100.0)))
+	p_acid = 0
+	p_frost = 0
+	p_burn = 0
+	var shg := int(sk("surgsh")) + (8 if p >= 2 else 0)
+	if shg > 0:
+		sh = mini(sh_cap(), sh + shg)
+	var ag := sk("surgair") + (20.0 if p >= 3 else 0.0)
+	if ag > 0.0:
+		oxy = minf(oxy_max, oxy + ag)
+	if sk("surgpsn") > 0.0:
+		for c in _near_mons(pos, 3, []):
+			if mons.has(c) and _st_ok(c):
+				_st_poison(c, int(sk("surgpsn")))
+	msg = "Field Surgery: healed %d%% and cleansed" % int(pct)
+	_pop(pos, "SURGERY", Color("ff8a9a"))
+	_act_fx(Color("ff8a9a"))
+	_sfx("shield")
+	return true
+
+
+func _act_hacker() -> bool:
+	var p := _pw()
+	var n := 0
+	var hk := 8 + int(sk("thack"))
+	for c in tur.keys():
+		if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 5 and adv_vis.has(c):
+			tur[c]["hk"] = maxi(int(tur[c].get("hk", 0)), hk)
+			_pop(c, "HACKED", Color("6dff9a"))
+			n += 1
+	var r := 2 + (1 if p >= 1 else 0) + int(sk("ovr"))
+	var stn := 2 + (1 if p >= 3 else 0) + int(sk("ovstun"))
+	for c in _near_mons(pos, r, []):
+		if not mons.has(c) or not adv_vis.has(c) or tur.has(c) or _boss_cell(c):
+			continue
+		if _st_ok(c):
+			_st_stun(c, stn)
+		if sk("ovdmg") > 0.0:
+			_adv_damage_mon(c, maxi(1, int(float(p_atk()) * sk("ovdmg") / 100.0)), Color("6dff9a"))
+		n += 1
+	var mr := maxi(4 if p >= 2 else 0, int(sk("ovmark")))
+	if mr > 0:
+		for c in _near_mons(pos, mr, []):
+			if mons.has(c) and _st_ok(c):
+				_st_get(c)["mk"] = true
+				n += 1
+	if n == 0:
+		return _act_fail("Nothing nearby to override")
+	msg = "Override! The station turns on your enemies"
+	_pop(pos, "OVERRIDE", Color("6dff9a"))
+	_act_fx(Color("6dff9a"))
+	_sfx("elite")
+	return true
+
+
+func _act_salvager() -> bool:
+	var p := _pw()
+	var r := 6 + (2 if p >= 1 else 0) + int(sk("magr"))
+	var mul := (2 if p >= 3 else 1) * maxi(1, int(sk("maggold"))) * _an_coin()
+	var got := 0
+	var piles := 0
+	for c in coin_at.keys():
+		if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= r and _aseen(c):
+			coin_at.erase(c)
+			var cv := coin_val() * mul
+			coins += cv
+			got += cv
+			piles += 1
+			adv_pts += 1
+			_fx_bolt(Vector2(c), Vector2(pos), Color("ffd84f"))
+	if piles == 0:
+		return _act_fail("No coins within %d tiles" % r)
+	if p >= 2:
+		scrap += 2
+	if sk("magsh") > 0.0:
+		sh = mini(sh_cap(), sh + int(sk("magsh")))
+	msg = "Magnet Pulse: %d coin piles, +%d coins" % [piles, got]
+	_pop(pos, "+%d COINS" % got, Color("ffd84f"))
+	_act_fx(Color("ffd84f"))
+	_sfx("big")
+	return true
+
+
+# ----- threat levels -----
+
+func _hz_sum(kind: String) -> float:
+	if mode != "adv" or hz_run <= 0:
+		return 0.0
+	var s := 0.0
+	for i in mini(hz_run, HZ.size()):
+		var h: Array = HZ[i]
+		if String(h[2]) == kind:
+			s += float(h[3])
+		elif String(h[2]) == "night" and (kind == "hp" or kind == "atk"):
+			s += 20.0 if kind == "hp" else 1.0
+	return s
+
+
+func _hz_hp(c: Vector2i) -> float:
+	var m := 1.0 + _hz_sum("hp") / 100.0
+	if _boss_cell(c):
+		m *= 1.0 + _hz_sum("boss") / 100.0
+		if floor_n > 20:
+			m *= 1.5
+	return m
+
+
+func _hz_atk(c: Vector2i) -> int:
+	return int(_hz_sum("atk")) + (int(_hz_sum("elite")) if elite.has(c) else 0) + (2 if _an("frenzy") else 0)
+
+
+func _hz_air() -> float:
+	return (1.0 + _hz_sum("air") / 100.0) * (0.8 if _an("lowg") else 1.0) * (1.25 if _an("decay") else 1.0)
+
+
+func _hz_heal() -> float:
+	return maxf(0.2, 1.0 - _hz_sum("heal") / 100.0)
+
+
+func _hz_price() -> float:
+	return (1.0 + _hz_sum("price") / 100.0) * (0.7 if _an("market") else 1.0)
+
+
+func _hz_frag() -> float:
+	return maxf(0.3, 1.0 - _hz_sum("frag") / 100.0)
+
+
+func _hz_row(cid: String) -> void:
+	if not class_open(cid) or mode != "adv":
+		return
+	var mx := int(hz_max.get(cid, 0))
+	var cur := clampi(int(hz_sel.get(cid, 0)), 0, mx)
+	var col := Color("ff6a5c") if cur > 0 else Color(1, 1, 1, 0.7)
+	_button(btn_hz_m, "-", col if cur > 0 else Color(1, 1, 1, 0.25), 30)
+	_button(btn_hz_p, "+", col if cur < mx else Color(1, 1, 1, 0.25), 30)
+	_txt("THREAT %d / %d" % [cur, mx], Vector2(230, 972), 22, col, 260.0)
+	var sub := "MAX THREAT" if mx >= HZ.size() else "Clear floor 5 at Threat %d to unlock %d" % [mx, mx + 1]
+	if cur > 0:
+		sub = "+%d%% coins  +%d%% mastery XP" % [15 * cur, 10 * cur]
+	_txt(sub, Vector2(230, 994), 14, Color(1, 1, 1, 0.6), 260.0)
+
+
+func _hz_tap(cid: String, up_: bool) -> void:
+	if not class_open(cid):
+		_sfx("blocked")
+		return
+	var mx := int(hz_max.get(cid, 0))
+	var cur := clampi(int(hz_sel.get(cid, 0)), 0, mx)
+	var nv := clampi(cur + (1 if up_ else -1), 0, mx)
+	if nv == cur:
+		_sfx("blocked")
+		return
+	hz_sel[cid] = nv
+	_save_meta()
+	_sfx("ui")
+
+
+# ----- workshop, cores, contracts -----
+
+func _ws(id: String) -> int:
+	return int(ws.get(id, 0))
+
+
+func _ws_cost(i: int) -> Vector2i:
+	var d: Array = WS_DEFS[i]
+	var r := _ws(String(d[0]))
+	return Vector2i(int(round(float(d[6]) * pow(float(d[7]), r))), int(d[8]) * (r + 1))
+
+
+func _ws_stats() -> Dictionary:
+	var out := {}
+	for d in WS_DEFS:
+		var st := String(d[3])
+		if st != "" and _ws(String(d[0])) > 0:
+			out[st] = float(out.get(st, 0.0)) + float(d[4]) * float(_ws(String(d[0])))
+	return out
+
+
+func _ws_buy(i: int) -> void:
+	var d: Array = WS_DEFS[i]
+	var r := _ws(String(d[0]))
+	var c := _ws_cost(i)
+	if r >= int(d[5]) or bank < c.x or cores < c.y:
+		_sfx("blocked")
+		return
+	bank -= c.x
+	cores -= c.y
+	ws[String(d[0])] = r + 1
+	cp_dirty = true
+	_save_meta()
+	_sfx("big")
+
+
+func _ex_mx_mult() -> float:
+	return 1.0 + 0.1 * float(hz_run) + 0.1 * float(_ws("w_mast"))
+
+
+func _ct_new() -> Dictionary:
+	var s := int((cx.get("st", {}) as Dictionary).get("contracts", 0))
+	var kinds := ["kills", "elites", "floor", "bosses", "coins", "cls", "threat"]
+	var k := ""
+	for tries in 12:
+		k = String(kinds[randi() % kinds.size()])
+		var dup := false
+		for o in ct:
+			if String(o["k"]) == k:
+				dup = true
+		if not dup:
+			break
+	var c := {"k": k, "r": mini(5, 1 + s / 4), "c": 30 + 10 * mini(s, 30), "n": 1}
+	match k:
+		"kills":
+			c["n"] = mini(300, 40 + 10 * s)
+		"elites":
+			c["n"] = mini(30, 4 + s)
+		"floor":
+			c["n"] = mini(30, 6 + s / 2)
+		"bosses":
+			c["n"] = mini(6, 1 + s / 3)
+		"coins":
+			c["n"] = mini(600, 80 + 20 * s)
+		"cls":
+			var op: Array = []
+			for d in class_defs:
+				if class_open(String(d["id"])):
+					op.append(String(d["id"]))
+			c["cl"] = op[randi() % op.size()] if op.size() > 0 else "scout"
+			c["n"] = mini(25, 5 + s / 3)
+		"threat":
+			c["n"] = mini(HZ.size(), 1 + s / 2)
+			c["r"] = int(c["r"]) + 1
+	return c
+
+
+func _ct_fill() -> void:
+	while ct.size() < 3:
+		ct.append(_ct_new())
+
+
+func _ct_text(c: Dictionary) -> String:
+	var n := int(c.get("n", 1))
+	match String(c.get("k", "")):
+		"kills":
+			return "Defeat %d enemies in one run" % n
+		"elites":
+			return "Defeat %d elites in one run" % n
+		"floor":
+			return "Clear floor %d" % n
+		"bosses":
+			return "Defeat %d bosses in one run" % n
+		"coins":
+			return "Hold %d coins at once in one run" % n
+		"cls":
+			return "Clear floor %d as the %s" % [n, _cls_name(String(c.get("cl", "scout")))]
+		"threat":
+			return "Clear floor 5 at Threat %d or higher" % n
+	return "?"
+
+
+func _ct_met(c: Dictionary, cleared: int) -> bool:
+	var n := int(c.get("n", 1))
+	match String(c.get("k", "")):
+		"kills":
+			return run_kills >= n
+		"elites":
+			return run_elites >= n
+		"floor":
+			return cleared >= n
+		"bosses":
+			return run_bosses >= n
+		"coins":
+			return coins >= n
+		"cls":
+			return cls == String(c.get("cl", "")) and cleared >= n
+		"threat":
+			return hz_run >= n and cleared >= 5
+	return false
+
+
+func _ct_check(cleared: int) -> void:
+	if not _mx_on():
+		return
+	for i in range(ct.size() - 1, -1, -1):
+		var c: Dictionary = ct[i]
+		if _ct_met(c, cleared):
+			cores += int(c["r"])
+			bank += int(c["c"])
+			run_cores += int(c["r"])
+			run_cts += 1
+			_cx_st("contracts", 1)
+			_pop(pos, "CONTRACT DONE", Color("ff4fd8"))
+			msg += "   Contract done: %s (+%d cores, +%d coins)" % [_ct_text(c), int(c["r"]), int(c["c"])]
+			ct.remove_at(i)
+	_ct_fill()
+
+
+func _ws_rect(i: int) -> Rect2:
+	return Rect2(40, 444 + i * 60, 640, 54)
+
+
+func _draw_workshop(acc: Color) -> void:
+	var pk := Color("ff4fd8")
+	var st: Dictionary = cx.get("st", {})
+	_txt("WORKSHOP", Vector2(0, 118), 52, pk)
+	_txt("Bank: %d coins      Cores: %d" % [bank, cores], Vector2(0, 168), 26, Color("ffd84f"))
+	_txt("CONTRACTS  (done %d)" % int(st.get("contracts", 0)), Vector2(40, 214), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	for i in ct.size():
+		var c: Dictionary = ct[i]
+		var r := Rect2(40, 226 + i * 62, 640, 56)
+		_obox(r, Color(pk.r, pk.g, pk.b, 0.08))
+		_aline(r, Color(pk.r, pk.g, pk.b, 0.7), 2.0)
+		_txt(_ct_text(c), Vector2(56, r.position.y + 25), 19, Color.WHITE, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Reward: +%d cores, +%d coins" % [int(c["r"]), int(c["c"])], Vector2(56, r.position.y + 47), 14, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("RESEARCH  (tap to buy, permanent for every class)", Vector2(40, 432), 18, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	for i in WS_DEFS.size():
+		var d: Array = WS_DEFS[i]
+		var r2 := _ws_rect(i)
+		var rk := _ws(String(d[0]))
+		var mxr := int(d[5])
+		var cst := _ws_cost(i)
+		var maxed := rk >= mxr
+		var can := not maxed and bank >= cst.x and cores >= cst.y
+		var col := Color("6dff9a") if can else (Color("ffd84f") if maxed else Color(1, 1, 1, 0.45))
+		_obox(r2, Color(col.r, col.g, col.b, 0.07))
+		_aline(r2, col, 2.0)
+		_txt("%s   %d/%d" % [String(d[1]), rk, mxr], Vector2(r2.position.x + 14, r2.position.y + 24), 19, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var now := String(d[2]) % _nfmt(float(d[4]) * float(rk))
+		var per := String(d[2]) % _nfmt(float(d[4]))
+		_txt("Now: %s    (each: %s)" % [now, per], Vector2(r2.position.x + 14, r2.position.y + 45), 13, Color(1, 1, 1, 0.65), 420.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var ctx := "MAXED" if maxed else ("%d c" % cst.x + ("  + %d cores" % cst.y if cst.y > 0 else ""))
+		_txt(ctx, Vector2(r2.end.x - 214, r2.position.y + 34), 18, col, 200.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_button(btn_ws_back, "BACK", acc, 28)
+
+
+func _ws_input(p: Vector2) -> void:
+	if btn_ws_back.has_point(p):
+		state = CLASS
+		_sfx("ui")
+		return
+	for i in WS_DEFS.size():
+		if _ws_rect(i).has_point(p):
+			_ws_buy(i)
+			return
+
+
+# ----- the deep station: anomalies (floor 14+), ascended bosses (floor 21+) -----
+
+func _an_list() -> Array:
+	if mode != "adv" or floor_n < 14 or tutorial or testroom:
+		return []
+	var key := adv_seed + floor_n * 7919
+	if key != an_key:
+		an_key = key
+		an_cur = []
+		var r := RandomNumberGenerator.new()
+		r.seed = key
+		if floor_n >= 20:
+			an_cur.append(String(AN_HARSH[r.randi() % AN_HARSH.size()]))
+			an_cur.append(String(AN_MILD[r.randi() % AN_MILD.size()]))
+		else:
+			var all: Array = AN_MILD + AN_HARSH
+			an_cur.append(String(all[r.randi() % all.size()]))
+	return an_cur
+
+
+func _an(id: String) -> bool:
+	return _an_list().has(id)
+
+
+func _an_coin() -> int:
+	return 2 if _an("rich") else 1
+
+
+func _an_sight() -> int:
+	return 1 if _an("fog") else 0
+
+
+func _an_xp() -> float:
+	return 0.5 if _an("frenzy") else 0.0
+
+
+func _an_step() -> void:
+	if mode != "adv" or state != PLAY:
+		return
+	if _an("rad") and run_steps > 0 and run_steps % 12 == 0 and sh <= 0:
+		var d := mini(2 + floor_n / 5, hp - 1)
+		if d > 0:
+			hp -= d
+			_pop(pos, "RAD -%d" % d, Color("b6ff3c"))
+	if _an("nanite") and run_steps % 4 == 0 and hp < hp_cap():
+		hp += 1
+
+
+func _an_announce() -> void:
+	var al := _an_list()
+	if al.is_empty():
+		return
+	var parts: PackedStringArray = []
+	for a in al:
+		parts.append("%s - %s" % [String(AN_DEFS[a][0]), String(AN_DEFS[a][1])])
+	msg = ("ABYSS ANOMALY: " if floor_n >= 20 else "DEEP ANOMALY: ") + ".  ".join(parts)
+	_pop(pos, String(AN_DEFS[al[0]][0]).to_upper(), Color("b6ff3c"))
+
+
+# ----- hooks called from the mastery code -----
+
+func _ex_init_run() -> void:
+	run_elites = 0
+	run_bosses = 0
+	run_cores = 0
+	run_cts = 0
+	pw_refund = 0
+	hz_run = 0
+	an_key = -1
+	if not _mx_on():
+		return
+	hz_run = clampi(int(hz_sel.get(cls, 0)), 0, int(hz_max.get(cls, 0)))
+	skill_pts += _ws("w_sp")
+	_ct_fill()
+
+
+func _ex_kill(nc: Vector2i, is_boss: bool) -> void:
+	var el := elite.has(nc)
+	if el:
+		run_elites += 1
+	if is_boss:
+		run_bosses += 1
+	if _mx_on():
+		var cg := 0
+		if is_boss:
+			cg = 1 + hz_run / 5 + (1 if floor_n > 20 else 0)
+		elif el and randf() < 0.03 + 0.005 * float(hz_run):
+			cg = 1
+		if cg > 0:
+			cores += cg
+			run_cores += cg
+			_pop(nc, "+%d CORE" % cg, Color("ff4fd8"))
+		if is_boss and floor_n > 20:
+			var gid := _adv_roll_gear(null, 2)
+			if _adv_give_gear(gid):
+				msg += "  Ascended drop: " + gname(gid)
+	var pct := sk("blast") + (25.0 if _an("volatile") else 0.0)
+	if pct > 0.0 and tr_depth <= 2:
+		var bd := maxi(1, int(float(mon_hp_max(nc)) * pct / 100.0))
+		tr_depth += 1
+		for o in _near_mons(nc, 1, []):
+			if mons.has(o) and o != nc:
+				_adv_damage_mon(o, bd, Color("ff9a3c"))
+		tr_depth -= 1
+		_fx_burst(Vector2(nc), Color("ff9a3c"), 14, 3.0, 0.5, 5.0)
+	if _an("bounty"):
+		coins += 1 + floor_n / 10
+
+
+func _ex_hit_mul(c: Vector2i) -> float:
+	var m := 0.0
+	if sk("stundmg") > 0.0 and _stunned(c):
+		m += sk("stundmg") / 100.0
+	if cls == "hacker" and _pw() >= 2 and sk("mark") <= 0.0 and _mk(c):
+		m += 0.15
+	return m
+
+
+func _ex_floor_clear() -> void:
+	if floor_n >= 5 and hz_run >= int(hz_max.get(cls, 0)) and hz_run < HZ.size():
+		hz_max[cls] = hz_run + 1
+		_pop(pos, "THREAT %d UNLOCKED" % (hz_run + 1), Color("ff6a5c"))
+		msg += "   Threat %d unlocked for the %s!" % [hz_run + 1, _cls_name(cls)]
+	_ct_check(floor_n)
+
+
+func _ex_death() -> void:
+	_ct_check(floor_n - 1)
+
+
+func _ex_death_line() -> String:
+	var s := "\nCores +%d (total %d)" % [run_cores, cores]
+	if run_cts > 0:
+		s += "   Contracts done %d" % run_cts
+	if hz_run > 0:
+		s += "   Threat %d" % hz_run
+	return s
+
+
+func _ex_save(cfg: ConfigFile) -> void:
+	cfg.set_value("mx", "cores", cores)
+	cfg.set_value("mx", "ws", ws)
+	cfg.set_value("mx", "ct", ct)
+	cfg.set_value("mx", "hzmax", hz_max)
+	cfg.set_value("mx", "hzsel", hz_sel)
+
+
+func _ex_load(cfg: ConfigFile) -> void:
+	cores = int(cfg.get_value("mx", "cores", 0))
+	var a = cfg.get_value("mx", "ws", {})
+	if a is Dictionary:
+		ws = a
+	var b = cfg.get_value("mx", "ct", [])
+	if b is Array:
+		ct = b
+	var c = cfg.get_value("mx", "hzmax", {})
+	if c is Dictionary:
+		hz_max = c
+	var d = cfg.get_value("mx", "hzsel", {})
+	if d is Dictionary:
+		hz_sel = d
+
+
+func _ex_pack() -> Dictionary:
+	return {"cores": cores, "ws": ws.duplicate(), "ct": ct.duplicate(true), "hzmax": hz_max.duplicate(), "hzsel": hz_sel.duplicate()}
+
+
+func _ex_unpack(d) -> void:
+	if not (d is Dictionary) or d.is_empty():
+		return
+	cores = maxi(cores, int(d.get("cores", 0)))
+	var iw: Dictionary = d.get("ws", {})
+	for k in iw:
+		ws[k] = maxi(int(ws.get(k, 0)), int(iw[k]))
+	var ih: Dictionary = d.get("hzmax", {})
+	for k in ih:
+		hz_max[k] = maxi(int(hz_max.get(k, 0)), int(ih[k]))
+	var isel: Dictionary = d.get("hzsel", {})
+	for k in isel:
+		hz_sel[k] = int(isel[k])
+	var ic: Array = d.get("ct", [])
+	if not ic.is_empty():
+		ct = ic.duplicate(true)
+
+
+func _ex_wipe() -> void:
+	cores = 0
+	ws = {}
+	ct = []
+	hz_max = {}
+	hz_sel = {}
+
+
+# ----- codex pages -----
+
+func _ex_prog_lines() -> Array:
+	var L: Array = []
+	var W := Color.WHITE
+	var G := Color(1, 1, 1, 0.6)
+	var Y := Color("ffd84f")
+	var st: Dictionary = cx.get("st", {})
+	L.append(["h", "THREAT, CORES AND CONTRACTS", Y])
+	L.append(["p", "Boss cores: %d     Contracts done: %d" % [cores, int(st.get("contracts", 0))], W])
+	for d in class_defs:
+		var cid := String(d["id"])
+		if class_open(cid):
+			L.append(["g", "%s: highest Threat unlocked %d / %d" % [String(d["name"]), int(hz_max.get(cid, 0)), HZ.size()], d["col"]])
+	L.append(["s", "Active contracts", W])
+	for c in ct:
+		L.append(["g", "%s  (+%d cores, +%d coins)" % [_ct_text(c), int(c["r"]), int(c["c"])], W])
+	L.append(["h", "DEEDS", Y])
+	for k in DEEDS:
+		var p := _deed_prog(String(k))
+		var done := p.x >= p.y
+		L.append(["p", "%s %s - %s  (%d / %d)" % ["[x]" if done else "[  ]", _cls_name(String(k)), String(DEEDS[k][0]), p.x, p.y], Y if done else G])
+	L.append(["h", "WORKSHOP", Y])
+	var tr := 0
+	var tm := 0
+	for i in WS_DEFS.size():
+		var d2: Array = WS_DEFS[i]
+		tr += _ws(String(d2[0]))
+		tm += int(d2[5])
+		L.append(["g", "%s  %d / %d  -  now %s" % [String(d2[1]), _ws(String(d2[0])), int(d2[5]), String(d2[2]) % _nfmt(float(d2[4]) * float(_ws(String(d2[0]))))], W if _ws(String(d2[0])) > 0 else G])
+	L.append(["p", "Research ranks: %d / %d" % [tr, tm], W])
+	return L
+
+
+func _ex_guide_lines() -> Array:
+	var L: Array = []
+	var W := Color.WHITE
+	var G := Color(1, 1, 1, 0.62)
+	var Y := Color("ffd84f")
+	var B := Color("7fd8ff")
+	L.append(["h", "THREAT LEVELS", Y])
+	L.append(["p", "Pick a Threat level for each class on class select (the - / + row). Threat 0 is normal. Clear floor 5 at your highest Threat to unlock the next one, up to 20. Modifiers stack: Threat 7 has all of the first 7.", W])
+	L.append(["p", "Each Threat level gives +15% coins banked and +10% mastery XP, and bosses drop an extra core for every 5 levels.", W])
+	for i in HZ.size():
+		L.append(["g", "%d  %s: %s" % [i + 1, String(HZ[i][0]), String(HZ[i][1])], Color("ff8a7a")])
+	L.append(["h", "BOSS CORES AND THE WORKSHOP", Y])
+	L.append(["p", "Bosses drop 1 core (+1 per 5 Threat, +1 past floor 20). Elites have a small chance to drop one. Contracts pay cores too. Spend coins and cores in the WORKSHOP (class select) on research that never runs out: every rank costs more than the last.", W])
+	for d in WS_DEFS:
+		var cc := ("  +%d cores per rank level" % int(d[8])) if int(d[8]) > 0 else ""
+		L.append(["g", "%s: %s per rank, %d ranks, from %d coins%s" % [String(d[1]), String(d[2]) % _nfmt(float(d[4])), int(d[5]), int(d[6]), cc], W])
+	L.append(["s", "Contracts", B])
+	L.append(["p", "Three contracts are always open. They check when you clear a floor and when a run ends; finishing one pays cores and coins right away and a harder one replaces it.", W])
+	L.append(["h", "THE DEEP STATION", Y])
+	L.append(["p", "From floor 14 every floor has a Deep Anomaly. From floor 20 the Abyss adds a harsh anomaly on top. Past floor 20 bosses are ASCENDED: +50% health, an extra core and a bonus high-tier gear drop.", W])
+	L.append(["p", "Gear: tier 6 can drop from floor 19 and tier 7 from floor 26. Tier 6 and 7 weapons roll one extra trait and armour one extra mod.", W])
+	for k in AN_DEFS:
+		L.append(["g", "%s%s: %s" % [String(AN_DEFS[k][0]), "  (harsh)" if AN_HARSH.has(k) else "", String(AN_DEFS[k][1])], Color("ff8a7a") if AN_HARSH.has(k) else Color("b6ff3c")])
+	L.append(["h", "DEED CLASSES", Y])
+	L.append(["p", "Four classes can't be bought: they unlock when you complete their deed.", W])
+	for k2 in DEEDS:
+		L.append(["g", "%s - %s" % [_cls_name(String(k2)), String(DEEDS[k2][0])], _cls_col(String(k2))])
+	return L
+
+
+func _ex_selftest() -> int:
+	var bad := 0
+	mode = "adv"
+	var kf := floor_n
+	floor_n = 30
+	var tiers := {}
+	for i in 200:
+		var gid := _adv_roll_gear(null, 1)
+		if gname(gid) == "":
+			bad += 1
+		tiers[int(gear_defs[gb(gid)]["tier"])] = true
+		_tier_col(int(gear_defs[gb(gid)]["tier"]))
+	for d in gear_list:
+		if int(d["tier"]) >= 6 and not gear_defs.has(_gart(String(d["id"]))):
+			print("FAIL art alias ", d["id"])
+			bad += 1
+	hz_run = 20
+	if _hz_sum("hp") <= 0.0 or _hz_heal() >= 1.0 or _hz_sum("atk") < 5.0:
+		print("FAIL threat sums")
+		bad += 1
+	hz_run = 0
+	adv_seed = 12345
+	an_key = -1
+	if _an_list().size() != 2:
+		print("FAIL anomalies")
+		bad += 1
+	var kct := ct.duplicate(true)
+	ct = []
+	for i in 20:
+		var c := _ct_new()
+		if _ct_text(c) == "?":
+			print("FAIL contract ", c)
+			bad += 1
+	ct = kct
+	for i in WS_DEFS.size():
+		_ws_cost(i)
+	for k in DEEDS:
+		_deed_prog(String(k))
+	var a := _ex_prog_lines()
+	var b := _ex_guide_lines()
+	print("ex test: tiers %s anomalies %s prog %d guide %d" % [str(tiers.keys()), str(_an_list()), a.size(), b.size()])
+	floor_n = kf
+	an_key = -1
+	return bad
