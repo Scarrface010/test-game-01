@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 78
+const BUILD := 79
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2037,8 +2037,8 @@ func _act_desc(cid: String) -> String:
 			"gunslinger": "Ricochet: your next shot deals double damage and bounces to a second enemy within 3 tiles for the same damage. Recharges in 25 steps.",
 			"engineer": "Arc Pulse: zaps every enemy within 2 tiles for your attack and stuns them for a step. Recharges in 30 steps.",
 			"medic": "Field Surgery: heals 30% of max health and cures acid, frost and burns. Recharges in 45 steps.",
-			"hacker": "Override: hacks every turret within 5 tiles and stuns enemies within 2 tiles for 2 steps. Recharges in 40 steps.",
-			"salvager": "Magnet Pulse: pulls in every coin within 6 tiles. Recharges in 30 steps.",
+			"hacker": "Hijack: take control of the toughest enemy within 4 tiles for 8 steps. It hunts and attacks other enemies for you. Recharges in 35 steps.",
+			"salvager": "Strip Down: tear into the nearest enemy within 2 tiles for 200% of your attack. If it dies it is salvaged for scrap, coins and a 25% gear chance. Recharges in 25 steps.",
 		}.get(cid, "")
 	return {
 		"scout": "Deep Breath: pushes the dark back 3 steps. Recharges in 40 steps.",
@@ -2141,8 +2141,8 @@ const ACTS := {
 	"mystic": {"n": "Hex Mark", "cd": 35},
 	"engineer": {"n": "Arc Pulse", "cd": 30},
 	"medic": {"n": "Field Surgery", "cd": 45},
-	"hacker": {"n": "Override", "cd": 40},
-	"salvager": {"n": "Magnet Pulse", "cd": 30},
+	"hacker": {"n": "Hijack", "cd": 35},
+	"salvager": {"n": "Strip Down", "cd": 25},
 }
 
 
@@ -6895,6 +6895,7 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 			sh = mini(sh_cap(), sh + 3)
 			mom_steps += 1
 		msg += "   You dodge %s!" % who
+		ck_src = src
 		_mx_dodged()
 		return true
 	if gm("ablative") and not abl_used:
@@ -6931,10 +6932,14 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 		return true
 	if sk("msupp") > 0.0 and _mk(src):
 		a = maxi(1, int(round(float(a) * (1.0 - sk("msupp") / 100.0))))
+	a = _ck_hurt(a, src)
+	if a <= 0:
+		return true
 	var d := dmg_taken(a)
 	var absorbed := mini(sh, d)
 	sh -= absorbed
 	hp -= d - absorbed
+	_ck_hurt_after(src, d, absorbed)
 	if _any_tr("reprisal"):
 		repr_ready = true
 	if gm("counterw"):
@@ -7353,6 +7358,7 @@ func _recall() -> bool:
 
 
 func _tool_spend(i: int) -> void:
+	_ck_tool()
 	if sk("apx_asm") > 0.0:
 		scrap += int(sk("apx_asm"))
 	if sk("apx_arc") > 0.0:
@@ -7392,6 +7398,7 @@ func _drone_fire() -> void:
 		_fx_bolt(Vector2(pos) + Vector2(0, -0.4), Vector2(dt), Color("4fd1c5"))
 		var ddmg := maxi(1, int(float(p_atk()) * sk("drone") / 100.0 * _rally()))
 		_adv_damage_mon(dt, ddmg, Color("4fd1c5"))
+		_ck_drone(dt, ddmg)
 		if mons.has(dt) and not tur.has(dt) and not _boss_cell(dt) and ["hunter", "rager"].find(String(kinds.get(dt, ""))) < 0:
 			kinds[dt] = "hunter"
 			_pop(dt, "HUNTS YOU", Color("ff8a5b"))
@@ -7457,7 +7464,7 @@ func _asm_build() -> void:
 
 
 func _sell_val(id: String) -> int:
-	return int(float(gprice(id) / 2) * (1.0 + sk("apprais") / 100.0))
+	return int(float(gprice(id) / 2) * (1.0 + sk("apprais") / 100.0)) + int(gear_defs[gb(id)]["tier"]) * int(sk("c_trade"))
 
 
 func _forge_cost(id: String) -> int:
@@ -7901,7 +7908,7 @@ func _tr_heal(n: int) -> void:
 func _near_mons(c: Vector2i, r: int, exclude: Array) -> Array:
 	var out: Array = []
 	for m in mons:
-		if m == c or exclude.has(m) or m == pos:
+		if m == c or exclude.has(m) or m == pos or _turned(m):
 			continue
 		if absi(m.x - c.x) <= r and absi(m.y - c.y) <= r and adv_vis.has(m):
 			out.append(m)
@@ -8030,6 +8037,7 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 	if crit and left > 0 and sk("bleed") > 0.0 and mons.has(c) and _st_ok(c):
 		_st_get(c)["bleed"] = [int(sk("bleed")), _bleed_dmg(c)]
 		_pop(c, "BLEED", Color("ff4d6d"))
+	ck_crit = crit
 	left = _mx_on_hit(c, dealt, left)
 	if tl.is_empty() or tr_depth > 2:
 		return left
@@ -9734,6 +9742,10 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 
 # returns 0 = you died, 1 = monster defeated, 2 = fight goes on
 func _adv_fight(nc: Vector2i) -> int:
+	if _turned(nc):
+		msg = "Your hijacked %s holds its ground" % _adv_mname(nc)
+		_pop(nc, "ALLY", Color("6dff9a"))
+		return 2
 	_cloak_break()
 	var hks := int(sk("thack"))
 	if tur.has(nc) and hks > 0 and int(tur[nc].get("hk", 0)) <= 0:
@@ -10103,6 +10115,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		coins += cv
 		adv_pts += 1
 		msg = "Coin! %d total" % coins
+		_ck_coin()
 		_pop(nc, "+%d coin" % cv, Color("ffc93c"))
 		snd = "coin"
 		if sk("fab") > 0.0:
@@ -10149,6 +10162,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		rw_hist.pop_front()
 	_act_tick()
 	_an_step()
+	_ck_step(moved)
 	if relic_n("ammofab") > 0 and _weapon_range() > 0:
 		fab_steps += 1
 		if fab_steps >= 8:
@@ -10373,7 +10387,7 @@ func _adv_hunters() -> void:
 	var dist := _adv_bfs(tgt, 9)
 	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 	for c in hs:
-		if not mons.has(c) or not dist.has(c) or _stunned(c):
+		if not mons.has(c) or not dist.has(c) or _stunned(c) or _turned(c):
 			continue
 		var bd: int = dist[c]
 		if bd == 1:
@@ -10632,7 +10646,7 @@ func _adv_shooters() -> void:
 		return
 	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 	for c in ss:
-		if not mons.has(c) or _stunned(c):
+		if not mons.has(c) or _stunned(c) or _turned(c):
 			continue
 		if maxi(absi(pos.x - c.x), absi(pos.y - c.y)) > 9:
 			continue
@@ -13596,245 +13610,245 @@ const CK := {
 	"scout": {
 		"core": [
 			["Trailblazer", "+%s sight radius", "sight", [1, 2]],
-			["Light Feet", "%s%% less air used per step", "airsave", [5, 10]],
-			["Evasive", "+%s%% dodge chance", "dodge", [4, 8]],
+			["Fleet Foot", "Walking refunds 1 air every %s steps", "c_fleet", [4, 3]],
+			["Afterimage", "While above half air, %s%% of enemy hits miss you (counts as a dodge)", "c_afterimg", [6, 12]],
 			["Second Breath", "Deep Breath gives %s more free steps", "brfree", [2, 4]],
 			["Scavenger's Nose", "Kills restore %s air", "killair", [2, 4]],
 			["Windwalker", "Dodging restores %s air and heals 2 health", "dodgeair", [5, 10]]],
 		"a": {"n": "PATHFINDER", "d": "+20 max air and +1 sight. A survivor who lives off the station.", "s": {"air": 20, "sight": 1},
 			"nodes": [
-				["Cartographer", "Air pods give %s%% more air", "pod", [20, 40]],
-				["Long Strides", "After a kill your next %s steps cost no air", "momentum", [2, 4]],
-				["Oxygen Cache", "O2 stations also heal %s%% of max health (3 times per floor)", "stationheal", [10, 20]],
-				["Deep Diver", "+%s max air", "air", [15, 30]]],
+				["Scout Ahead", "The first %s steps on each floor cost no air", "c_scoutah", [8, 16]],
+				["Second Wind", "Once per floor, dropping below 25%% air instantly restores %s air", "c_2wind", [20, 40]],
+				["Runner's High", "Every 10 steps without attacking heals %s health", "c_runhigh", [2, 4]],
+				["Breath Control", "Deep Breath also restores %s air", "c_brair", [15, 30]]],
 			"subs": {
 				"1": {"n": "VOIDRUNNER", "d": "10% less air used per step.", "s": {"airsave": 10}, "k": ["Void Sprint", "While above half air you deal %s%% more damage", "airdmg", [30]]},
 				"2": {"n": "SURVIVOR", "d": "+8 max health.", "s": {"hp": 8}, "k": ["Last Gasp", "Once per floor, running out of air refills %s air instead", "wind", [40]]}}},
 		"b": {"n": "SKIRMISHER", "d": "+6% dodge and +5% crit. Strike, slip away, strike again.", "s": {"dodge": 6, "crit": 5},
 			"nodes": [
 				["Feint", "Dodging heals %s health", "dodgeheal", [2, 4]],
-				["Flank", "+%s%% damage to enemies at full health", "opener", [20, 40]],
-				["Quick Hands", "+%s%% crit chance", "crit", [5, 10]],
-				["Slip Away", "+%s%% dodge chance", "dodge", [4, 8]]],
+				["Blindside", "+%s%% damage to enemies with no other enemy next to them", "c_blind", [20, 40]],
+				["Dancer", "+%s%% damage for each dodge this floor (up to 5)", "c_dancer", [5, 8]],
+				["Riposte", "Dodging a melee attack strikes back for %s%% of your attack", "c_riposte", [50, 100]]],
 			"subs": {
 				"1": {"n": "PHANTOM", "d": "+5% dodge.", "s": {"dodge": 5}, "k": ["Phantom Step", "After you dodge, your next hit deals %s%% more damage", "dodgedmg", [100]]},
 				"2": {"n": "HUNTER", "d": "+10% ranged crit.", "s": {"rcrit": 10}, "k": ["Hunter's Mark", "+%s%% damage to elites, affixed enemies and bosses", "bigdmg", [35]]}}},
 	},
 	"brute": {
 		"core": [
-			["Thick Skin", "+%s max health", "hp", [4, 8]],
-			["Heavy Hands", "+%s melee attack", "atk", [1, 2]],
-			["Bracing", "+%s armour", "armor", [1, 2]],
+			["Shrug Off", "%s%% chance a hit deals only 1 damage to you", "c_shrug", [8, 15]],
+			["Haymaker", "Every 4th melee hit deals +%s%% damage and stuns for 1 step", "c_haymaker", [50, 100]],
+			["Brace", "+%s%% damage while Iron Stance is up", "c_brace", [20, 40]],
 			["Unbreakable", "Iron Stance blocks %s more hit(s)", "stancen", [1, 2]],
-			["Bloodied", "Kills heal %s%% of max health", "kheal", [3, 6]],
+			["Intimidate", "Kills stun every enemy next to you for %s step(s)", "c_intim", [1, 2]],
 			["Retaliation", "Hits blocked by Iron Stance strike back for %s%% of your attack", "stancedmg", [100, 200]]],
 		"a": {"n": "JUGGERNAUT", "d": "+1 armour and +10 max health. Nothing gets through.", "s": {"armor": 1, "hp": 10},
 			"nodes": [
-				["Bulwark", "+%s armour while an enemy is next to you", "hold", [1, 2]],
-				["Spiked Hide", "Enemies that hit you take %s%% of the damage back", "thorns", [10, 20]],
-				["Iron Lungs", "+%s max shields", "maxsh", [6, 12]],
-				["Grit", "Below 30%% health you take %s%% less damage", "laststand", [15, 30]]],
+				["Immovable Object", "Taking a hit while standing still gives %s shield", "c_still", [2, 4]],
+				["Stand Firm", "While standing still you take %s%% less damage", "c_firm", [10, 20]],
+				["Iron Will", "Each hit Iron Stance blocks cuts its recharge by %s steps", "c_ironwill", [2, 4]],
+				["Unstoppable", "Below half health, every hit Iron Stance blocks heals %s", "c_unstop", [2, 4]]],
 			"subs": {
 				"1": {"n": "WARDEN", "d": "+8 max shields.", "s": {"maxsh": 8}, "k": ["Fortress Stance", "Iron Stance also gives %s shield", "stancesh", [12]]},
-				"2": {"n": "COLOSSUS", "d": "+15 max health.", "s": {"hp": 15}, "k": ["Immovable", "Kills give %s shield", "killsh", [3]]}}},
+				"2": {"n": "COLOSSUS", "d": "+15 max health.", "s": {"hp": 15}, "k": ["Earthshaker", "Kills deal %s%% of your attack to every enemy next to you", "c_quake", [75]]}}},
 		"b": {"n": "BERSERKER", "d": "+1 attack and +10% damage under half health. Pain is fuel.", "s": {"atk": 1, "berserk": 10},
 			"nodes": [
-				["Rage", "+%s%% damage while under half health", "berserk", [10, 20]],
-				["Bloodthirst", "Heal %s on every hit", "leech", [1, 2]],
-				["Cleaver", "+%s%% damage to enemies under half health", "finish", [15, 30]],
-				["Pain Fuel", "+%s%% damage for every 10%% of health you are missing", "pain", [2, 3]]],
+				["Rage Meter", "Every hit you take adds +%s%% damage to your next hit (stacks up to 5)", "c_rage", [8, 15]],
+				["Bloodthirst", "Melee killing blows heal %s%% of the damage dealt", "c_bthirst", [25, 50]],
+				["Cleave", "Melee hits splash %s%% damage onto another enemy next to you", "c_cleave", [30, 50]],
+				["Death Wish", "+%s%% damage while you have no shield", "c_dwish", [10, 20]]],
 			"subs": {
 				"1": {"n": "WARLORD", "d": "+8% crit.", "s": {"crit": 8}, "k": ["Warcry", "Kills cut your power's recharge by %s steps", "killcd", [3]]},
-				"2": {"n": "BLOODRAGER", "d": "Kills heal 4% of max health.", "s": {"kheal": 4}, "k": ["Blood Frenzy", "Crits make enemies bleed for %s steps (10%% of their max health a step)", "bleed", [3]]}}},
+				"2": {"n": "BLOODRAGER", "d": "Kills heal 4% of max health.", "s": {"kheal": 4}, "k": ["Rampage", "Kills give +%s%% damage for 3 steps (stacks)", "c_rampage", [20]]}}},
 	},
 	"mystic": {
 		"core": [
-			["Ward Weave", "+%s max shields", "maxsh", [4, 8]],
+			["Ward Weave", "Hexed hits give %s shield", "c_hexsh", [4, 8]],
 			["Focus", "+%s%% XP", "xp", [10, 20]],
-			["Third Eye", "+%s sight radius", "sight", [1, 2]],
+			["Echo Hex", "%s%% chance a hexed hit doesn't use up your Hex", "c_echohex", [15, 30]],
 			["Deep Hex", "Hex Mark deals +%s%% more damage", "hexmult", [50, 100]],
 			["Mana Shield", "Using your class power gives %s shield", "pwsh", [4, 8]],
 			["Hex Lock", "A hexed hit stuns the target for %s step(s)", "hexstun", [1, 2]]],
 		"a": {"n": "ELEMENTALIST", "d": "Burns last +1 step and found weapons roll elements 25% more often.", "s": {"kindle": 1, "attune": 25},
 			"nodes": [
-				["Pyromancy", "Your burns last +%s step(s)", "kindle", [1, 2]],
-				["Storm Call", "+%s%% stun chance from shock", "conduct", [10, 20]],
-				["Frost Bite", "Frozen enemies take +%s%% damage", "dfreeze", [20, 40]],
-				["Venom", "Poison can stack +%s higher", "catal", [1, 2]]],
+				["Fire Weave", "Hexed hits set the target on fire for %s steps", "c_hexfire", [3, 5]],
+				["Static Aura", "Every 8 steps, a spark stuns a random enemy within %s tiles", "c_saura", [2, 3]],
+				["Frost Ward", "%s%% chance an enemy that hits you is frozen for 1 step", "c_fward", [15, 30]],
+				["Elemental Flux", "+%s%% damage for each different element on the target", "c_flux", [10, 20]]],
 			"subs": {
 				"1": {"n": "ARCHMAGE", "d": "Elemental Reactions are always on (power x1, stacks with the skill).", "s": {"react": 1}, "k": ["Arcane Surge", "+%s%% damage to enemies carrying any element", "eldmg", [30]]},
 				"2": {"n": "STORMCALLER", "d": "+15% stun chance from shock.", "s": {"conduct": 15}, "k": ["Chain Lightning", "Every hit has a %s%% chance to arc to an enemy within 2 tiles for half damage", "chain", [30]]}}},
-		"b": {"n": "WARLOCK", "d": "Your first hit marks enemies (+15% damage taken) and every hit heals 1.", "s": {"mark": 15, "leech": 1},
+		"b": {"n": "WARLOCK", "d": "Your first hit marks enemies (+15% damage taken) and every hit heals 1. Hexed enemies are cursed for the floor.", "s": {"mark": 15, "leech": 1},
 			"nodes": [
-				["Curse Mark", "Marked enemies take +%s%% damage", "mark", [10, 20]],
-				["Drain", "Heal %s on every hit", "leech", [1, 2]],
-				["Withering", "Marked enemies deal %s%% less damage to you", "msupp", [10, 20]],
-				["Soul Tap", "Kills heal %s%% of max health", "kheal", [3, 6]]],
+				["Lingering Curse", "Cursed enemies take +%s%% damage from you", "c_curse", [10, 20]],
+				["Life Tap", "Hits on cursed enemies heal %s", "c_ltap", [1, 2]],
+				["Wither", "Cursed enemies deal %s%% less damage to you", "c_wither", [15, 30]],
+				["Soul Harvest", "Killing a cursed enemy cuts Hex Mark's recharge by %s steps", "c_harvest", [3, 6]]],
 			"subs": {
 				"1": {"n": "HEXBLADE", "d": "+1 attack.", "s": {"atk": 1}, "k": ["Twin Hex", "Hex Mark lasts for %s extra hit(s)", "hexn", [1]]},
 				"2": {"n": "SOULREAPER", "d": "Kills cut your power's recharge by 2 steps.", "s": {"killcd": 2}, "k": ["Reap", "Kills restore %s air and give 2 shield", "reap", [6]]}}},
 	},
 	"gambler": {
 		"core": [
-			["Lucky Streak", "+%s%% crit chance", "crit", [4, 8]],
-			["Pickpocket", "Coins are worth +%s each", "coin", [1, 2]],
-			["Loaded Dice", "%s%% chance for a kill to give double XP", "lucky", [6, 12]],
+			["Double or Nothing", "%s%% chance a hit deals triple damage, but a 10%% chance it deals half", "c_ddown", [10, 20]],
+			["Pickpocket", "Hits have a %s%% chance to steal a coin", "c_pick", [15, 30]],
+			["Loaded Dice", "Every %sth kill gives you a random tool", "c_dice", [8, 5]],
 			["House Edge", "Reshuffle also gives %s coins", "rscoin", [3, 6]],
-			["Card Trick", "%s%% chance a tool isn't used up", "tinker", [10, 20]],
+			["Card Trick", "Using a tool flings a card at a random enemy within 3 tiles for %s%% of your attack", "c_ctrick", [50, 100]],
 			["Jackpot", "Kills have a %s%% chance to drop a pile of coins", "jackpot", [8, 15]]],
 		"a": {"n": "HIGH ROLLER", "d": "Shops charge 10% less and coins are worth +1. Money talks.", "s": {"haggle": 10, "coin": 1},
 			"nodes": [
-				["Haggle", "Shops charge %s%% less", "haggle", [5, 10]],
-				["Bounty", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
-				["Appraise", "Gear sells for %s%% more", "apprais", [15, 30]],
-				["Vault Sense", "Vaults give %s extra tool(s)", "vault", [1, 2]]],
+				["High Stakes", "+%s%% damage for every 50 coins you carry (up to 5 times)", "c_stakes", [3, 6]],
+				["Bribe", "Elites and affixed enemies drop %s extra coins", "c_bribe", [3, 6]],
+				["Insurance", "When a hit would leave you under 25%% health, pay %s coins to halve it", "c_insure", [15, 8]],
+				["Golden Touch", "Killing an enemy from full health in one hit gives %s coins", "c_onehit", [2, 4]]],
 			"subs": {
 				"1": {"n": "TYCOON", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Compound Interest", "Clearing a floor pays %s%% of your run coins as interest (up to 25)", "interest", [10]]},
-				"2": {"n": "FIXER", "d": "The first visit to each merchant gives a free tool.", "s": {"supply": 1}, "k": ["Smuggler", "Every floor starts with %s free random tool(s)", "quarter", [1]]}}},
+				"2": {"n": "FIXER", "d": "The first visit to each merchant gives a free tool.", "s": {"supply": 1}, "k": ["Rigged Deck", "After Reshuffle, your next hit deals x%s damage", "c_rigged", [3]]}}},
 		"b": {"n": "TRICKSTER", "d": "+1 tool slot and a 10% chance a tool isn't used up.", "s": {"slots": 1, "tinker": 10},
 			"nodes": [
-				["Sleight", "Using a tool gives %s shield", "overclk", [3, 6]],
+				["Sleight of Hand", "Using a tool makes your next hit deal +%s%% damage", "c_sleight", [30, 60]],
 				["Wild Card", "Reshuffle gives %s shield", "rssh", [6, 12]],
-				["Misdirection", "+%s%% dodge chance", "dodge", [4, 8]],
-				["Quick Fingers", "Your class power recharges %s%% faster", "pcell", [10, 20]]],
+				["Misdirection", "Using a tool stuns every enemy next to you for %s step(s)", "c_misdir", [1, 2]],
+				["Quick Fingers", "Every tool you use cuts Reshuffle's recharge by %s steps", "c_qfing", [2, 4]]],
 			"subs": {
-				"1": {"n": "CHAOS MAGE", "d": "+5% crit.", "s": {"crit": 5}, "k": ["Chaos Bolt", "Every tool you use hits each enemy within %s tiles with a random element", "apx_arc", [2]]},
-				"2": {"n": "CARDSHARP", "d": "8% chance for a kill to give double XP.", "s": {"lucky": 8}, "k": ["Ace Up the Sleeve", "Crits deal %s%% more damage", "critmult", [50]]}}},
+				"1": {"n": "CHAOS MAGE", "d": "+5% crit.", "s": {"crit": 5}, "k": ["Wild Magic", "Every %sth hit triggers a random effect: burn, poison, stun, coins or shield", "c_wild", [4]]},
+				"2": {"n": "CARDSHARP", "d": "8% chance for a kill to give double XP.", "s": {"lucky": 8}, "k": ["Ace Up the Sleeve", "Crits have a %s%% chance to give you a random tool", "c_ace", [25]]}}},
 	},
 	"gunslinger": {
 		"core": [
-			["Steady Aim", "+%s damage with ranged weapons", "rdmg", [1, 2]],
-			["Bandolier", "+%s max ammo", "ammomax", [3, 6]],
-			["Quickdraw", "+%s%% crit chance with ranged weapons", "rcrit", [5, 10]],
+			["Steady Aim", "Shots deal +%s%% damage if you didn't move last step", "c_steady", [20, 40]],
+			["Bandolier", "Reload 1 ammo every %s steps", "c_band", [10, 6]],
+			["Quickdraw", "Your first shot at each enemy deals +%s%% damage", "c_qdraw", [30, 60]],
 			["Trick Shot", "Loading Ricochet refunds %s ammo", "ricoammo", [1, 2]],
-			["Scrounger", "+%s%% chance for kills to drop ammo", "ammodrop", [10, 20]],
+			["Dead Man's Hand", "Below 30%% health, shots refund their ammo and deal +%s%% damage", "c_dmhand", [15, 30]],
 			["Double Tap", "Ricochet bounces %s extra time(s)", "ricob", [1, 2]]],
 		"a": {"n": "DEADEYE", "d": "+1 shot range and +5% ranged crit. One shot, one kill.", "s": {"rrange": 1, "rcrit": 5},
 			"nodes": [
-				["Long Shot", "+%s shot range", "rrange", [1, 2]],
-				["Hollow Points", "+%s%% damage to enemies at full health", "opener", [20, 40]],
-				["Marksman", "+%s damage with ranged weapons", "rdmg", [1, 2]],
-				["Kill Zone", "Crits deal %s%% more damage", "critmult", [25, 50]]],
+				["Called Shot", "Shots at enemies 4 or more tiles away stun them for %s step(s)", "c_called", [1, 2]],
+				["Hollow Points", "Shots make enemies bleed for %s steps", "c_hollow", [2, 4]],
+				["Focus Fire", "Each shot in a row at the same enemy deals +%s%% more damage (up to 5)", "c_focus", [10, 20]],
+				["Kill Shot", "Shots finish off enemies left under %s%% health (not bosses)", "c_kshot", [10, 15]]],
 			"subs": {
 				"1": {"n": "SNIPER", "d": "+2 ranged damage.", "s": {"rdmg": 2}, "k": ["Headshot", "Shots deal +%s%% damage to enemies 3 or more tiles away", "fardmg", [50]]},
-				"2": {"n": "SPOTTER", "d": "Your first hit marks enemies (+15% damage taken).", "s": {"mark": 15}, "k": ["Spotter Drone", "Every 12 steps a drone zaps an enemy within 3 tiles for %s%% of your attack", "drone", [100]]}}},
+				"2": {"n": "SPOTTER", "d": "Your first hit marks enemies (+15% damage taken).", "s": {"mark": 15}, "k": ["Overwatch", "Every 4 steps, auto-fire 1 ammo at a marked enemy within 3 tiles for %s%% of your attack", "c_owatch", [100]]}}},
 		"b": {"n": "DESPERADO", "d": "+4 max ammo and a 10% chance a shot uses no ammo.", "s": {"ammomax": 4, "noammo": 10},
 			"nodes": [
-				["Fan the Hammer", "%s%% chance a shot uses no ammo", "noammo", [10, 20]],
-				["Gunsmoke", "+%s%% dodge chance", "dodge", [4, 8]],
-				["Reload", "+%s%% chance for kills to drop ammo", "ammodrop", [10, 20]],
-				["Close Quarters", "+%s armour while an enemy is next to you", "hold", [1, 2]]],
+				["Fan the Hammer", "Shots also hit another enemy next to the target for %s%% damage", "c_fan", [30, 60]],
+				["Gunsmoke", "After you shoot, %s%% of hits miss you until your next step", "c_gsmoke", [15, 30]],
+				["Reload", "Kills with a shot have a %s%% chance to refund 1 ammo", "c_reload", [50, 100]],
+				["Pistol Whip", "Melee hits have a %s%% chance to give 1 ammo", "c_pwhip", [50, 100]]],
 			"subs": {
-				"1": {"n": "OUTLAW", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Dead or Alive", "Kills cut Ricochet's recharge by %s steps", "killcd", [3]]},
+				"1": {"n": "OUTLAW", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Wanted", "Kills with a shot drop %s extra coins", "c_wanted", [3]]},
 				"2": {"n": "PISTOLERO", "d": "+6% crit.", "s": {"crit": 6}, "k": ["Gun Kata", "+%s%% damage to all attacks while an enemy is next to you", "adjdmg", [25]]}}},
 	},
 	"engineer": {
 		"core": [
-			["Calibration", "Your drone and hacked turrets deal +%s%% damage", "rally", [25, 50]],
-			["Toolkit", "%s%% chance a tool isn't used up", "tinker", [10, 20]],
-			["Capacitor", "Using a tool gives %s shield", "overclk", [3, 6]],
+			["Arc Stun", "Arc Pulse stuns for %s more step(s)", "c_arcstun", [1, 2]],
+			["Tesla Coil", "Hits on stunned enemies arc %s damage to every enemy next to them", "c_tesla", [2, 4]],
+			["Capacitor", "Arc Pulse gives %s shield for each enemy it hits", "c_capsh", [1, 2]],
 			["Arc Coils", "Arc Pulse deals +%s%% damage", "arcp", [25, 50]],
-			["Field Repair", "O2 stations give +%s shield (3 times per floor)", "frepair", [4, 8]],
-			["Overclock", "Your class power recharges %s%% faster", "pcell", [15, 30]]],
+			["Overload", "Killing a stunned enemy stuns %s other enemy(ies) within 2 tiles", "c_overload", [1, 2]],
+			["Overclock", "+%s%% damage while Arc Pulse is recharging", "c_ovclk", [10, 20]]],
 		"a": {"n": "MECHANIST", "d": "Your drone fires every 6 steps and drone kills drop coins. +1 tool slot.", "s": {"apx_merc": 1, "slots": 1},
 			"nodes": [
-				["Supply Line", "The first visit to each merchant gives %s free tool(s)", "supply", [1, 2]],
-				["Target Painter", "Your first hit marks enemies: +%s%% damage taken", "mark", [10, 20]],
-				["Tinker", "%s%% chance a tool isn't used up", "tinker", [10, 15]],
-				["Hull Patch", "+%s max shields", "maxsh", [6, 12]]],
+				["Twin Drone", "Your drone also zaps a second enemy for %s%% damage", "c_dtwin", [50, 100]],
+				["Drone Salvage", "Drone kills give %s scrap", "c_dscrap", [1, 2]],
+				["Drone Shield", "Each drone zap gives %s shield", "c_dsh", [1, 2]],
+				["Drone Recall", "Drone kills cut Arc Pulse's recharge by %s steps", "c_drecall", [2, 4]]],
 			"subs": {
-				"1": {"n": "DRONE MASTER", "d": "Drone and hacked turrets +25% damage.", "s": {"rally": 25}, "k": ["Heavy Drone", "Your drone deals another %s%% of your attack", "drone", [100]]},
-				"2": {"n": "TECHNICIAN", "d": "10% chance a tool isn't used up.", "s": {"tinker": 10}, "k": ["Arc Foundry", "Every tool you use hits each enemy within %s tiles with a random element", "apx_arc", [2]]}}},
+				"1": {"n": "DRONE MASTER", "d": "Drone and hacked turrets +25% damage.", "s": {"rally": 25}, "k": ["Heavy Drone", "Drone zaps stun and burn their target for %s steps", "c_hdrone", [2]]},
+				"2": {"n": "TECHNICIAN", "d": "10% chance a tool isn't used up.", "s": {"tinker": 10}, "k": ["Recharge Station", "Stepping on an O2 station recharges Arc Pulse by %s%%", "c_recst", [100]]}}},
 		"b": {"n": "DEMOLITIONIST", "d": "+1 attack and Arc Pulse sets enemies on fire.", "s": {"atk": 1, "arcburn": 1},
 			"nodes": [
 				["Shrapnel", "Kills explode for %s%% of the victim's max health to enemies next to it", "blast", [15, 30]],
-				["Thermite", "Your burns last +%s step(s)", "kindle", [1, 2]],
-				["Blast Plating", "+%s armour", "armor", [1, 2]],
+				["Napalm", "Burning enemies that die spread fire to enemies next to them for %s steps", "c_napalm", [2, 4]],
+				["Blast Shield", "Kills give %s shield for each enemy next to the victim", "c_bsh", [1, 2]],
 				["Big Bang", "Arc Pulse reaches %s more tile(s)", "arcr", [1, 2]]],
 			"subs": {
 				"1": {"n": "SAPPER", "d": "Enemies that hit you take 15% of the damage back.", "s": {"thorns": 15}, "k": ["Chain Reaction", "Every Arc Pulse kill cuts its recharge by %s steps", "arckill", [8]]},
-				"2": {"n": "BOMBARDIER", "d": "Kills explode for 15% of the victim's max health.", "s": {"blast": 15}, "k": ["Carpet Bomb", "Arc Pulse deals +%s%% damage", "arcp", [75]]}}},
+				"2": {"n": "BOMBARDIER", "d": "Kills explode for 15% of the victim's max health.", "s": {"blast": 15}, "k": ["Detonator", "Arc Pulse detonates burning enemies for %s%% of your attack", "c_deton", [150]]}}},
 	},
 	"medic": {
 		"core": [
-			["Triage", "Medkits heal %s%% more", "medk", [25, 50]],
-			["Vital Signs", "+%s max health", "hp", [5, 10]],
+			["Triage", "Below half health, Field Surgery heals another %s%% of max health", "c_triage", [10, 20]],
+			["Vital Signs", "+%s%% damage while at full health", "c_vital", [10, 20]],
 			["Antiseptic", "Field Surgery heals +%s%% of max health", "surg", [10, 20]],
 			["Adrenal Shot", "Field Surgery gives %s air", "surgair", [15, 30]],
-			["Recovery", "Kills heal %s%% of max health", "kheal", [2, 4]],
-			["Lifeline", "Once per run, a killing blow leaves you at %s%% health instead", "phoenix", [30, 50]]],
+			["Adrenaline", "Taking a hit below half health gives %s shield (once every 5 steps)", "c_adren", [3, 6]],
+			["Lifeline", "%s time(s) per floor, a killing blow is cancelled and Field Surgery fires for free", "c_lifeline", [1, 2]]],
 		"a": {"n": "SURGEON", "d": "+10 max health, and healing past max becomes shield (up to 4).", "s": {"hp": 10, "transf": 4},
 			"nodes": [
-				["Steady Hands", "+%s%% crit chance", "crit", [5, 10]],
-				["Scalpel", "+%s%% damage to enemies under half health", "finish", [15, 30]],
-				["Transfusion", "Healing past max health becomes shield (up to %s per heal)", "transf", [4, 8]],
-				["Blood Bank", "Kills heal %s%% of max health", "kheal", [2, 4]]],
+				["Incision", "Hits on enemies under half health make them bleed for %s steps", "c_incise", [2, 4]],
+				["Anatomy", "+%s%% damage to bleeding enemies", "c_anat", [20, 40]],
+				["Transfusion", "Hitting a bleeding enemy heals you %s", "c_bheal", [1, 2]],
+				["Blood Bank", "Kills bank 1 blood (up to %s). Field Surgery heals 3%% more per blood and spends it", "c_bbank", [5, 10]]],
 			"subs": {
-				"1": {"n": "FIELD DOCTOR", "d": "O2 stations also heal 15% of max health.", "s": {"stationheal": 15}, "k": ["Miracle Worker", "Field Surgery heals another %s%% of max health", "surg", [25]]},
+				"1": {"n": "FIELD DOCTOR", "d": "O2 stations also heal 15% of max health.", "s": {"stationheal": 15}, "k": ["Miracle Worker", "Field Surgery makes you immune to damage for %s steps", "c_miracle", [2]]},
 				"2": {"n": "PLAGUE DOCTOR", "d": "Poison can stack 2 higher.", "s": {"catal": 2}, "k": ["Contagion", "Field Surgery poisons every enemy within 3 tiles for %s stacks", "surgpsn", [3]]}}},
 		"b": {"n": "GUARDIAN", "d": "+8 max shields and +1 armour.", "s": {"maxsh": 8, "armor": 1},
 			"nodes": [
-				["Barrier", "+%s max shields", "maxsh", [6, 12]],
-				["Bulwark", "+%s armour while an enemy is next to you", "hold", [1, 2]],
+				["Barrier Burst", "When your shield breaks, enemies next to you are stunned for %s step(s)", "c_sbreak", [1, 2]],
+				["Guardian Angel", "Steps where you don't attack restore 1 shield, up to %s", "c_gangel", [4, 8]],
 				["Phase Shield", "Field Surgery gives %s shield", "surgsh", [6, 12]],
-				["Last Stand", "Below 30%% health you take %s%% less damage", "laststand", [15, 30]]],
+				["Martyr", "Below 30%% health, every hit you take cuts Field Surgery's recharge by %s steps", "c_martyr", [2, 4]]],
 			"subs": {
-				"1": {"n": "PALADIN", "d": "Enemies that hit you take 15% of the damage back.", "s": {"thorns": 15}, "k": ["Retribution", "Enemies that hit you take another %s%% of the damage back", "thorns", [40]]},
+				"1": {"n": "PALADIN", "d": "Enemies that hit you take 15% of the damage back.", "s": {"thorns": 15}, "k": ["Retribution", "Field Surgery hits every enemy within 2 tiles for %s%% of your attack", "c_retrib", [200]]},
 				"2": {"n": "SENTINEL", "d": "+6% dodge.", "s": {"dodge": 6}, "k": ["Aegis Field", "Kills give %s shield", "killsh", [3]]}}},
 	},
 	"hacker": {
 		"core": [
-			["Backdoor", "Hacked turrets stay on your side %s more steps", "thack", [4, 8]],
-			["Packet Sniffer", "+%s sight radius", "sight", [1, 2]],
-			["Exploit", "Your first hit marks enemies: +%s%% damage taken", "mark", [10, 20]],
-			["Overclocked Rig", "Your class power recharges %s%% faster", "pcell", [15, 30]],
-			["Firewall", "Marked enemies deal %s%% less damage to you", "msupp", [15, 25]],
-			["System Crash", "Override stuns for %s more step(s)", "ovstun", [1, 2]]],
-		"a": {"n": "NETRUNNER", "d": "Override reaches 2 more tiles. +5% crit.", "s": {"ovr": 2, "crit": 5},
+			["Backdoor", "Hijacked enemies stay yours %s more steps", "c_hjlen", [3, 6]],
+			["Packet Sniffer", "Hijack reaches %s more tile(s)", "c_hjr", [1, 2]],
+			["Exploit", "+%s%% damage to enemies next to a hijacked enemy", "c_exploit", [15, 30]],
+			["Overclocked Rig", "Hijacked enemies hit %s%% harder", "c_hjdmg", [25, 50]],
+			["Firewall", "While you control a hijacked enemy you take %s%% less damage", "c_fwall", [10, 20]],
+			["System Crash", "When a hijack ends, the enemy takes %s%% of its max health as damage", "c_kswitch", [20, 40]]],
+		"a": {"n": "NETRUNNER", "d": "Hijack reaches 1 more tile and lasts 2 more steps.", "s": {"c_hjr": 1, "c_hjlen": 2},
 			"nodes": [
-				["Signal Boost", "Override reaches %s more tile(s)", "ovr", [1, 2]],
-				["Rally Code", "Your drone and hacked turrets deal +%s%% damage", "rally", [25, 50]],
-				["Zero Day", "+%s%% damage to enemies at full health", "opener", [20, 40]],
-				["Daemon", "Every 12 steps a drone zaps an enemy within 3 tiles for %s%% of your attack", "drone", [50, 100]]],
+				["Signal Boost", "Hijacked enemies regain %s health every step", "c_hjheal", [1, 2]],
+				["Puppet Master", "Kills by hijacked enemies cut Hijack's recharge by %s steps", "c_puppet", [3, 6]],
+				["Zero Day", "Hijacked enemies' attacks stun for %s step(s)", "c_hjstun", [1, 2]],
+				["Data Leech", "Kills by hijacked enemies give you %s shield", "c_dleech", [3, 6]]],
 			"subs": {
-				"1": {"n": "GHOST", "d": "+8% dodge.", "s": {"dodge": 8}, "k": ["Ghost Protocol", "After you dodge, your next hit deals %s%% more damage", "dodgedmg", [100]]},
-				"2": {"n": "BOTNET", "d": "Drone and hacked turrets +25% damage.", "s": {"rally": 25}, "k": ["Swarm Logic", "Override marks every enemy within %s tiles", "ovmark", [5]]}}},
+				"1": {"n": "GHOST", "d": "+8% dodge.", "s": {"dodge": 8}, "k": ["Ghost Protocol", "Hijacking cloaks you for %s steps", "c_ghost", [4]]},
+				"2": {"n": "BOTNET", "d": "Hijacked enemies hit 25% harder.", "s": {"c_hjdmg": 25}, "k": ["Swarm Logic", "Hijack takes %s more enemy", "c_hjn", [1]]}}},
 		"b": {"n": "SABOTEUR", "d": "Stunned enemies take +25% damage.", "s": {"stundmg": 25},
 			"nodes": [
-				["Short Circuit", "+%s%% stun chance from shock", "conduct", [10, 20]],
+				["Short Circuit", "Hijack stuns every other enemy within %s tile(s) of its target for 1 step", "c_hjemp", [1, 2]],
 				["EMP Rounds", "+%s%% damage to stunned enemies", "stundmg", [15, 30]],
-				["Static Field", "Hits have a %s%% chance to arc to an enemy within 2 tiles for half damage", "chain", [10, 20]],
-				["Kill Switch", "+%s%% damage to enemies under half health", "finish", [15, 30]]],
+				["Feedback Loop", "Hits on stunned enemies have a %s%% chance to stun them 1 step longer", "c_feedback", [20, 40]],
+				["Logic Bomb", "Stunned enemies you kill explode for %s%% of your attack to enemies next to them", "c_lbomb", [50, 100]]],
 			"subs": {
-				"1": {"n": "GLITCH", "d": "+8% crit.", "s": {"crit": 8}, "k": ["Corrupt", "Crits make enemies bleed for %s steps (10%% of their max health a step)", "bleed", [3]]},
-				"2": {"n": "BLACKOUT", "d": "Override stuns 1 step longer.", "s": {"ovstun": 1}, "k": ["Blackout", "Override also deals %s%% of your attack to every enemy it stuns", "ovdmg", [150]]}}},
+				"1": {"n": "GLITCH", "d": "+8% crit.", "s": {"crit": 8}, "k": ["Corrupt", "Hits have a %s%% chance to scramble the target: it attacks an enemy next to it", "c_corrupt", [20]]},
+				"2": {"n": "BLACKOUT", "d": "Hijack stuns enemies within 1 tile of its target.", "s": {"c_hjemp": 1}, "k": ["Blackout", "Hijack's stun also deals %s%% of your attack", "c_bout", [150]]}}},
 	},
 	"salvager": {
 		"core": [
-			["Scrap Collector", "Selling gear also gives %s scrap per tier", "dismantle", [1, 2]],
-			["Appraiser", "Gear sells for %s%% more", "apprais", [15, 30]],
-			["Magnetism", "Magnet Pulse reaches %s more tiles", "magr", [2, 4]],
-			["Pickpocket", "Coins are worth +%s each", "coin", [1, 2]],
-			["Reforge", "In the BAG, reroll an item's traits or mods for %s scrap per tier", "reforge", [3, 2]],
-			["Masterwork", "Found gear rolls +1 trait or mod, with a %s%% chance of a higher tier", "master", [5, 15]]],
+			["Scrap Collector", "Kills have a %s%% chance to drop 1 scrap", "c_scrapk", [15, 30]],
+			["Price Check", "Strip Down deals +%s%% damage to elites, affixed enemies and bosses", "c_pcheck", [30, 60]],
+			["Long Reach", "Strip Down reaches %s more tile(s)", "c_sdr", [1, 2]],
+			["Scrap Power", "+%s%% damage for each scrap you hold (up to 20)", "c_pawn", [1, 2]],
+			["Salvage Rights", "Strip Down kills give %s extra scrap", "c_sdscrap", [1, 2]],
+			["Recycle", "Strip Down kills cut its recharge by %s steps", "c_sdref", [5, 10]]],
 		"a": {"n": "SCRAPPER", "d": "+1 armour, and kills give 1 shield.", "s": {"armor": 1, "killsh": 1},
 			"nodes": [
-				["Scrap Armour", "+%s armour", "armor", [1, 2]],
-				["Bulwark", "+%s armour while an enemy is next to you", "hold", [1, 2]],
-				["Reinforce", "+%s max health", "hp", [6, 12]],
-				["Spiked Scrap", "Enemies that hit you take %s%% of the damage back", "thorns", [10, 20]]],
+				["Junk Plating", "Strip Down gives shield equal to %s%% of the damage it deals", "c_jplate", [30, 60]],
+				["Scrap Wall", "While you hold 10+ scrap, hits deal %s less damage to you", "c_swall", [1, 2]],
+				["Spare Parts", "A hit that takes over a quarter of your health spends 1 scrap to heal %s", "c_spare", [4, 8]],
+				["Shrapnel Coat", "Enemies that hit you take %s damage for every 5 scrap you hold (up to 4x)", "c_scoat", [1, 2]]],
 			"subs": {
-				"1": {"n": "JUNKER", "d": "+8 max shields.", "s": {"maxsh": 8}, "k": ["Junk Shield", "Magnet Pulse gives %s shield", "magsh", [10]]},
-				"2": {"n": "WRECKER", "d": "+2 attack.", "s": {"atk": 2}, "k": ["Wrecking Ball", "+%s%% damage to elites, affixed enemies and bosses", "bigdmg", [35]]}}},
+				"1": {"n": "JUNKER", "d": "+8 max shields.", "s": {"maxsh": 8}, "k": ["Junk Shield", "Strip Down also gives %s shield", "c_jshield", [10]]},
+				"2": {"n": "WRECKER", "d": "+2 attack.", "s": {"atk": 2}, "k": ["Wrecking Ball", "Strip Down also hits every enemy next to its target for %s%% damage", "c_wball", [75]]}}},
 		"b": {"n": "PROSPECTOR", "d": "Coins are worth +1 and vaults give an extra tool.", "s": {"coin": 1, "vault": 1},
 			"nodes": [
-				["Bounty", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
-				["Haggler", "Shops charge %s%% less", "haggle", [5, 10]],
-				["Treasure Sense", "+%s%% gear drop chance from elites and affixed enemies", "drop", [10, 20]],
-				["Lucky Find", "Kills have a %s%% chance to drop a pile of coins", "jackpot", [6, 12]]],
+				["Strip Mining", "Strip Down kills drop %s extra coins", "c_sdcoin", [3, 6]],
+				["Trade-In", "Selling gear also gives %s coin(s) per tier", "c_trade", [2, 4]],
+				["Treasure Sense", "Strip Down kills have +%s%% gear chance", "c_sdgear", [15, 30]],
+				["Deep Pockets", "Coin pickups have a %s%% chance to also give 1 scrap", "c_dpock", [15, 30]]],
 			"subs": {
-				"1": {"n": "MAGNATE", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Gold Rush", "Magnet Pulse coins are worth %s times as much", "maggold", [2]]},
-				"2": {"n": "RELIC HUNTER", "d": "+10% gear drop chance.", "s": {"drop": 10}, "k": ["Deep Pockets", "+%s tool slot", "slots", [1]]}}},
+				"1": {"n": "MAGNATE", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Gold Rush", "Strip Down kills drop coins worth %s times as much", "c_grush", [2]]},
+				"2": {"n": "RELIC HUNTER", "d": "+10% gear drop chance.", "s": {"drop": 10}, "k": ["Relic Hunter", "Strip Down kills on elites and bosses always drop %s gear", "c_rhunt", [1]]}}},
 	},
 }
 
@@ -13983,7 +13997,7 @@ func _mx_cd_mult() -> float:
 	var m := 1.0
 	if mx_level(cls) >= MX_MAX:
 		m *= 0.9
-	if _pw() >= 3 and cls in ["scout", "mystic", "gunslinger", "medic", "hacker"]:
+	if _pw() >= 3 and cls in ["scout", "mystic", "gunslinger", "medic", "hacker", "salvager"]:
 		m *= 0.75
 	if _an("surge"):
 		m *= 0.5
@@ -14102,6 +14116,7 @@ func _mx_brute_stance() -> void:
 
 
 func _mx_blocked(src: Vector2i) -> void:
+	_ck_blocked(src)
 	var pct := sk("stancedmg") + (100.0 if cls == "brute" and _pw() >= 2 else 0.0)
 	if pct > 0.0 and mons.has(src):
 		_adv_damage_mon(src, maxi(1, int(float(p_atk()) * pct / 100.0)), Color("ff6a5c"))
@@ -14154,6 +14169,7 @@ func _rico_extra() -> int:
 
 
 func _mx_power_used() -> void:
+	_ck_power()
 	if sk("pwsh") > 0.0:
 		sh = mini(sh_cap(), sh + int(sk("pwsh")))
 
@@ -14171,10 +14187,11 @@ func _mx_hit_mul(c: Vector2i) -> float:
 		m += sk("eldmg") / 100.0
 	if sk("adjdmg") > 0.0 and not _near_mons(pos, 1, []).is_empty():
 		m += sk("adjdmg") / 100.0
-	return m + _ex_hit_mul(c)
+	return m + _ex_hit_mul(c) + _ck_hit_mul(c)
 
 
 func _mx_on_hit(c: Vector2i, dealt: int, left: int) -> int:
+	left = _ck_on_hit(c, dealt, left, hex_hit)
 	if hex_hit:
 		hex_hit = false
 		var hs := int(sk("hexstun")) + (2 if cls == "mystic" and _pw() >= 2 else 0)
@@ -14193,6 +14210,7 @@ func _mx_on_hit(c: Vector2i, dealt: int, left: int) -> int:
 
 func _mx_dodged() -> void:
 	dodge_ready = true
+	_ck_dodged()
 	if sk("dodgeheal") > 0.0:
 		_p_heal(int(sk("dodgeheal")))
 	if sk("dodgeair") > 0.0:
@@ -14202,6 +14220,7 @@ func _mx_dodged() -> void:
 
 func _mx_kill(nc: Vector2i, is_boss: bool) -> void:
 	_ex_kill(nc, is_boss)
+	_ck_kill(nc, is_boss)
 	if _mx_on():
 		var el := elite.has(nc)
 		_mx_gain(1 + (2 if el else 0) + (1 if affix.has(nc) else 0) + (20 if is_boss else 0))
@@ -15078,8 +15097,8 @@ const NEW_BLURB := {
 const NEW_PW := {
 	"engineer": ["deals 150% of your attack", "reaches 3 tiles", "stuns for 2 steps and gives 6 shield"],
 	"medic": ["heals 10% more", "also gives 8 shield", "also gives 20 air and recharges 25% faster"],
-	"hacker": ["stun reaches 3 tiles", "also marks every enemy within 4 tiles (+15% damage)", "stuns 1 step longer and recharges 25% faster"],
-	"salvager": ["reaches 2 more tiles", "also gives 2 scrap", "pulled coins are worth double"],
+	"hacker": ["lasts 4 more steps", "also hacks every enemy turret in range", "takes a second enemy and recharges 25% faster"],
+	"salvager": ["deals 250% and reaches 3 tiles", "salvaged enemies also give a random tool", "hits the 2 nearest enemies and recharges 25% faster"],
 }
 const DEEDS := {
 	"engineer": ["Defeat 5 bosses in total", "bosses", 5],
@@ -15227,7 +15246,7 @@ func _act_engineer() -> bool:
 
 func _act_medic() -> bool:
 	var p := _pw()
-	var pct := 30.0 + (10.0 if p >= 1 else 0.0) + sk("surg")
+	var pct := 30.0 + (10.0 if p >= 1 else 0.0) + sk("surg") + _ck_surg()
 	_p_heal(maxi(1, int(float(hp_cap()) * pct / 100.0)))
 	p_acid = 0
 	p_frost = 0
@@ -15246,68 +15265,6 @@ func _act_medic() -> bool:
 	_pop(pos, "SURGERY", Color("ff8a9a"))
 	_act_fx(Color("ff8a9a"))
 	_sfx("shield")
-	return true
-
-
-func _act_hacker() -> bool:
-	var p := _pw()
-	var n := 0
-	var hk := 8 + int(sk("thack"))
-	for c in tur.keys():
-		if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 5 and adv_vis.has(c):
-			tur[c]["hk"] = maxi(int(tur[c].get("hk", 0)), hk)
-			_pop(c, "HACKED", Color("6dff9a"))
-			n += 1
-	var r := 2 + (1 if p >= 1 else 0) + int(sk("ovr"))
-	var stn := 2 + (1 if p >= 3 else 0) + int(sk("ovstun"))
-	for c in _near_mons(pos, r, []):
-		if not mons.has(c) or not adv_vis.has(c) or tur.has(c) or _boss_cell(c):
-			continue
-		if _st_ok(c):
-			_st_stun(c, stn)
-		if sk("ovdmg") > 0.0:
-			_adv_damage_mon(c, maxi(1, int(float(p_atk()) * sk("ovdmg") / 100.0)), Color("6dff9a"))
-		n += 1
-	var mr := maxi(4 if p >= 2 else 0, int(sk("ovmark")))
-	if mr > 0:
-		for c in _near_mons(pos, mr, []):
-			if mons.has(c) and _st_ok(c):
-				_st_get(c)["mk"] = true
-				n += 1
-	if n == 0:
-		return _act_fail("Nothing nearby to override")
-	msg = "Override! The station turns on your enemies"
-	_pop(pos, "OVERRIDE", Color("6dff9a"))
-	_act_fx(Color("6dff9a"))
-	_sfx("elite")
-	return true
-
-
-func _act_salvager() -> bool:
-	var p := _pw()
-	var r := 6 + (2 if p >= 1 else 0) + int(sk("magr"))
-	var mul := (2 if p >= 3 else 1) * maxi(1, int(sk("maggold"))) * _an_coin()
-	var got := 0
-	var piles := 0
-	for c in coin_at.keys():
-		if maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= r and _aseen(c):
-			coin_at.erase(c)
-			var cv := coin_val() * mul
-			coins += cv
-			got += cv
-			piles += 1
-			adv_pts += 1
-			_fx_bolt(Vector2(c), Vector2(pos), Color("ffd84f"))
-	if piles == 0:
-		return _act_fail("No coins within %d tiles" % r)
-	if p >= 2:
-		scrap += 2
-	if sk("magsh") > 0.0:
-		sh = mini(sh_cap(), sh + int(sk("magsh")))
-	msg = "Magnet Pulse: %d coin piles, +%d coins" % [piles, got]
-	_pop(pos, "+%d COINS" % got, Color("ffd84f"))
-	_act_fx(Color("ffd84f"))
-	_sfx("big")
 	return true
 
 
@@ -15635,6 +15592,7 @@ func _an_announce() -> void:
 # ----- hooks called from the mastery code -----
 
 func _ex_init_run() -> void:
+	ck_st = {}
 	run_elites = 0
 	run_bosses = 0
 	run_cores = 0
@@ -15686,7 +15644,7 @@ func _ex_hit_mul(c: Vector2i) -> float:
 	var m := 0.0
 	if sk("stundmg") > 0.0 and _stunned(c):
 		m += sk("stundmg") / 100.0
-	if cls == "hacker" and _pw() >= 2 and sk("mark") <= 0.0 and _mk(c):
+	if cls == "__none__" and _mk(c):
 		m += 0.15
 	return m
 
@@ -16130,3 +16088,677 @@ func _unlock_all() -> void:
 	cx["rl"] = rs
 	cp_dirty = true
 	_save_meta()
+
+
+# ----- B86: fresh class tree effects, Hijack and Strip Down -----
+var ck_st: Dictionary = {}
+var ck_src := Vector2i(-1, -1)
+var ck_crit := false
+
+
+func _cheb(a: Vector2i, b: Vector2i) -> int:
+	return maxi(absi(a.x - b.x), absi(a.y - b.y))
+
+
+func _ck_foe(c: Vector2i) -> bool:
+	return mons.has(c) and not (tur.has(c) and int(tur[c].get("hk", 0)) > 0) and not _turned(c)
+
+
+func _turned(c: Vector2i) -> bool:
+	return mstat.has(c) and int(mstat[c].get("tn", 0)) > 0
+
+
+func _turned_n() -> int:
+	var n := 0
+	for c in mstat:
+		if mons.has(c) and int(mstat[c].get("tn", 0)) > 0:
+			n += 1
+	return n
+
+
+func _turned_near(c: Vector2i) -> bool:
+	for o in mstat:
+		if o != c and mons.has(o) and int(mstat[o].get("tn", 0)) > 0 and _cheb(o, c) <= 1:
+			return true
+	return false
+
+
+func _ck_cut(n: int) -> void:
+	ck_st["cdcut"] = int(ck_st.get("cdcut", 0)) + n
+
+
+func _ck_hit_mul(c: Vector2i) -> float:
+	if mode != "adv":
+		return 0.0
+	var m := 0.0
+	ck_st["full"] = mon_hp_now(c) >= mon_hp_max(c)
+	if not shooting and sk("c_haymaker") > 0.0:
+		ck_st["mh"] = int(ck_st.get("mh", 0)) + 1
+		if int(ck_st["mh"]) % 4 == 0:
+			m += sk("c_haymaker") / 100.0
+			ck_st["hay"] = true
+			_pop(c, "HAYMAKER", Color("ff6a5c"))
+	if sk("c_brace") > 0.0 and act_stance > 0:
+		m += sk("c_brace") / 100.0
+	if sk("c_rage") > 0.0 and int(ck_st.get("rage", 0)) > 0:
+		m += sk("c_rage") / 100.0 * float(ck_st["rage"])
+		ck_st["rage"] = 0
+	if sk("c_dwish") > 0.0 and sh <= 0:
+		m += sk("c_dwish") / 100.0
+	if sk("c_rampage") > 0.0 and adv_steps <= int(ck_st.get("rpt", -1)):
+		m += sk("c_rampage") / 100.0 * float(ck_st.get("rp", 0))
+	if sk("c_blind") > 0.0 and _near_mons(c, 1, []).is_empty():
+		m += sk("c_blind") / 100.0
+	if sk("c_dancer") > 0.0:
+		m += sk("c_dancer") / 100.0 * float(mini(5, int(ck_st.get("dodges", 0))))
+	if sk("c_curse") > 0.0 and mstat.has(c) and mstat[c].has("cu"):
+		m += sk("c_curse") / 100.0
+	if sk("c_flux") > 0.0:
+		m += sk("c_flux") / 100.0 * float(_elems(c).size())
+	if sk("c_ddown") > 0.0:
+		var r := randf() * 100.0
+		if r < sk("c_ddown"):
+			m += 2.0
+			_pop(c, "TRIPLE!", Color("ffd84f"))
+		elif r < sk("c_ddown") + 10.0:
+			m -= 0.5
+			_pop(c, "HALF", Color("9aa3c7"))
+	if sk("c_stakes") > 0.0:
+		m += sk("c_stakes") / 100.0 * float(mini(5, coins / 50))
+	if sk("c_rigged") > 0.0 and bool(ck_st.get("lucky", false)):
+		ck_st["lucky"] = false
+		m += sk("c_rigged") - 1.0
+		_pop(c, "RIGGED", Color("ffd84f"))
+	if sk("c_sleight") > 0.0 and bool(ck_st.get("sl", false)):
+		ck_st["sl"] = false
+		m += sk("c_sleight") / 100.0
+	if shooting:
+		if sk("c_steady") > 0.0 and not p_moved:
+			m += sk("c_steady") / 100.0
+		if sk("c_qdraw") > 0.0 and not (mstat.has(c) and mstat[c].has("qd")):
+			m += sk("c_qdraw") / 100.0
+			if _st_ok(c):
+				_st_get(c)["qd"] = true
+		if sk("c_focus") > 0.0:
+			if ck_st.get("ft", Vector2i(-99, -99)) == c:
+				ck_st["fn"] = int(ck_st.get("fn", 0)) + 1
+			else:
+				ck_st["ft"] = c
+				ck_st["fn"] = 0
+			m += sk("c_focus") / 100.0 * float(mini(5, int(ck_st["fn"])))
+		if sk("c_dmhand") > 0.0 and hp * 10 < hp_cap() * 3:
+			m += sk("c_dmhand") / 100.0
+	if sk("c_ovclk") > 0.0 and act_cd > 0:
+		m += sk("c_ovclk") / 100.0
+	if sk("c_vital") > 0.0 and hp >= hp_cap():
+		m += sk("c_vital") / 100.0
+	if sk("c_anat") > 0.0 and mstat.has(c) and mstat[c].has("bleed"):
+		m += sk("c_anat") / 100.0
+	if sk("c_exploit") > 0.0 and _turned_near(c):
+		m += sk("c_exploit") / 100.0
+	if sk("c_pawn") > 0.0:
+		m += sk("c_pawn") / 100.0 * float(mini(20, scrap))
+	return m
+
+
+func _ck_on_hit(c: Vector2i, dealt: int, left: int, hexed: bool) -> int:
+	if mode != "adv":
+		return left
+	ck_st["la"] = adv_steps
+	var alive := left > 0 and mons.has(c)
+	if bool(ck_st.get("hay", false)):
+		ck_st["hay"] = false
+		if alive:
+			_st_stun(c, 1)
+	if hexed:
+		if mons.has(c) and _st_ok(c) and cls == "mystic":
+			_st_get(c)["cu"] = true
+		if sk("c_hexsh") > 0.0:
+			sh = mini(sh_cap(), sh + int(sk("c_hexsh")))
+		if sk("c_hexfire") > 0.0 and alive:
+			_st_burn(c, int(sk("c_hexfire")), 2 + floor_n / 2)
+		if sk("c_echohex") > 0.0 and randf() * 100.0 < sk("c_echohex"):
+			hex_armed = true
+			_pop(pos, "ECHO HEX", Color("c07cff"))
+	if sk("c_ltap") > 0.0 and mstat.has(c) and mstat[c].has("cu"):
+		_p_heal(int(sk("c_ltap")))
+	if sk("c_pick") > 0.0 and randf() * 100.0 < sk("c_pick"):
+		var pc := coin_val()
+		coins += pc
+		_pop(c, "+%d STOLEN" % pc, Color("ffd84f"))
+	if not shooting:
+		if sk("c_cleave") > 0.0 and tr_depth <= 1:
+			for o in _near_mons(pos, 1, [c]):
+				if _ck_foe(o):
+					tr_depth += 1
+					_adv_damage_mon(o, maxi(1, int(float(dealt) * sk("c_cleave") / 100.0)), Color("ff6a5c"))
+					tr_depth -= 1
+					break
+		if sk("c_bthirst") > 0.0 and left <= 0:
+			_tr_heal(maxi(1, int(float(dealt) * sk("c_bthirst") / 100.0)))
+		if sk("c_pwhip") > 0.0 and _weapon_range() > 0 and ammo < ammo_max() and randf() * 100.0 < sk("c_pwhip"):
+			ammo += 1
+			_pop(pos, "+1 AMMO", Color("ffc24f"))
+	else:
+		ck_st["gs"] = adv_steps
+		if sk("c_called") > 0.0 and alive and _cheb(c, pos) >= 4:
+			_st_stun(c, int(sk("c_called")))
+		if sk("c_hollow") > 0.0 and alive and _st_ok(c):
+			_st_get(c)["bleed"] = [int(sk("c_hollow")), _bleed_dmg(c)]
+		if sk("c_kshot") > 0.0 and alive and not _boss_cell(c) and float(left) * 100.0 <= float(mon_hp_max(c)) * sk("c_kshot"):
+			left = 0
+			alive = false
+			_pop(c, "KILL SHOT", Color("ffc24f"))
+		if sk("c_fan") > 0.0 and tr_depth <= 1:
+			for o in _near_mons(c, 1, []):
+				if _ck_foe(o):
+					tr_depth += 1
+					_adv_damage_mon(o, maxi(1, int(float(dealt) * sk("c_fan") / 100.0)), Color("ffc24f"))
+					tr_depth -= 1
+					break
+		if sk("c_dmhand") > 0.0 and hp * 10 < hp_cap() * 3:
+			ammo = mini(ammo_max(), ammo + 1)
+		if left <= 0 and sk("c_reload") > 0.0 and randf() * 100.0 < sk("c_reload"):
+			ammo = mini(ammo_max(), ammo + 1)
+		if left <= 0 and sk("c_wanted") > 0.0:
+			coins += int(sk("c_wanted"))
+			_pop(c, "+%d BOUNTY" % int(sk("c_wanted")), Color("ffd84f"))
+	if sk("c_incise") > 0.0 and alive and _st_ok(c) and left * 2 <= mon_hp_max(c):
+		_st_get(c)["bleed"] = [int(sk("c_incise")), _bleed_dmg(c)]
+	if sk("c_bheal") > 0.0 and mstat.has(c) and mstat[c].has("bleed"):
+		_p_heal(int(sk("c_bheal")))
+	if sk("c_tesla") > 0.0 and _stunned(c) and tr_depth <= 1:
+		tr_depth += 1
+		for o in _near_mons(c, 1, []):
+			if _ck_foe(o):
+				_fx_bolt(Vector2(c), Vector2(o), Color("9fe8ff"))
+				_adv_damage_mon(o, int(sk("c_tesla")), Color("9fe8ff"))
+		tr_depth -= 1
+	if sk("c_feedback") > 0.0 and alive and _stunned(c) and randf() * 100.0 < sk("c_feedback"):
+		mstat[c]["stun"] = int(mstat[c]["stun"]) + 1
+	if sk("c_corrupt") > 0.0 and alive and not _boss_cell(c) and randf() * 100.0 < sk("c_corrupt"):
+		for o in _near_mons(c, 1, []):
+			if _ck_foe(o):
+				_fx_bolt(Vector2(c), Vector2(o), Color("6dff9a"))
+				_adv_damage_mon(o, mon_atk(c), Color("6dff9a"))
+				_pop(c, "SCRAMBLED", Color("6dff9a"))
+				break
+	if sk("c_wild") > 0.0:
+		ck_st["wild"] = int(ck_st.get("wild", 0)) + 1
+		if int(ck_st["wild"]) % maxi(1, int(sk("c_wild"))) == 0:
+			match randi() % 5:
+				0:
+					if alive:
+						_st_burn(c, 3, 2 + floor_n / 2)
+				1:
+					if alive:
+						_st_poison(c, 2)
+				2:
+					if alive:
+						_st_stun(c, 1)
+				3:
+					coins += 3
+					_pop(pos, "+3 COINS", Color("ffd84f"))
+				_:
+					sh = mini(sh_cap(), sh + 3)
+			_pop(c, "WILD MAGIC", Color("ff5fd2"))
+	if ck_crit and sk("c_ace") > 0.0 and randf() * 100.0 < sk("c_ace"):
+		if _give_use(_random_use()):
+			_pop(pos, "ACE!", Color("ffd84f"))
+	return left
+
+
+func _ck_kill(nc: Vector2i, is_boss: bool) -> void:
+	if mode != "adv":
+		return
+	var vic := _near_mons(nc, 1, [])
+	if sk("c_intim") > 0.0:
+		for o in _near_mons(pos, 1, [nc]):
+			_st_stun(o, int(sk("c_intim")))
+	if sk("c_quake") > 0.0:
+		for o in _near_mons(pos, 1, [nc]):
+			if _ck_foe(o):
+				_adv_damage_mon(o, maxi(1, int(float(p_atk()) * sk("c_quake") / 100.0)), Color("c9a36b"))
+		_fx_ring(Vector2(pos), Color("c9a36b"), 1.4, 0.4, 5.0)
+	if sk("c_rampage") > 0.0:
+		if adv_steps > int(ck_st.get("rpt", -1)):
+			ck_st["rp"] = 0
+		ck_st["rp"] = int(ck_st.get("rp", 0)) + 1
+		ck_st["rpt"] = adv_steps + 3
+	if sk("c_harvest") > 0.0 and mstat.has(nc) and mstat[nc].has("cu"):
+		_ck_cut(int(sk("c_harvest")))
+	if sk("c_dice") > 0.0:
+		ck_st["kc"] = int(ck_st.get("kc", 0)) + 1
+		if int(ck_st["kc"]) % maxi(1, int(sk("c_dice"))) == 0:
+			if _give_use(_random_use()):
+				_pop(pos, "LOADED DICE", Color("ffd84f"))
+			else:
+				coins += 5
+	if sk("c_bribe") > 0.0 and (elite.has(nc) or affix.has(nc)):
+		coins += int(sk("c_bribe"))
+		_pop(nc, "+%d BRIBE" % int(sk("c_bribe")), Color("ffd84f"))
+	if sk("c_onehit") > 0.0 and bool(ck_st.get("full", false)):
+		coins += int(sk("c_onehit"))
+		_pop(nc, "+%d" % int(sk("c_onehit")), Color("ffd84f"))
+	ck_st["full"] = false
+	if sk("c_napalm") > 0.0 and mstat.has(nc) and mstat[nc].has("burn"):
+		for o in vic:
+			if _ck_foe(o):
+				_st_burn(o, int(sk("c_napalm")), 2 + floor_n / 2)
+	if sk("c_bsh") > 0.0 and vic.size() > 0:
+		sh = mini(sh_cap(), sh + int(sk("c_bsh")) * vic.size())
+	var was_st := _stunned(nc)
+	if sk("c_overload") > 0.0 and was_st:
+		var on := 0
+		for o in _near_mons(nc, 2, []):
+			if on >= int(sk("c_overload")):
+				break
+			if _ck_foe(o) and not _stunned(o):
+				_st_stun(o, 1)
+				on += 1
+	if sk("c_lbomb") > 0.0 and was_st:
+		for o in vic:
+			if _ck_foe(o):
+				_adv_damage_mon(o, maxi(1, int(float(p_atk()) * sk("c_lbomb") / 100.0)), Color("6dff9a"))
+		_fx_burst(Vector2(nc), Color("6dff9a"), 14, 3.0, 0.5, 5.0)
+	if sk("c_bbank") > 0.0:
+		ck_st["bb"] = mini(int(sk("c_bbank")), int(ck_st.get("bb", 0)) + 1)
+	if sk("c_scrapk") > 0.0 and randf() * 100.0 < sk("c_scrapk"):
+		scrap += 1
+		_pop(nc, "+1 SCRAP", Color("c9a36b"))
+
+
+func _ck_dodged() -> void:
+	ck_st["dodges"] = int(ck_st.get("dodges", 0)) + 1
+	if sk("c_riposte") > 0.0 and mons.has(ck_src) and _cheb(ck_src, pos) <= 1:
+		_adv_damage_mon(ck_src, maxi(1, int(float(p_atk()) * sk("c_riposte") / 100.0)), Color("9fe8ff"))
+		_pop(ck_src, "RIPOSTE", Color("9fe8ff"))
+	ck_src = Vector2i(-1, -1)
+
+
+func _ck_hurt(a: int, src: Vector2i) -> int:
+	if mode != "adv":
+		return a
+	if adv_steps < int(ck_st.get("inv", -1)):
+		_pop(pos, "IMMUNE", Color("ff8a9a"))
+		return 0
+	if sk("c_afterimg") > 0.0 and oxy * 2.0 > oxy_max and randf() * 100.0 < sk("c_afterimg"):
+		_pop(pos, "AFTERIMAGE", Color("9fe8ff"))
+		ck_src = src
+		_mx_dodged()
+		return 0
+	if sk("c_gsmoke") > 0.0 and int(ck_st.get("gs", -9)) >= adv_steps - 1 and randf() * 100.0 < sk("c_gsmoke"):
+		_pop(pos, "GUNSMOKE", Color("c8c8c8"))
+		return 0
+	if sk("c_shrug") > 0.0 and randf() * 100.0 < sk("c_shrug"):
+		a = 1
+		_pop(pos, "SHRUG", Color("ff6a5c"))
+	if sk("c_firm") > 0.0 and not p_moved:
+		a = maxi(1, int(round(float(a) * (1.0 - sk("c_firm") / 100.0))))
+	if sk("c_wither") > 0.0 and mstat.has(src) and mstat[src].has("cu"):
+		a = maxi(1, int(round(float(a) * (1.0 - sk("c_wither") / 100.0))))
+	if sk("c_fwall") > 0.0 and _turned_n() > 0:
+		a = maxi(1, int(round(float(a) * (1.0 - sk("c_fwall") / 100.0))))
+	if sk("c_swall") > 0.0 and scrap >= 10:
+		a = maxi(1, a - int(sk("c_swall")))
+	if sk("c_insure") > 0.0 and coins >= int(sk("c_insure")) and (hp - a) * 4 < hp_cap():
+		coins -= int(sk("c_insure"))
+		a = maxi(1, a / 2)
+		_pop(pos, "INSURED", Color("ffd84f"))
+	if sk("c_lifeline") > 0.0 and int(ck_st.get("lf", 0)) < int(sk("c_lifeline")) and dmg_taken(a) >= hp + sh:
+		ck_st["lf"] = int(ck_st.get("lf", 0)) + 1
+		_act_medic()
+		_pop(pos, "LIFELINE", Color("ff8a9a"))
+		return 0
+	return a
+
+
+func _ck_hurt_after(src: Vector2i, d: int, absorbed: int) -> void:
+	if mode != "adv":
+		return
+	var lost := d - absorbed
+	if sk("c_rage") > 0.0 and d > 0:
+		ck_st["rage"] = mini(5, int(ck_st.get("rage", 0)) + 1)
+	if sk("c_still") > 0.0 and not p_moved:
+		sh = mini(sh_cap(), sh + int(sk("c_still")))
+	if sk("c_sbreak") > 0.0 and absorbed > 0 and sh <= 0:
+		for o in _near_mons(pos, 1, []):
+			_st_stun(o, int(sk("c_sbreak")))
+		_fx_ring(vis_pos, Color("7db2ff"), 1.4, 0.4, 5.0)
+	if sk("c_adren") > 0.0 and hp > 0 and hp * 2 < hp_cap() and adv_steps - int(ck_st.get("ad", -99)) >= 5:
+		ck_st["ad"] = adv_steps
+		sh = mini(sh_cap(), sh + int(sk("c_adren")))
+		_pop(pos, "ADRENALINE", Color("ff8a9a"))
+	if sk("c_martyr") > 0.0 and hp * 10 < hp_cap() * 3 and act_cd > 0:
+		act_cd = maxi(0, act_cd - int(sk("c_martyr")))
+	if sk("c_spare") > 0.0 and hp > 0 and lost * 4 > hp_cap() and scrap > 0:
+		scrap -= 1
+		_tr_heal(int(sk("c_spare")))
+	if sk("c_fward") > 0.0 and mons.has(src) and _st_ok(src) and randf() * 100.0 < sk("c_fward"):
+		_st_get(src)["chill"] = true
+		_st_stun(src, 1)
+	if sk("c_scoat") > 0.0 and mons.has(src) and scrap >= 5:
+		_adv_damage_mon(src, int(sk("c_scoat")) * mini(4, scrap / 5), Color("c9a36b"))
+
+
+func _ck_blocked(src: Vector2i) -> void:
+	if sk("c_ironwill") > 0.0 and act_cd > 0:
+		act_cd = maxi(0, act_cd - int(sk("c_ironwill")))
+	if sk("c_unstop") > 0.0 and hp * 2 < hp_cap():
+		_tr_heal(int(sk("c_unstop")))
+
+
+func _ck_power() -> void:
+	if mode != "adv":
+		return
+	match cls:
+		"scout":
+			if sk("c_brair") > 0.0:
+				oxy = minf(oxy_max, oxy + sk("c_brair"))
+		"gambler":
+			if sk("c_rigged") > 0.0:
+				ck_st["lucky"] = true
+		"engineer":
+			var p := _pw()
+			var r := 2 + (1 if p >= 2 else 0) + int(sk("arcr"))
+			var n := 0
+			for c in _near_mons(pos, r, []):
+				if not _ck_foe(c):
+					continue
+				n += 1
+				if sk("c_arcstun") > 0.0:
+					_st_stun(c, (2 if p >= 3 else 1) + int(sk("c_arcstun")))
+				if sk("c_deton") > 0.0 and mstat.has(c) and mstat[c].has("burn"):
+					mstat[c].erase("burn")
+					_pop(c, "DETONATE", Color("ff9a3c"))
+					_fx_burst(Vector2(c), Color("ff9a3c"), 16, 3.4, 0.5, 5.0)
+					_adv_damage_mon(c, maxi(1, int(float(p_atk()) * sk("c_deton") / 100.0)), Color("ff9a3c"))
+			if sk("c_capsh") > 0.0 and n > 0:
+				sh = mini(sh_cap(), sh + n * int(sk("c_capsh")))
+		"medic":
+			if sk("c_miracle") > 0.0:
+				ck_st["inv"] = adv_steps + int(sk("c_miracle")) + 1
+			if sk("c_retrib") > 0.0:
+				for c in _near_mons(pos, 2, []):
+					if _ck_foe(c):
+						_fx_bolt(Vector2(pos), Vector2(c), Color("ff8a9a"))
+						_adv_damage_mon(c, maxi(1, int(float(p_atk()) * sk("c_retrib") / 100.0)), Color("ff8a9a"))
+			ck_st["bb"] = 0
+
+
+func _ck_surg() -> float:
+	var v := 0.0
+	if sk("c_triage") > 0.0 and hp * 2 < hp_cap():
+		v += sk("c_triage")
+	if sk("c_bbank") > 0.0:
+		v += 3.0 * float(ck_st.get("bb", 0))
+	return v
+
+
+func _ck_tool() -> void:
+	if mode != "adv":
+		return
+	if sk("c_ctrick") > 0.0:
+		var ts: Array = []
+		for o in _near_mons(pos, 3, []):
+			if _ck_foe(o):
+				ts.append(o)
+		if not ts.is_empty():
+			var tc: Vector2i = ts[randi() % ts.size()]
+			_fx_bolt(Vector2(pos), Vector2(tc), Color("ffd84f"))
+			_adv_damage_mon(tc, maxi(1, int(float(p_atk()) * sk("c_ctrick") / 100.0)), Color("ffd84f"))
+	if sk("c_sleight") > 0.0:
+		ck_st["sl"] = true
+	if sk("c_misdir") > 0.0:
+		for o in _near_mons(pos, 1, []):
+			_st_stun(o, int(sk("c_misdir")))
+	if sk("c_qfing") > 0.0 and act_cd > 0:
+		act_cd = maxi(0, act_cd - int(sk("c_qfing")))
+
+
+func _ck_drone(dt: Vector2i, ddmg: int) -> void:
+	if sk("c_dsh") > 0.0:
+		sh = mini(sh_cap(), sh + int(sk("c_dsh")))
+	if sk("c_hdrone") > 0.0 and mons.has(dt):
+		_st_stun(dt, int(sk("c_hdrone")))
+		_st_burn(dt, int(sk("c_hdrone")), 2 + floor_n / 2)
+	if sk("c_dtwin") > 0.0:
+		for o in _near_mons(pos, 3, [dt]):
+			if _ck_foe(o):
+				_fx_bolt(Vector2(pos) + Vector2(0, -0.4), Vector2(o), Color("4fd1c5"))
+				_adv_damage_mon(o, maxi(1, int(float(ddmg) * sk("c_dtwin") / 100.0)), Color("4fd1c5"))
+				break
+	if not mons.has(dt):
+		if sk("c_dscrap") > 0.0:
+			scrap += int(sk("c_dscrap"))
+			_pop(dt, "+%d SCRAP" % int(sk("c_dscrap")), Color("c9a36b"))
+		if sk("c_drecall") > 0.0 and act_cd > 0:
+			act_cd = maxi(0, act_cd - int(sk("c_drecall")))
+
+
+func _ck_coin() -> void:
+	if sk("c_dpock") > 0.0 and randf() * 100.0 < sk("c_dpock"):
+		scrap += 1
+		_pop(pos, "+1 SCRAP", Color("c9a36b"))
+
+
+func _ck_step(moved: bool) -> void:
+	if mode != "adv":
+		return
+	if int(ck_st.get("fl", -1)) != floor_n:
+		ck_st["fl"] = floor_n
+		ck_st["dodges"] = 0
+		ck_st["lf"] = 0
+		ck_st["w2"] = false
+		if sk("c_scoutah") > 0.0:
+			mom_steps += int(sk("c_scoutah"))
+	var cut := int(ck_st.get("cdcut", 0))
+	if cut > 0:
+		ck_st["cdcut"] = 0
+		act_cd = maxi(0, act_cd - cut)
+	if moved and sk("c_fleet") > 0.0 and adv_steps % maxi(1, int(sk("c_fleet"))) == 0:
+		oxy = minf(oxy_max, oxy + 1.0)
+	var idle := adv_steps - int(ck_st.get("la", 0))
+	if sk("c_runhigh") > 0.0 and idle >= 10 and idle % 10 == 0:
+		_tr_heal(int(sk("c_runhigh")))
+	if sk("c_2wind") > 0.0 and not bool(ck_st.get("w2", false)) and oxy * 4.0 < oxy_max:
+		ck_st["w2"] = true
+		oxy = minf(oxy_max, oxy + sk("c_2wind"))
+		_pop(pos, "SECOND WIND", Color("7fd8ff"))
+	if sk("c_saura") > 0.0 and adv_steps % 8 == 0:
+		var sa: Array = []
+		for o in _near_mons(pos, int(sk("c_saura")), []):
+			if _ck_foe(o) and _st_ok(o):
+				sa.append(o)
+		if not sa.is_empty():
+			var sc: Vector2i = sa[randi() % sa.size()]
+			_fx_bolt(Vector2(pos), Vector2(sc), Color("9fe8ff"))
+			_st_stun(sc, 1)
+	if sk("c_band") > 0.0 and adv_steps % maxi(1, int(sk("c_band"))) == 0 and _weapon_range() > 0 and ammo < ammo_max():
+		ammo += 1
+		_pop(pos, "+1 AMMO", Color("ffc24f"))
+	if sk("c_owatch") > 0.0 and adv_steps % 4 == 0 and ammo > 0 and _weapon_range() > 0:
+		for oc in _near_mons(pos, 3, []):
+			if _ck_foe(oc) and _mk(oc):
+				ammo -= 1
+				_fx_bolt(Vector2(pos), Vector2(oc), Color("ffc24f"))
+				_pop(pos, "OVERWATCH", Color("ffc24f"))
+				_adv_damage_mon(oc, maxi(1, int(float(p_atk()) * sk("c_owatch") / 100.0)), Color("ffc24f"))
+				break
+	if sk("c_gangel") > 0.0 and idle >= 2 and sh < mini(sh_cap(), int(sk("c_gangel"))):
+		sh += 1
+	if sk("c_recst") > 0.0 and moved and stations.has(pos) and act_cd > 0:
+		act_cd = 0
+		_pop(pos, "RECHARGED", Color("4fd1c5"))
+	_ck_turned_tick()
+
+
+# Hijacked enemies: count down, then attack (or walk toward) the nearest other enemy.
+func _ck_turned_tick() -> void:
+	var tl: Array = []
+	for c in mstat:
+		if mons.has(c) and int(mstat[c].get("tn", 0)) > 0:
+			tl.append(c)
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for c0 in tl:
+		var c: Vector2i = c0
+		if not mons.has(c) or not mstat.has(c):
+			continue
+		var st: Dictionary = mstat[c]
+		st["tn"] = int(st.get("tn", 0)) - 1
+		if int(st["tn"]) <= 0:
+			st.erase("tn")
+			_pop(c, "FREE", Color("ff8a5b"))
+			if sk("c_kswitch") > 0.0:
+				_adv_damage_mon(c, maxi(1, int(float(mon_hp_max(c)) * sk("c_kswitch") / 100.0)), Color("6dff9a"))
+			continue
+		if sk("c_hjheal") > 0.0:
+			mon_hp[c] = mini(mon_hp_max(c), mon_hp_now(c) + int(sk("c_hjheal")))
+		var tg: Array = []
+		for o in _near_mons(c, 1, []):
+			if _ck_foe(o):
+				tg.append(o)
+		if tg.is_empty():
+			var best_o := Vector2i(-1, -1)
+			var bd := 99
+			for o in _near_mons(c, 6, []):
+				if _ck_foe(o) and _cheb(o, c) < bd:
+					bd = _cheb(o, c)
+					best_o = o
+			if best_o.x < 0:
+				continue
+			var bn := c
+			for dv in dirs:
+				var n: Vector2i = c + dv
+				if _aopen(n) and not mons.has(n) and not vaults.has(n) and n != pos and _cheb(n, best_o) < bd:
+					bd = _cheb(n, best_o)
+					bn = n
+			if bn == c:
+				continue
+			_adv_move_mon(c, bn)
+			c = bn
+			for o in _near_mons(c, 1, []):
+				if _ck_foe(o):
+					tg.append(o)
+			if tg.is_empty():
+				continue
+		var o2: Vector2i = tg[0]
+		var dm := maxi(1, int(float(mon_atk(c)) * (1.0 + sk("c_hjdmg") / 100.0)))
+		mon_lunge[c] = [t, Vector2(o2 - c).normalized()]
+		_fx_bolt(Vector2(c), Vector2(o2), Color("6dff9a"))
+		_adv_damage_mon(o2, dm, Color("6dff9a"))
+		if mons.has(o2):
+			if sk("c_hjstun") > 0.0:
+				_st_stun(o2, int(sk("c_hjstun")))
+		else:
+			if sk("c_puppet") > 0.0 and act_cd > 0:
+				act_cd = maxi(0, act_cd - int(sk("c_puppet")))
+			if sk("c_dleech") > 0.0:
+				sh = mini(sh_cap(), sh + int(sk("c_dleech")))
+				_pop(pos, "+%d SHIELD" % int(sk("c_dleech")), Color("7db2ff"))
+
+
+func _act_hacker() -> bool:
+	var p := _pw()
+	var r := 4 + int(sk("c_hjr"))
+	var dur := 8 + (4 if p >= 1 else 0) + int(sk("c_hjlen"))
+	var want := 1 + (1 if p >= 3 else 0) + int(sk("c_hjn"))
+	var cands: Array = []
+	for c in _near_mons(pos, r, []):
+		if mons.has(c) and not tur.has(c) and not _boss_cell(c) and _st_ok(c):
+			cands.append(c)
+	cands.sort_custom(func(x, y): return mon_hp_now(x) > mon_hp_now(y))
+	var got := 0
+	for c0 in cands:
+		if got >= want:
+			break
+		var c: Vector2i = c0
+		if not mons.has(c):
+			continue
+		var st := _st_get(c)
+		st["tn"] = dur
+		st.erase("stun")
+		got += 1
+		_fx_bolt(Vector2(pos), Vector2(c), Color("6dff9a"))
+		_fx_ring(Vector2(c), Color("6dff9a"), 1.2, 0.4, 5.0)
+		_pop(c, "HIJACKED", Color("6dff9a"))
+		var em := int(sk("c_hjemp"))
+		if em > 0:
+			for o in _near_mons(c, em, []):
+				if _ck_foe(o):
+					_st_stun(o, 1)
+					if sk("c_bout") > 0.0:
+						_adv_damage_mon(o, maxi(1, int(float(p_atk()) * sk("c_bout") / 100.0)), Color("6dff9a"))
+	var hn := 0
+	if p >= 2:
+		var hk := 8 + int(sk("thack"))
+		for c in tur.keys():
+			if _cheb(c, pos) <= r and adv_vis.has(c) and int(tur[c].get("hk", 0)) <= 0:
+				tur[c]["hk"] = hk
+				_pop(c, "HACKED", Color("6dff9a"))
+				hn += 1
+	if got == 0 and hn == 0:
+		return _act_fail("No enemy within %d tiles to hijack" % r)
+	if sk("c_ghost") > 0.0:
+		cloak_steps = maxi(cloak_steps, int(sk("c_ghost")))
+	msg = "Hijack! %d enemy(ies) now fight for you for %d steps" % [got, dur]
+	_pop(pos, "HIJACK", Color("6dff9a"))
+	_act_fx(Color("6dff9a"))
+	_sfx("elite")
+	return true
+
+
+func _act_salvager() -> bool:
+	var p := _pw()
+	var r := 2 + (1 if p >= 1 else 0) + int(sk("c_sdr"))
+	var cands: Array = []
+	for c in _near_mons(pos, r, []):
+		if _ck_foe(c):
+			cands.append(c)
+	if cands.is_empty():
+		return _act_fail("No enemy within %d tiles" % r)
+	cands.sort_custom(func(x, y): return _cheb(x, pos) < _cheb(y, pos))
+	var mult := 2.5 if p >= 1 else 2.0
+	var total := 0
+	var kills := 0
+	for i in mini(2 if p >= 3 else 1, cands.size()):
+		var c: Vector2i = cands[i]
+		if not mons.has(c):
+			continue
+		var big := elite.has(c) or affix.has(c) or _boss_cell(c)
+		var dmg := maxi(1, int(float(p_atk()) * (mult + (sk("c_pcheck") / 100.0 if big else 0.0))))
+		_fx_bolt(Vector2(pos), Vector2(c), Color("c9a36b"))
+		_fx_burst(Vector2(c), Color("c9a36b"), 14, 3.0, 0.5, 5.0)
+		_adv_damage_mon(c, dmg, Color("c9a36b"))
+		total += dmg
+		if sk("c_wball") > 0.0:
+			for o in _near_mons(c, 1, []):
+				if _ck_foe(o):
+					_adv_damage_mon(o, maxi(1, int(float(dmg) * sk("c_wball") / 100.0)), Color("c9a36b"))
+		if not mons.has(c):
+			kills += 1
+			_ck_salvage(c, big, p)
+	var shg := int(float(total) * sk("c_jplate") / 100.0) + int(sk("c_jshield"))
+	if shg > 0:
+		sh = mini(sh_cap(), sh + shg)
+	msg = "Strip Down! %d damage" % total + ("  (%d salvaged)" % kills if kills > 0 else "")
+	_pop(pos, "STRIP DOWN", Color("c9a36b"))
+	_act_fx(Color("c9a36b"))
+	_sfx("big")
+	return true
+
+
+func _ck_salvage(c: Vector2i, big: bool, p: int) -> void:
+	scrap += 2 + int(sk("c_sdscrap"))
+	var cv := (coin_val() * 2 + int(sk("c_sdcoin"))) * maxi(1, int(sk("c_grush")))
+	coins += cv
+	_pop(c, "SALVAGED +%d" % cv, Color("ffd84f"))
+	var gch := 0.25 + sk("c_sdgear") / 100.0
+	if big and sk("c_rhunt") > 0.0:
+		gch = 1.0
+	if randf() < gch and _adv_give_gear(_adv_roll_gear(null, 0)):
+		_pop(pos, "GEAR!", Color("ffd84f"))
+	if p >= 2 and _give_use(_random_use()):
+		_pop(pos, "TOOL!", Color("4fd1c5"))
+	if sk("c_sdref") > 0.0:
+		_ck_cut(int(sk("c_sdref")))
