@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO, MASTERY, CODEX }
 const GEAR_SLOTS := ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]
 
 const BAG_MAX := 12
@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 74
+const BUILD := 75
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -401,7 +401,7 @@ var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 790, 400, 76)
 var btn_shop := Rect2(160, 880, 400, 76)
 var btn_back := Rect2(250, 1010, 220, 64)
-var btn_shop2 := Rect2(160, 1100, 400, 76)
+var btn_shop2 := Rect2(380, 1100, 300, 76)
 var btn_prev := Rect2(40, 1010, 190, 64)
 var btn_next := Rect2(490, 1010, 190, 64)
 
@@ -468,6 +468,7 @@ func _ready() -> void:
 		lb_uid = String(cfg.get_value("lb", "uid", ""))
 		lb_sent["puzzle"] = int(cfg.get_value("lb", "sent_puzzle", 0))
 		lb_sent["adv"] = int(cfg.get_value("lb", "sent_adv", 0))
+		_mx_load(cfg)
 		if migrate_shop:
 			_save_meta()
 	if lb_uid == "":
@@ -509,6 +510,10 @@ func _ready() -> void:
 		return
 	if "--acttest" in args:
 		_act_selftest()
+		get_tree().quit()
+		return
+	if "--mxtest" in args:
+		_mx_selftest()
 		get_tree().quit()
 		return
 	if "--advtest" in args:
@@ -946,6 +951,7 @@ func _save_meta() -> void:
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
 	cfg.set_value("s", "shop_v2", true)
+	_mx_save(cfg)
 	for k in ups:
 		cfg.set_value("ups", k, int(ups[k]))
 	cfg.save("user://best.cfg")
@@ -1703,8 +1709,11 @@ func _die(why: String) -> void:
 		best = reached
 		was_best = true
 	var delta := maxi(0, coins - run_banked)
+	var mxb := _mx_bank_bonus(delta)
+	delta += mxb
 	bank += delta
 	run_banked += delta
+	_mx_death()
 	_save_meta()
 	_lb_note(reached, true)
 	_sfx("death")
@@ -1715,6 +1724,8 @@ func _die(why: String) -> void:
 		dl.append("Steps %d   Gear found %d" % [run_steps, run_gear])
 	dl.append("Floors cleared %d   Best %d%s" % [reached, adv_best if mode == "adv" else best, "   NEW BEST!" if was_best else ""])
 	dl.append("Banked +%d coins (total %d)" % [delta, bank])
+	if mode == "adv" and _mx_on():
+		dl.append(_mx_death_line(mxb))
 	over_sub = "\n".join(dl)
 
 
@@ -2212,15 +2223,13 @@ func _act_use() -> void:
 	if ok:
 		if gm("overcell"):
 			sh = mini(sh_cap(), sh + 4)
-		act_cd = int(ceil(float(ACTS[cls]["cd"]) * (0.8 if gm("cdgem") else 1.0) * (1.0 - (sk("pcell") + gear("pcell")) / 100.0) * (0.5 if relic_n("ocell") > 0 else 1.0)))
+		_mx_power_used()
+		act_cd = int(ceil(float(ACTS[cls]["cd"]) * _mx_cd_mult() * (0.8 if gm("cdgem") else 1.0) * (1.0 - (sk("pcell") + gear("pcell")) / 100.0) * (0.5 if relic_n("ocell") > 0 else 1.0)))
 
 
 func _act_scout() -> bool:
 	if mode == "adv":
-		oxy = minf(oxy_max, oxy + 10.0)
-		act_free = 8
-		msg = "Deep Breath: +10 air, your next 8 steps cost no air"
-		_pop(pos, "+10 AIR", Color("7fd8ff"))
+		_mx_scout_breath()
 	else:
 		if moves <= depth_for(moves) * period:
 			return _act_fail("The dark is not close yet")
@@ -2234,8 +2243,7 @@ func _act_scout() -> bool:
 
 func _act_brute() -> bool:
 	if mode == "adv":
-		act_stance = 2
-		msg = "Iron Stance: blocks the next 2 hits"
+		_mx_brute_stance()
 	else:
 		boost = maxi(boost, 3)
 		msg = "Iron Stance: your next fight counts +3 levels"
@@ -2246,10 +2254,11 @@ func _act_brute() -> bool:
 
 
 func _act_gambler() -> bool:
-	if inv.is_empty():
+	if inv.is_empty() and not (mode == "adv" and _pw() >= 1):
 		return _act_fail("No tools to reshuffle")
 	for i in inv.size():
 		inv[i] = _random_use()
+	_mx_reshuffle()
 	msg = "Reshuffle! Every tool was rerolled"
 	_pop(pos, "RESHUFFLE", Color("ffd84f"))
 	_act_fx(Color("ffd84f"))
@@ -2264,6 +2273,7 @@ func _act_gunslinger() -> bool:
 		if act_rico:
 			return _act_fail("Ricochet is already loaded")
 		act_rico = true
+		_mx_rico_load()
 		msg = "Ricochet loaded: your next shot deals double damage and bounces to a second target for the same damage"
 		_pop(pos, "LOADED", Color("ff9a4f"))
 		_act_fx(Color("ff9a4f"))
@@ -2327,7 +2337,8 @@ func _act_ricochet(from: Vector2i, dmg: int, quiet := false) -> void:
 func _act_mystic() -> bool:
 	if mode == "adv":
 		hex_armed = true
-		msg = "Hex Mark: your next hit deals double damage"
+		hex_left = int(sk("hexn"))
+		msg = "Hex Mark: your next hit deals %s damage" % _mx_hex_txt()
 		_act_fx(Color("c07cff"))
 		_sfx("shield")
 		return true
@@ -2656,7 +2667,7 @@ func _load_run() -> bool:
 
 
 func _xfer_pack() -> PackedByteArray:
-	var meta := {"best": best, "adv_best": adv_best, "bank": bank, "ups": ups.duplicate(), "v2": true}
+	var meta := {"best": best, "adv_best": adv_best, "bank": bank, "ups": ups.duplicate(), "v2": true, "mx": _mx_pack()}
 	var pkg := {"ver": 1, "meta": meta, "run": _read_save()}
 	var raw := var_to_bytes(pkg)
 	var comp := raw.compress(FileAccess.COMPRESSION_GZIP)
@@ -2734,6 +2745,7 @@ func _xfer_apply_b64(b64: String) -> void:
 				ups[k] = int(iu[k])
 	else:
 		bank += _shop_refund(iu)
+	_mx_unpack(meta.get("mx", {}))
 	_save_meta()
 	var run = pkg.get("run", {})
 	if run is Dictionary and not run.is_empty():
@@ -2754,6 +2766,7 @@ func _wipe_progress() -> void:
 	adv_best = 0
 	for k in ups.keys():
 		ups[k] = 0
+	_mx_wipe()
 	reset_armed = -10.0
 	_save_meta()
 	_sfx("death")
@@ -2817,6 +2830,8 @@ func _new_run(start_floor := 1) -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if state == SKILLS and _sk_gui(event):
+		return
+	if state == CODEX and _cx_gui(event):
 		return
 	if state == INTRO:
 		if (event is InputEventMouseButton and event.pressed) or (event is InputEventKey and event.pressed) or (event is InputEventScreenTouch and event.pressed):
@@ -2931,7 +2946,16 @@ func _gui_input(event: InputEvent) -> void:
 	if state == SETTINGS:
 		_settings_input(p)
 		return
+	if state == MASTERY:
+		_mx_input(p)
+		return
+	if state == CODEX:
+		_cx_input(p)
+		return
 	if state == MODE:
+		if btn_codex.has_point(p):
+			_cx_open()
+			return
 		if btn_lb.has_point(p):
 			_lb_open()
 			_sfx("ui")
@@ -3000,6 +3024,11 @@ func _gui_input(event: InputEvent) -> void:
 				return
 			_new_run()
 			_first_tut()
+			return
+		if btn_mast.has_point(p):
+			mx_cls = String(class_defs[cls_page]["id"])
+			state = MASTERY
+			_sfx("ui")
 			return
 		if btn_shop2.has_point(p):
 			shop_return = CLASS
@@ -3186,7 +3215,7 @@ func _process(dt: float) -> void:
 		bank_disp = float(bank)
 	else:
 		bank_disp = move_toward(bank_disp, float(bank), maxf(2.0, absf(bank_disp - bank) * dt * 5.0))
-	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS:
+	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS or state == MASTERY or state == CODEX:
 		modulate.a = clampf(0.3 + (t - state_t) * 6.0, 0.0, 1.0)
 	elif modulate.a < 1.0:
 		modulate.a = 1.0
@@ -4759,7 +4788,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS:
+	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS or state == MASTERY or state == CODEX:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -5181,7 +5210,7 @@ func _draw_menu_hero(acc: Color) -> void:
 func _draw_overlay(acc: Color) -> void:
 	if state == MODE:
 		_draw_menu_bg(_menu_tint(acc))
-	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC]:
+	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC, MASTERY, CODEX]:
 		_draw_menu_bg(_menu_tint(acc))
 	elif state != CLEAR:
 		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
@@ -5199,6 +5228,10 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_saves(acc)
 	elif state == SETTINGS:
 		_draw_settings(acc)
+	elif state == MASTERY:
+		_draw_mastery(acc)
+	elif state == CODEX:
+		_draw_codex(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -5207,6 +5240,7 @@ func _draw_overlay(acc: Color) -> void:
 		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 70), 52, ma, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_button(btn_tut, "HOW TO PLAY", Color("ffd84f"), 34, "help")
 		_button(btn_lb, "LEADERBOARD", Color("7fd8ff"), 34, "trophy")
+		_button(btn_codex, "CODEX", Color("c9a2ff"), 34)
 		_button(btn_quit, "QUIT", Color("ff8a8a"), 30)
 		if save_info != "":
 			_panel(btn_cont, Color("6dff9a"), 0.2)
@@ -5329,6 +5363,8 @@ func _draw_overlay(acc: Color) -> void:
 		_obox(card, Color(cc.r, cc.g, cc.b, 0.12))
 		_aline(card, cc, 3.0)
 		_ctext(String(cd["name"]).to_upper(), Vector2(360, 318), 44, cc)
+		if copen:
+			_mx_card_line(cid)
 		# idle animation: gentle breathing squash and sway
 		var isy := 1.0 + 0.03 * sin(t * 2.6)
 		var isx := 1.0 + (1.0 - isy) * 0.8
@@ -5364,6 +5400,7 @@ func _draw_overlay(acc: Color) -> void:
 			draw_circle(Vector2(360 + (i - (class_defs.size() - 1) * 0.5) * 30.0, 978), 8.0 if i == cls_page else 5.0, cc if i == cls_page else Color(1, 1, 1, 0.3))
 		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else "LOCKED - OPEN SHOP", cc if copen else Color("ffc93c"), 28)
 		_button(btn_shop2, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
+		_button(btn_mast, "MASTERY", Color("ffd84f"), 28)
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP and mini_pick:
@@ -6803,6 +6840,7 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 			sh = mini(sh_cap(), sh + 3)
 			mom_steps += 1
 		msg += "   You dodge %s!" % who
+		_mx_dodged()
 		return true
 	if gm("ablative") and not abl_used:
 		abl_used = true
@@ -6833,6 +6871,7 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 		act_stance -= 1
 		_pop(pos, "BLOCKED", Color("7db2ff"))
 		msg += "   Iron Stance blocks %s!" % who
+		_mx_blocked(src)
 		_sfx("shield")
 		return true
 	if sk("msupp") > 0.0 and _mk(src):
@@ -6949,9 +6988,9 @@ func _adv_damage_mon(c: Vector2i, dmg: int, col := Color("ff9a3c")) -> void:
 		_pop(c, "SHIELDED", Color("7fe8ff"))
 		return
 	if hex_armed:
-		hex_armed = false
-		dmg *= 2
-		_pop(c, "HEX x2", Color("c07cff"))
+		_hex_use()
+		dmg = int(round(float(dmg) * _hex_mult()))
+		_pop(c, "HEX " + _mx_hex_txt(), Color("c07cff"))
 	if sk("mark") > 0.0 and _mk(c):
 		dmg = int(round(float(dmg) * (1.0 + sk("mark") / 100.0)))
 	if _any_tr("rot") and mstat.has(c) and mstat[c].has("psn"):
@@ -7895,13 +7934,15 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		else:
 			_st_get(c)["mk"] = true
 			_pop(c, "MARKED", Color("8fa8ff"))
+	mul += _mx_hit_mul(c)
 	var d := maxi(1, int(round(float(dmg + add) * mul)))
 	if String(affix.get(c, "")) == "plated":
 		d = maxi(1, d - 2 - floor_n / 8)
 	if hex_armed and _st_ok(c):
-		hex_armed = false
-		d *= 2
-		_pop(c, "HEX x2", Color("c07cff"))
+		_hex_use()
+		d = int(round(float(d) * _hex_mult()))
+		hex_hit = true
+		_pop(c, "HEX " + _mx_hex_txt(), Color("c07cff"))
 	if mstat.has(c) and mstat[c].has("corr"):
 		d = int(round(float(d) * 1.5))
 	if gz:
@@ -7930,6 +7971,7 @@ func _tr_on_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int) ->
 	if crit and left > 0 and sk("bleed") > 0.0 and mons.has(c) and _st_ok(c):
 		_st_get(c)["bleed"] = [int(sk("bleed")), _bleed_dmg(c)]
 		_pop(c, "BLEED", Color("ff4d6d"))
+	left = _mx_on_hit(c, dealt, left)
 	if tl.is_empty() or tr_depth > 2:
 		return left
 	var el_pre := _elems(c)
@@ -8425,6 +8467,7 @@ func _make_skills() -> void:
 		sk_adj[ida] = []
 		_sk_link(ida, ka)
 		_sk_link(ida, kb)
+	_ck_make()
 
 
 func _sk_label(txt: String, c: Vector2, col: Color) -> void:
@@ -8440,13 +8483,16 @@ func _sk_link(a: String, b: String) -> void:
 
 
 func sk(stat: String) -> float:
-	if mode != "adv" or skills.is_empty():
+	if mode != "adv":
 		return 0.0
-	var tot := 0.0
+	var tot := float(_cls_pass().get(stat, 0.0))
 	for id in skills:
 		var r := int(skills[id])
 		if r > 0 and sk_defs.has(id) and String(sk_defs[id]["stat"]) == stat:
-			tot += float((sk_defs[id]["v"] as Array)[r - 1])
+			if sk_defs[id].has("cls") and not _ck_on(String(id)):
+				continue
+			var va: Array = sk_defs[id]["v"]
+			tot += float(va[mini(r, va.size()) - 1])
 	return tot
 
 
@@ -8470,6 +8516,8 @@ func skill_spent() -> int:
 
 func sk_unlocked(id: String) -> bool:
 	var d: Dictionary = sk_defs[id]
+	if d.has("cls"):
+		return _ck_unlocked(id)
 	if bool(d.get("apex", false)):
 		return sk_rank(String(d["req"][0])) >= 1 and sk_rank(String(d["req"][1])) >= 1
 	if int(d["n"]) == 0 and not bool(d.get("outer", false)):
@@ -8591,6 +8639,8 @@ func _sk_clamp() -> void:
 
 # Drag to pan, pinch / wheel to zoom. Returns true when the event was used.
 func _sk_gui(event: InputEvent) -> bool:
+	if sk_view == 1:
+		return false
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			sk_touch[event.index] = event.position
@@ -8649,7 +8699,12 @@ func _sk_gui(event: InputEvent) -> bool:
 
 
 func _skill_input(p: Vector2) -> void:
-	if btn_sk_ctr.has_point(p):
+	if btn_sk_view.has_point(p):
+		sk_view = 1 - sk_view
+		sk_sel = ""
+		_sfx("ui")
+		return
+	if sk_view == 0 and btn_sk_ctr.has_point(p):
 		sk_off = Vector2.ZERO
 		sk_zoom = 0.75
 		_sfx("ui")
@@ -8682,7 +8737,10 @@ func _skill_input(p: Vector2) -> void:
 	if p.y < SK_MAP_TOP or p.y > SK_MAP_BOT:
 		return
 	for id in sk_defs:
-		var dd: float = _sk_to_screen(sk_defs[id]["pos"]).distance_to(p)
+		if sk_defs[id].has("cls") != (sk_view == 1) or (sk_view == 1 and String(sk_defs[id]["cls"]) != cls):
+			continue
+		var spos: Vector2 = sk_defs[id]["pos"]
+		var dd: float = (spos if sk_view == 1 else _sk_to_screen(spos)).distance_to(p)
 		if dd < bd:
 			bd = dd
 			best = String(id)
@@ -8692,6 +8750,14 @@ func _skill_input(p: Vector2) -> void:
 
 
 func _draw_skills(acc: Color) -> void:
+	if sk_view == 1:
+		_ck_draw_map()
+	else:
+		_draw_skill_web()
+	_draw_skills_ui(acc)
+
+
+func _draw_skill_web() -> void:
 	draw_set_transform(SK_C + sk_off - SK_C * sk_zoom, 0.0, Vector2(sk_zoom, sk_zoom))
 	for e in sk_edges:
 		var pa: Vector2 = sk_defs[e[0]]["pos"]
@@ -8708,6 +8774,8 @@ func _draw_skills(acc: Color) -> void:
 	_ctext("YOU", SK_C, 15, Color(1, 1, 1, 0.75))
 	for id in sk_defs:
 		var d: Dictionary = sk_defs[id]
+		if d.has("cls"):
+			continue
 		var c: Vector2 = d["pos"]
 		var col: Color = d["col"]
 		var rk := sk_rank(String(id))
@@ -8742,15 +8810,20 @@ func _draw_skills(acc: Color) -> void:
 		var th3 := deg_to_rad(SK_A0 + 60.0 * g + 30.0)
 		_sk_label(String(SK_BR2[g][0]), SK_C + Vector2(cos(th3), sin(th3)) * 628.0, SK_BR2[g][1])
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+func _draw_skills_ui(acc: Color) -> void:
 	# cover anything panned outside the map area
 	var vw := get_viewport_rect().size
 	draw_rect(Rect2(0, 0, vw.x, SK_MAP_TOP), Color("0a0c14"))
 	draw_rect(Rect2(0, SK_MAP_BOT, vw.x, vw.y - SK_MAP_BOT + 400.0), Color("0a0c14"))
 	draw_line(Vector2(0, SK_MAP_TOP), Vector2(vw.x, SK_MAP_TOP), Color(1, 1, 1, 0.15), 2.0)
-	_txt("SKILL WEB", Vector2(0, 130), 52, acc)
+	_txt("CLASS TREE" if sk_view == 1 else "SKILL WEB", Vector2(0, 130), 52, acc)
 	var nxt := (level / 3 + 1) * 3
 	_txt("Points: %d      next at level %d      Coins: %d" % [skill_pts, nxt, coins], Vector2(0, 178), 26, Color("ffd84f") if skill_pts > 0 else Color(1, 1, 1, 0.7))
-	_button(btn_sk_ctr, "RECENTRE", acc, 18)
+	if sk_view == 0:
+		_button(btn_sk_ctr, "RECENTRE", acc, 18)
+	_button(btn_sk_view, "SKILL WEB" if sk_view == 1 else "CLASS TREE", acc, 18)
 	# detail panel
 	_obox(Rect2(30, 956, 660, 178), Color(1, 1, 1, 0.05))
 	if sk_sel == "":
@@ -8769,6 +8842,8 @@ func _draw_skills(acc: Color) -> void:
 			_button(btn_sk_buy, ("UPGRADE  (%d pt)" % sk_cost(sk_sel)) if sk_can_buy(sk_sel) else "LOCKED", sc if sk_can_buy(sk_sel) else Color(1, 1, 1, 0.35), 19)
 			if not sk_unlocked(sk_sel):
 				warn = "Needs both neighbouring keystones" if smax == 1 else ("Needs a connected node first" if not bool(sd["key"]) else "Needs an outer node at rank 2")
+				if sd.has("cls"):
+					warn = _ck_lock_reason(sk_sel)
 			elif skill_pts < sk_cost(sk_sel):
 				warn = "Not enough skill points"
 		var ry := 1022.0
@@ -9262,6 +9337,7 @@ func _adv_init_run() -> void:
 			equip[String(gear_defs[gb(kid)]["slot"])] = kid
 		else:
 			bag.append(kid)
+	_mx_init_run()
 
 
 func xp_need() -> int:
@@ -9314,6 +9390,7 @@ func _adv_begin() -> void:
 	stim_used = false
 	adr_used = false
 	echoc_used = false
+	_cx_scan()
 	sh = maxi(sh, (8 if start_shield() else 0) + int(gear("shield")))
 	sk_wind = false
 	shield = false
@@ -9497,6 +9574,7 @@ func _adv_path(target: Vector2i) -> Array[Vector2i]:
 
 func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	run_kills += 1
+	_mx_kill(nc, is_boss)
 	var back := 0
 	if thief_held.has(nc):
 		back = int(thief_held[nc]) + _repo_bonus()
@@ -10350,6 +10428,8 @@ func _adv_shoot_do(c: Vector2i) -> void:
 	else:
 		ammo = maxi(0, ammo - (2 if relic_n("heavyammo") > 0 else 1))
 	var dmg := _tr_hit_mod(c, _ranged_hv())
+	if sk("fardmg") > 0.0 and maxi(absi(c.x - pos.x), absi(c.y - pos.y)) >= 3:
+		dmg = int(round(float(dmg) * (1.0 + sk("fardmg") / 100.0)))
 	if act_rico:
 		dmg *= 2
 	var crit := randf() * 100.0 < crit_chance()
@@ -10384,6 +10464,8 @@ func _adv_shoot_do(c: Vector2i) -> void:
 	if act_rico and dmg > 0:
 		act_rico = false
 		_act_ricochet(c, dmg)
+		for rb in _rico_extra():
+			_act_ricochet(c, dmg, true)
 	if mons.has(c) and not tur.has(c) and not is_boss:
 		var kd := String(kinds.get(c, ""))
 		if kd == "" or kd == "sleeper" or kd == "feeder":
@@ -10647,6 +10729,7 @@ func _adv_clear() -> void:
 	walk.clear()
 	aim = -1
 	_sfx("clear")
+	_mx_floor_clear()
 	var bonus := int(oxy / 20.0)
 	coins += bonus
 	over_title = "BOSS DEFEATED" if boss_floor else "FLOOR %d CLEARED" % floor_n
@@ -12559,7 +12642,7 @@ func _skill_selftest() -> int:
 			if not seen.has(o):
 				seen[o] = true
 				queue.append(o)
-	if seen.size() != 36 + 6 * SK_BR2.size() + SK_APX.size() or sk_defs.size() != 36 + 6 * SK_BR2.size() + SK_APX.size():
+	if seen.size() != 36 + 6 * SK_BR2.size() + SK_APX.size() or sk_defs.size() - _ck_count() != 36 + 6 * SK_BR2.size() + SK_APX.size():
 		print("FAIL web connectivity ", seen.size())
 		bad += 1
 	skills.clear()
@@ -13374,3 +13457,1365 @@ func _self_test() -> void:
 		for kind in ["pot", "big", "lamp", "shield", "coin"]:
 			_item_tex(kind)
 	print("TEST DONE unsolvable=%d" % bad)
+
+
+# ===== B75: Class Mastery, class trees, specialisations and the Codex =====
+
+var mxp: Dictionary = {}      # class id -> total mastery XP
+var mspec: Dictionary = {}    # class id -> "a" / "b" (chosen at mastery 10)
+var msub: Dictionary = {}     # class id -> "1" / "2" (chosen at mastery 20)
+var cx: Dictionary = {}       # codex progress: stats, best floors, builds, things found
+var run_mxp := 0
+var mx_cls := "scout"
+var cp: Dictionary = {}
+var cp_cls := ""
+var cp_lv := 0
+var cp_dirty := true
+var hex_left := 0
+var hex_hit := false
+var dodge_ready := false
+var sk_view := 0              # 0 skill web, 1 class tree
+var ck_edges: Array = []
+var cx_tab := 0
+var cx_scroll := 0.0
+var cx_max := 0.0
+var cx_lay: Array = []
+var btn_sk_view := Rect2(20, 214, 200, 54)
+var btn_mast := Rect2(40, 1100, 300, 76)
+var btn_codex := Rect2(50, 1032, 620, 80)
+var btn_mx_l := Rect2(20, 100, 90, 70)
+var btn_mx_r := Rect2(610, 100, 90, 70)
+var btn_mx_back := Rect2(160, 1190, 400, 70)
+var btn_cx_t0 := Rect2(40, 168, 310, 64)
+var btn_cx_t1 := Rect2(370, 168, 310, 64)
+var btn_cx_back := Rect2(160, 1190, 400, 70)
+const CX_TOP := 250.0
+const CX_BOT := 1170.0
+const MX_MAX := 30
+const MX_STAR := 1500
+const CK_MREQ := [1, 3, 6, 8, 12, 16]
+const CK_SREQ := [10, 11, 13, 17]
+const MX_REW := ["node", "hp", "node", "sp", "pw", "node", "air", "node", "tool", "spec",
+	"hp", "node", "coin", "sp", "pw", "node", "air", "slot", "hp", "sub",
+	"coin", "sp", "air", "hp", "pw", "gear", "sp", "hp", "coin", "master"]
+
+# Class trees. Node = [name, description (%s = value), stat, [rank 1, rank 2]].
+# Spec passives ("s") are always on once chosen. Sub keystones have one rank and cost 3 points.
+const CK := {
+	"scout": {
+		"core": [
+			["Trailblazer", "+%s sight radius", "sight", [1, 2]],
+			["Light Feet", "%s%% less air used per step", "airsave", [5, 10]],
+			["Evasive", "+%s%% dodge chance", "dodge", [4, 8]],
+			["Second Breath", "Deep Breath gives %s more free steps", "brfree", [2, 4]],
+			["Scavenger's Nose", "Kills restore %s air", "killair", [2, 4]],
+			["Windwalker", "Dodging restores %s air and heals 2 health", "dodgeair", [5, 10]]],
+		"a": {"n": "PATHFINDER", "d": "+20 max air and +1 sight. A survivor who lives off the station.", "s": {"air": 20, "sight": 1},
+			"nodes": [
+				["Cartographer", "Air pods give %s%% more air", "pod", [20, 40]],
+				["Long Strides", "After a kill your next %s steps cost no air", "momentum", [2, 4]],
+				["Oxygen Cache", "O2 stations also heal %s%% of max health (3 times per floor)", "stationheal", [10, 20]],
+				["Deep Diver", "+%s max air", "air", [15, 30]]],
+			"subs": {
+				"1": {"n": "VOIDRUNNER", "d": "10% less air used per step.", "s": {"airsave": 10}, "k": ["Void Sprint", "While above half air you deal %s%% more damage", "airdmg", [30]]},
+				"2": {"n": "SURVIVOR", "d": "+8 max health.", "s": {"hp": 8}, "k": ["Last Gasp", "Once per floor, running out of air refills %s air instead", "wind", [40]]}}},
+		"b": {"n": "SKIRMISHER", "d": "+6% dodge and +5% crit. Strike, slip away, strike again.", "s": {"dodge": 6, "crit": 5},
+			"nodes": [
+				["Feint", "Dodging heals %s health", "dodgeheal", [2, 4]],
+				["Flank", "+%s%% damage to enemies at full health", "opener", [20, 40]],
+				["Quick Hands", "+%s%% crit chance", "crit", [5, 10]],
+				["Slip Away", "+%s%% dodge chance", "dodge", [4, 8]]],
+			"subs": {
+				"1": {"n": "PHANTOM", "d": "+5% dodge.", "s": {"dodge": 5}, "k": ["Phantom Step", "After you dodge, your next hit deals %s%% more damage", "dodgedmg", [100]]},
+				"2": {"n": "HUNTER", "d": "+10% ranged crit.", "s": {"rcrit": 10}, "k": ["Hunter's Mark", "+%s%% damage to elites, affixed enemies and bosses", "bigdmg", [35]]}}},
+	},
+	"brute": {
+		"core": [
+			["Thick Skin", "+%s max health", "hp", [4, 8]],
+			["Heavy Hands", "+%s melee attack", "atk", [1, 2]],
+			["Bracing", "+%s armour", "armor", [1, 2]],
+			["Unbreakable", "Iron Stance blocks %s more hit(s)", "stancen", [1, 2]],
+			["Bloodied", "Kills heal %s%% of max health", "kheal", [3, 6]],
+			["Retaliation", "Hits blocked by Iron Stance strike back for %s%% of your attack", "stancedmg", [100, 200]]],
+		"a": {"n": "JUGGERNAUT", "d": "+1 armour and +10 max health. Nothing gets through.", "s": {"armor": 1, "hp": 10},
+			"nodes": [
+				["Bulwark", "+%s armour while an enemy is next to you", "hold", [1, 2]],
+				["Spiked Hide", "Enemies that hit you take %s%% of the damage back", "thorns", [10, 20]],
+				["Iron Lungs", "+%s max shields", "maxsh", [6, 12]],
+				["Grit", "Below 30%% health you take %s%% less damage", "laststand", [15, 30]]],
+			"subs": {
+				"1": {"n": "WARDEN", "d": "+8 max shields.", "s": {"maxsh": 8}, "k": ["Fortress Stance", "Iron Stance also gives %s shield", "stancesh", [12]]},
+				"2": {"n": "COLOSSUS", "d": "+15 max health.", "s": {"hp": 15}, "k": ["Immovable", "Kills give %s shield", "killsh", [3]]}}},
+		"b": {"n": "BERSERKER", "d": "+1 attack and +10% damage under half health. Pain is fuel.", "s": {"atk": 1, "berserk": 10},
+			"nodes": [
+				["Rage", "+%s%% damage while under half health", "berserk", [10, 20]],
+				["Bloodthirst", "Heal %s on every hit", "leech", [1, 2]],
+				["Cleaver", "+%s%% damage to enemies under half health", "finish", [15, 30]],
+				["Pain Fuel", "+%s%% damage for every 10%% of health you are missing", "pain", [2, 3]]],
+			"subs": {
+				"1": {"n": "WARLORD", "d": "+8% crit.", "s": {"crit": 8}, "k": ["Warcry", "Kills cut your power's recharge by %s steps", "killcd", [3]]},
+				"2": {"n": "BLOODRAGER", "d": "Kills heal 4% of max health.", "s": {"kheal": 4}, "k": ["Blood Frenzy", "Crits make enemies bleed for %s steps (10%% of their max health a step)", "bleed", [3]]}}},
+	},
+	"mystic": {
+		"core": [
+			["Ward Weave", "+%s max shields", "maxsh", [4, 8]],
+			["Focus", "+%s%% XP", "xp", [10, 20]],
+			["Third Eye", "+%s sight radius", "sight", [1, 2]],
+			["Deep Hex", "Hex Mark deals +%s%% more damage", "hexmult", [50, 100]],
+			["Mana Shield", "Using your class power gives %s shield", "pwsh", [4, 8]],
+			["Hex Lock", "A hexed hit stuns the target for %s step(s)", "hexstun", [1, 2]]],
+		"a": {"n": "ELEMENTALIST", "d": "Burns last +1 step and found weapons roll elements 25% more often.", "s": {"kindle": 1, "attune": 25},
+			"nodes": [
+				["Pyromancy", "Your burns last +%s step(s)", "kindle", [1, 2]],
+				["Storm Call", "+%s%% stun chance from shock", "conduct", [10, 20]],
+				["Frost Bite", "Frozen enemies take +%s%% damage", "dfreeze", [20, 40]],
+				["Venom", "Poison can stack +%s higher", "catal", [1, 2]]],
+			"subs": {
+				"1": {"n": "ARCHMAGE", "d": "Elemental Reactions are always on (power x1, stacks with the skill).", "s": {"react": 1}, "k": ["Arcane Surge", "+%s%% damage to enemies carrying any element", "eldmg", [30]]},
+				"2": {"n": "STORMCALLER", "d": "+15% stun chance from shock.", "s": {"conduct": 15}, "k": ["Chain Lightning", "Every hit has a %s%% chance to arc to an enemy within 2 tiles for half damage", "chain", [30]]}}},
+		"b": {"n": "WARLOCK", "d": "Your first hit marks enemies (+15% damage taken) and every hit heals 1.", "s": {"mark": 15, "leech": 1},
+			"nodes": [
+				["Curse Mark", "Marked enemies take +%s%% damage", "mark", [10, 20]],
+				["Drain", "Heal %s on every hit", "leech", [1, 2]],
+				["Withering", "Marked enemies deal %s%% less damage to you", "msupp", [10, 20]],
+				["Soul Tap", "Kills heal %s%% of max health", "kheal", [3, 6]]],
+			"subs": {
+				"1": {"n": "HEXBLADE", "d": "+1 attack.", "s": {"atk": 1}, "k": ["Twin Hex", "Hex Mark lasts for %s extra hit(s)", "hexn", [1]]},
+				"2": {"n": "SOULREAPER", "d": "Kills cut your power's recharge by 2 steps.", "s": {"killcd": 2}, "k": ["Reap", "Kills restore %s air and give 2 shield", "reap", [6]]}}},
+	},
+	"gambler": {
+		"core": [
+			["Lucky Streak", "+%s%% crit chance", "crit", [4, 8]],
+			["Pickpocket", "Coins are worth +%s each", "coin", [1, 2]],
+			["Loaded Dice", "%s%% chance for a kill to give double XP", "lucky", [6, 12]],
+			["House Edge", "Reshuffle also gives %s coins", "rscoin", [3, 6]],
+			["Card Trick", "%s%% chance a tool isn't used up", "tinker", [10, 20]],
+			["Jackpot", "Kills have a %s%% chance to drop a pile of coins", "jackpot", [8, 15]]],
+		"a": {"n": "HIGH ROLLER", "d": "Shops charge 10% less and coins are worth +1. Money talks.", "s": {"haggle": 10, "coin": 1},
+			"nodes": [
+				["Haggle", "Shops charge %s%% less", "haggle", [5, 10]],
+				["Bounty", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
+				["Appraise", "Gear sells for %s%% more", "apprais", [15, 30]],
+				["Vault Sense", "Vaults give %s extra tool(s)", "vault", [1, 2]]],
+			"subs": {
+				"1": {"n": "TYCOON", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Compound Interest", "Clearing a floor pays %s%% of your run coins as interest (up to 25)", "interest", [10]]},
+				"2": {"n": "FIXER", "d": "The first visit to each merchant gives a free tool.", "s": {"supply": 1}, "k": ["Smuggler", "Every floor starts with %s free random tool(s)", "quarter", [1]]}}},
+		"b": {"n": "TRICKSTER", "d": "+1 tool slot and a 10% chance a tool isn't used up.", "s": {"slots": 1, "tinker": 10},
+			"nodes": [
+				["Sleight", "Using a tool gives %s shield", "overclk", [3, 6]],
+				["Wild Card", "Reshuffle gives %s shield", "rssh", [6, 12]],
+				["Misdirection", "+%s%% dodge chance", "dodge", [4, 8]],
+				["Quick Fingers", "Your class power recharges %s%% faster", "pcell", [10, 20]]],
+			"subs": {
+				"1": {"n": "CHAOS MAGE", "d": "+5% crit.", "s": {"crit": 5}, "k": ["Chaos Bolt", "Every tool you use hits each enemy within %s tiles with a random element", "apx_arc", [2]]},
+				"2": {"n": "CARDSHARP", "d": "8% chance for a kill to give double XP.", "s": {"lucky": 8}, "k": ["Ace Up the Sleeve", "Crits deal %s%% more damage", "critmult", [50]]}}},
+	},
+	"gunslinger": {
+		"core": [
+			["Steady Aim", "+%s damage with ranged weapons", "rdmg", [1, 2]],
+			["Bandolier", "+%s max ammo", "ammomax", [3, 6]],
+			["Quickdraw", "+%s%% crit chance with ranged weapons", "rcrit", [5, 10]],
+			["Trick Shot", "Loading Ricochet refunds %s ammo", "ricoammo", [1, 2]],
+			["Scrounger", "+%s%% chance for kills to drop ammo", "ammodrop", [10, 20]],
+			["Double Tap", "Ricochet bounces %s extra time(s)", "ricob", [1, 2]]],
+		"a": {"n": "DEADEYE", "d": "+1 shot range and +5% ranged crit. One shot, one kill.", "s": {"rrange": 1, "rcrit": 5},
+			"nodes": [
+				["Long Shot", "+%s shot range", "rrange", [1, 2]],
+				["Hollow Points", "+%s%% damage to enemies at full health", "opener", [20, 40]],
+				["Marksman", "+%s damage with ranged weapons", "rdmg", [1, 2]],
+				["Kill Zone", "Crits deal %s%% more damage", "critmult", [25, 50]]],
+			"subs": {
+				"1": {"n": "SNIPER", "d": "+2 ranged damage.", "s": {"rdmg": 2}, "k": ["Headshot", "Shots deal +%s%% damage to enemies 3 or more tiles away", "fardmg", [50]]},
+				"2": {"n": "SPOTTER", "d": "Your first hit marks enemies (+15% damage taken).", "s": {"mark": 15}, "k": ["Spotter Drone", "Every 12 steps a drone zaps an enemy within 3 tiles for %s%% of your attack", "drone", [100]]}}},
+		"b": {"n": "DESPERADO", "d": "+4 max ammo and a 10% chance a shot uses no ammo.", "s": {"ammomax": 4, "noammo": 10},
+			"nodes": [
+				["Fan the Hammer", "%s%% chance a shot uses no ammo", "noammo", [10, 20]],
+				["Gunsmoke", "+%s%% dodge chance", "dodge", [4, 8]],
+				["Reload", "+%s%% chance for kills to drop ammo", "ammodrop", [10, 20]],
+				["Close Quarters", "+%s armour while an enemy is next to you", "hold", [1, 2]]],
+			"subs": {
+				"1": {"n": "OUTLAW", "d": "Every kill drops +1 coin.", "s": {"kcoin": 1}, "k": ["Dead or Alive", "Kills cut Ricochet's recharge by %s steps", "killcd", [3]]},
+				"2": {"n": "PISTOLERO", "d": "+6% crit.", "s": {"crit": 6}, "k": ["Gun Kata", "+%s%% damage to all attacks while an enemy is next to you", "adjdmg", [25]]}}},
+	},
+}
+
+
+func _mx_on() -> bool:
+	return mode == "adv" and not tutorial and not testroom and not mini
+
+
+func _mx_need(l: int) -> int:
+	return 50 + 20 * l
+
+
+func mx_level(c: String) -> int:
+	var x := int(mxp.get(c, 0))
+	var l := 0
+	while l < MX_MAX and x >= _mx_need(l):
+		x -= _mx_need(l)
+		l += 1
+	return l
+
+
+func _mx_base(l: int) -> int:
+	var s := 0
+	for i in l:
+		s += _mx_need(i)
+	return s
+
+
+func mx_stars(c: String) -> int:
+	if mx_level(c) < MX_MAX:
+		return 0
+	return (int(mxp.get(c, 0)) - _mx_base(MX_MAX)) / MX_STAR
+
+
+func _mx_prog(c: String) -> Vector2i:
+	var l := mx_level(c)
+	var x := int(mxp.get(c, 0)) - _mx_base(l)
+	if l >= MX_MAX:
+		return Vector2i(x % MX_STAR, MX_STAR)
+	return Vector2i(x, _mx_need(l))
+
+
+func _cls_col(cid: String) -> Color:
+	for d in class_defs:
+		if String(d["id"]) == cid:
+			return d["col"]
+	return Color.WHITE
+
+
+func _cls_name(cid: String) -> String:
+	for d in class_defs:
+		if String(d["id"]) == cid:
+			return String(d["name"])
+	return cid
+
+
+func _ck_scol(cid: String, sp: String) -> Color:
+	return _cls_col(cid).lerp(Color("ffd84f") if sp == "a" else Color("7fd8ff"), 0.4)
+
+
+func _spec_name(cid: String) -> String:
+	var lv := mx_level(cid)
+	var sp := String(mspec.get(cid, ""))
+	if lv < 10 or not CK.has(cid) or not CK[cid].has(sp):
+		return ""
+	var nm := String(CK[cid][sp]["n"])
+	var sb := String(msub.get(cid, ""))
+	if lv >= 20 and CK[cid][sp]["subs"].has(sb):
+		nm += " / " + String(CK[cid][sp]["subs"][sb]["n"])
+	return nm
+
+
+# Always-on class stats (mastery rewards + chosen specialisation), read through sk().
+func _cls_pass() -> Dictionary:
+	if save_off:
+		return {}
+	if cp_dirty or cp_cls != cls:
+		cp_dirty = false
+		cp_cls = cls
+		cp = {}
+		cp_lv = mx_level(cls)
+		for i in cp_lv:
+			var k := String(MX_REW[i])
+			if k == "hp":
+				_cp_add({"hp": 3})
+			elif k == "air":
+				_cp_add({"air": 10})
+			elif k == "slot":
+				_cp_add({"slots": 1})
+		if CK.has(cls) and cp_lv >= 10:
+			var sp := String(mspec.get(cls, ""))
+			if CK[cls].has(sp):
+				_cp_add(CK[cls][sp]["s"])
+				var sb := String(msub.get(cls, ""))
+				if cp_lv >= 20 and CK[cls][sp]["subs"].has(sb):
+					_cp_add(CK[cls][sp]["subs"][sb]["s"])
+	return cp
+
+
+func _cp_add(s: Dictionary) -> void:
+	for k in s:
+		cp[k] = float(cp.get(k, 0.0)) + float(s[k])
+
+
+func _ck_on(id: String) -> bool:
+	var d: Dictionary = sk_defs[id]
+	if String(d["cls"]) != cls:
+		return false
+	_cls_pass()
+	var sp := String(d["spec"])
+	if sp != "" and (cp_lv < 10 or String(mspec.get(cls, "")) != sp):
+		return false
+	var sb := String(d["sub"])
+	return sb == "" or (cp_lv >= 20 and String(msub.get(cls, "")) == sb)
+
+
+func _pw() -> int:
+	if not _mx_on():
+		return 0
+	var lv := mx_level(cls)
+	return (1 if lv >= 5 else 0) + (1 if lv >= 15 else 0) + (1 if lv >= 25 else 0)
+
+
+func _pw_lines(cid: String) -> Array:
+	match cid:
+		"scout":
+			return ["+5 air and 2 more free steps", "also heals 15% of max health", "also gives 6 shield and recharges 25% faster"]
+		"brute":
+			return ["blocks 1 more hit", "blocked hits strike back for your full attack", "also heals 10% of max health and gives 4 shield"]
+		"mystic":
+			return ["Hex deals x2.5 damage", "a hexed hit stuns the target for 2 steps", "Hex deals x3 damage and recharges 25% faster"]
+		"gambler":
+			return ["also builds a tool in an empty slot (works with no tools)", "also pays 3 + floor coins", "fills every empty slot and gives 8 shield"]
+		"gunslinger":
+			return ["loading refunds 2 ammo", "the shot bounces 1 extra time", "bounces 1 more time and recharges 25% faster"]
+	return ["-", "-", "-"]
+
+
+func _mx_cd_mult() -> float:
+	if not _mx_on():
+		return 1.0
+	var m := 1.0
+	if mx_level(cls) >= MX_MAX:
+		m *= 0.9
+	if _pw() >= 3 and cls in ["scout", "mystic", "gunslinger"]:
+		m *= 0.75
+	return m
+
+
+func _mx_rew_text(cid: String, l: int) -> String:
+	if l < 1 or l > MX_MAX:
+		return ""
+	var k := String(MX_REW[l - 1])
+	var tx := ""
+	match k:
+		"node":
+			var ix := CK_MREQ.find(l)
+			tx = "Class node: " + (String(CK[cid]["core"][ix][0]) if CK.has(cid) and ix >= 0 else "?")
+		"hp":
+			tx = "+3 max health"
+		"sp":
+			tx = "+1 starting skill point"
+		"pw":
+			tx = "Power upgrade " + ["I", "II", "III"][[5, 15, 25].find(l)]
+		"air":
+			tx = "+10 max air"
+		"tool":
+			tx = "+1 starting tool"
+		"spec":
+			tx = "Choose a specialisation"
+		"coin":
+			tx = "+15 starting coins"
+		"slot":
+			tx = "+1 tool slot"
+		"sub":
+			tx = "Choose a sub-specialisation"
+		"gear":
+			tx = "Start with a random gear piece"
+		"master":
+			tx = "MASTER: power 10% faster, stars"
+	if l in CK_SREQ and l != 10:
+		tx += " (+spec node)"
+	return tx
+
+
+func _mx_gain(n: int) -> void:
+	if not _mx_on() or n <= 0:
+		return
+	var old := mx_level(cls)
+	var os := mx_stars(cls)
+	mxp[cls] = int(mxp.get(cls, 0)) + n
+	run_mxp += n
+	var nl := mx_level(cls)
+	if nl > old:
+		cp_dirty = true
+		_pop(pos, "MASTERY %d!" % nl, Color("ffd84f"))
+		_fx_ring(vis_pos, Color("ffd84f"), 1.6, 0.6, 6.0)
+		msg += "   %s Mastery %d: %s" % [_cls_name(cls), nl, _mx_rew_text(cls, nl)]
+		_sfx("big")
+		_save_meta()
+	elif mx_stars(cls) > os:
+		_pop(pos, "MASTERY STAR!", Color("ffd84f"))
+		_save_meta()
+
+
+func _mx_init_run() -> void:
+	hex_left = 0
+	hex_hit = false
+	dodge_ready = false
+	run_mxp = 0
+	cp_dirty = true
+	if not _mx_on():
+		return
+	_cx_st("runs", 1)
+	var lv := mx_level(cls)
+	for i in lv:
+		var k := String(MX_REW[i])
+		if k == "sp":
+			skill_pts += 1
+		elif k == "coin":
+			coins += 15
+		elif k == "tool":
+			if inv.size() < slots_n():
+				inv.append(_random_use())
+		elif k == "gear":
+			var kid := _adv_roll_gear(null, -1)
+			var ks := String(gear_defs[gb(kid)]["slot"])
+			if not equip.has(ks):
+				equip[ks] = kid
+			else:
+				bag.append(kid)
+
+
+func _mx_scout_breath() -> void:
+	var p := _pw()
+	var air := 10.0 + (5.0 if p >= 1 else 0.0)
+	var free := 8 + (2 if p >= 1 else 0) + int(sk("brfree"))
+	oxy = minf(oxy_max, oxy + air)
+	act_free = free
+	msg = "Deep Breath: +%d air, your next %d steps cost no air" % [int(air), free]
+	_pop(pos, "+%d AIR" % int(air), Color("7fd8ff"))
+	if p >= 2:
+		_p_heal(maxi(1, int(hp_cap() * 0.15)))
+	if p >= 3:
+		sh = mini(sh_cap(), sh + 6)
+
+
+func _mx_brute_stance() -> void:
+	var p := _pw()
+	act_stance = 2 + (1 if p >= 1 else 0) + int(sk("stancen"))
+	msg = "Iron Stance: blocks the next %d hits" % act_stance
+	if sk("stancesh") > 0.0:
+		sh = mini(sh_cap(), sh + int(sk("stancesh")))
+	if p >= 3:
+		_p_heal(maxi(1, int(hp_cap() * 0.1)))
+		sh = mini(sh_cap(), sh + 4)
+
+
+func _mx_blocked(src: Vector2i) -> void:
+	var pct := sk("stancedmg") + (100.0 if cls == "brute" and _pw() >= 2 else 0.0)
+	if pct > 0.0 and mons.has(src):
+		_adv_damage_mon(src, maxi(1, int(float(p_atk()) * pct / 100.0)), Color("ff6a5c"))
+		_pop(src, "RETALIATE", Color("ff6a5c"))
+
+
+func _hex_mult() -> float:
+	var p := _pw() if cls == "mystic" else 0
+	return 2.0 + (0.5 if p >= 1 else 0.0) + (0.5 if p >= 3 else 0.0) + sk("hexmult") / 100.0
+
+
+func _mx_hex_txt() -> String:
+	return "x" + _nfmt(_hex_mult())
+
+
+func _hex_use() -> void:
+	if hex_left > 0:
+		hex_left -= 1
+	else:
+		hex_armed = false
+
+
+func _mx_reshuffle() -> void:
+	if mode != "adv":
+		return
+	var p := _pw()
+	if p >= 1 and inv.size() < slots_n():
+		inv.append(_random_use())
+	if p >= 3:
+		while inv.size() < slots_n():
+			inv.append(_random_use())
+		sh = mini(sh_cap(), sh + 8)
+	var cn := int(sk("rscoin")) + ((3 + floor_n) if p >= 2 else 0)
+	if cn > 0:
+		coins += cn
+		_pop(pos, "+%d COINS" % cn, Color("ffd84f"))
+	if sk("rssh") > 0.0:
+		sh = mini(sh_cap(), sh + int(sk("rssh")))
+
+
+func _mx_rico_load() -> void:
+	var n := int(sk("ricoammo")) + (2 if _pw() >= 1 else 0)
+	if n > 0:
+		ammo = mini(ammo_max(), ammo + n)
+
+
+func _rico_extra() -> int:
+	var p := _pw() if cls == "gunslinger" else 0
+	return int(sk("ricob")) + (1 if p >= 2 else 0) + (1 if p >= 3 else 0)
+
+
+func _mx_power_used() -> void:
+	if sk("pwsh") > 0.0:
+		sh = mini(sh_cap(), sh + int(sk("pwsh")))
+
+
+func _mx_hit_mul(c: Vector2i) -> float:
+	var m := 0.0
+	if sk("airdmg") > 0.0 and oxy * 2.0 > oxy_max:
+		m += sk("airdmg") / 100.0
+	if dodge_ready:
+		dodge_ready = false
+		m += sk("dodgedmg") / 100.0
+	if sk("bigdmg") > 0.0 and (elite.has(c) or affix.has(c) or _boss_cell(c)):
+		m += sk("bigdmg") / 100.0
+	if sk("eldmg") > 0.0 and not _elems(c).is_empty():
+		m += sk("eldmg") / 100.0
+	if sk("adjdmg") > 0.0 and not _near_mons(pos, 1, []).is_empty():
+		m += sk("adjdmg") / 100.0
+	return m
+
+
+func _mx_on_hit(c: Vector2i, dealt: int, left: int) -> int:
+	if hex_hit:
+		hex_hit = false
+		var hs := int(sk("hexstun")) + (2 if cls == "mystic" and _pw() >= 2 else 0)
+		if hs > 0 and left > 0 and mons.has(c) and _st_ok(c):
+			_st_stun(c, hs)
+	if sk("chain") > 0.0 and tr_depth <= 1 and randf() * 100.0 < sk("chain"):
+		var tg := _near_mons(c, 2, [])
+		if tg.size() > 0:
+			var o: Vector2i = tg[0]
+			_fx_bolt(Vector2(c), Vector2(o), Color("9fe8ff"))
+			tr_depth += 1
+			_adv_damage_mon(o, maxi(1, dealt / 2), Color("9fe8ff"))
+			tr_depth -= 1
+	return left
+
+
+func _mx_dodged() -> void:
+	dodge_ready = true
+	if sk("dodgeheal") > 0.0:
+		_p_heal(int(sk("dodgeheal")))
+	if sk("dodgeair") > 0.0:
+		oxy = minf(oxy_max, oxy + sk("dodgeair"))
+		_p_heal(2)
+
+
+func _mx_kill(nc: Vector2i, is_boss: bool) -> void:
+	if _mx_on():
+		var el := elite.has(nc)
+		_mx_gain(1 + (2 if el else 0) + (1 if affix.has(nc) else 0) + (20 if is_boss else 0))
+		_cx_st("kills", 1)
+		if el:
+			_cx_st("elites", 1)
+		if is_boss:
+			_cx_st("bosses", 1)
+	if sk("killair") > 0.0:
+		oxy = minf(oxy_max, oxy + sk("killair"))
+	if sk("reap") > 0.0:
+		oxy = minf(oxy_max, oxy + sk("reap"))
+		sh = mini(sh_cap(), sh + 2)
+	if sk("killsh") > 0.0:
+		sh = mini(sh_cap(), sh + int(sk("killsh")))
+	if sk("killcd") > 0.0 and act_cd > 0:
+		act_cd = maxi(0, act_cd - int(sk("killcd")))
+	if sk("jackpot") > 0.0 and randf() * 100.0 < sk("jackpot"):
+		var jc := 3 + floor_n
+		coins += jc
+		_pop(nc, "JACKPOT +%d" % jc, Color("ffd84f"))
+
+
+func _mx_floor_clear() -> void:
+	if sk("interest") > 0.0 and coins > 0:
+		var ic := mini(25, int(float(coins) * sk("interest") / 100.0))
+		if ic > 0:
+			coins += ic
+			_pop(pos, "+%d INTEREST" % ic, Color("ffd84f"))
+	if not _mx_on():
+		return
+	_mx_gain(8 + 2 * floor_n)
+	_cx_st("floors", 1)
+	_cx_build(floor_n)
+	_cx_scan()
+	_save_meta()
+
+
+func _mx_death() -> void:
+	if not _mx_on():
+		return
+	_cx_st("deaths", 1)
+	_cx_scan()
+
+
+func _mx_bank_bonus(delta: int) -> int:
+	if not _mx_on() or delta <= 0:
+		return 0
+	return delta * (mx_level(cls) + mini(25, mx_stars(cls))) / 100
+
+
+func _mx_death_line(b: int) -> String:
+	var lv := mx_level(cls)
+	var s := "%s Mastery %d   +%d mastery XP" % [_cls_name(cls), lv, run_mxp]
+	if b > 0:
+		s += "   (+%d mastery coins)" % b
+	return s
+
+
+func _mx_save(cfg: ConfigFile) -> void:
+	cfg.set_value("mx", "xp", mxp)
+	cfg.set_value("mx", "spec", mspec)
+	cfg.set_value("mx", "sub", msub)
+	cfg.set_value("mx", "cx", cx)
+
+
+func _mx_load(cfg: ConfigFile) -> void:
+	var a = cfg.get_value("mx", "xp", {})
+	if a is Dictionary:
+		mxp = a
+	var b = cfg.get_value("mx", "spec", {})
+	if b is Dictionary:
+		mspec = b
+	var c = cfg.get_value("mx", "sub", {})
+	if c is Dictionary:
+		msub = c
+	var d = cfg.get_value("mx", "cx", {})
+	if d is Dictionary:
+		cx = d
+	cp_dirty = true
+
+
+func _mx_pack() -> Dictionary:
+	return {"xp": mxp.duplicate(), "spec": mspec.duplicate(), "sub": msub.duplicate(), "cx": cx.duplicate(true)}
+
+
+func _mx_unpack(d) -> void:
+	if not (d is Dictionary) or d.is_empty():
+		return
+	var ix: Dictionary = d.get("xp", {})
+	for k in ix:
+		mxp[k] = maxi(int(mxp.get(k, 0)), int(ix[k]))
+	var isp: Dictionary = d.get("spec", {})
+	for k in isp:
+		mspec[k] = String(isp[k])
+	var isb: Dictionary = d.get("sub", {})
+	for k in isb:
+		msub[k] = String(isb[k])
+	var icx: Dictionary = d.get("cx", {})
+	if not icx.is_empty():
+		cx = icx.duplicate(true)
+	cp_dirty = true
+
+
+func _mx_wipe() -> void:
+	mxp = {}
+	mspec = {}
+	msub = {}
+	cx = {}
+	cp_dirty = true
+
+
+# ----- class tree nodes (live in sk_defs with a "cls" key, drawn on their own page) -----
+
+func _ck_make() -> void:
+	ck_edges.clear()
+	for cid in CK:
+		var cd: Dictionary = CK[cid]
+		var col := _cls_col(String(cid))
+		var core: Array = cd["core"]
+		for n in core.size():
+			_ck_add("k%s_c%d" % [cid, n], String(cid), "", "", core[n], Vector2(360, 262 + 110 * n), col, n == 5, false)
+			if n > 0:
+				ck_edges.append(["k%s_c%d" % [cid, n - 1], "k%s_c%d" % [cid, n]])
+		for spv in ["a", "b"]:
+			var sp := String(spv)
+			var sd: Dictionary = cd[sp]
+			var x := 130.0 if sp == "a" else 590.0
+			var scol := _ck_scol(String(cid), sp)
+			var nodes: Array = sd["nodes"]
+			for n in nodes.size():
+				_ck_add("k%s_s%s%d" % [cid, sp, n], String(cid), sp, "", nodes[n], Vector2(x, 372 + 110 * n), scol, false, false)
+				if n > 0:
+					ck_edges.append(["k%s_s%s%d" % [cid, sp, n - 1], "k%s_s%s%d" % [cid, sp, n]])
+			ck_edges.append(["k%s_c1" % cid, "k%s_s%s0" % [cid, sp]])
+			for sbv in ["1", "2"]:
+				var sb := String(sbv)
+				var kid := "k%s_x%s%s" % [cid, sp, sb]
+				_ck_add(kid, String(cid), sp, sb, sd["subs"][sb]["k"], Vector2(x + (-62.0 if sb == "1" else 62.0), 840), scol, true, true)
+				ck_edges.append(["k%s_s%s3" % [cid, sp], kid])
+
+
+func _ck_add(id: String, cid: String, sp: String, sb: String, nd: Array, p: Vector2, col: Color, key: bool, apex: bool) -> void:
+	sk_defs[id] = {"b": 30, "n": 0, "name": nd[0], "d": nd[1], "stat": nd[2], "v": nd[3], "key": key, "apex": apex, "cls": cid, "spec": sp, "sub": sb, "ring": 0, "pos": p, "col": col, "req": []}
+	sk_adj[id] = []
+
+
+func _ck_count() -> int:
+	var n := 0
+	for id in sk_defs:
+		if sk_defs[id].has("cls"):
+			n += 1
+	return n
+
+
+func _ck_unlocked(id: String) -> bool:
+	return _ck_lock_reason(id) == ""
+
+
+func _ck_lock_reason(id: String) -> String:
+	var d: Dictionary = sk_defs[id]
+	var cid := String(d["cls"])
+	if cid != cls:
+		return "Another class's node"
+	var lv := mx_level(cid)
+	var sp := String(d["spec"])
+	var sb := String(d["sub"])
+	var ix := int(id.right(1))
+	if sp == "":
+		var need: int = CK_MREQ[ix]
+		if lv < need:
+			return "Needs %s Mastery %d" % [_cls_name(cid), need]
+		if ix > 0 and sk_rank("k%s_c%d" % [cid, ix - 1]) < 1:
+			return "Needs the node above it first"
+		return ""
+	var spn := String(CK[cid][sp]["n"])
+	if lv < 10 or String(mspec.get(cid, "")) != sp:
+		return "Needs the %s specialisation (Mastery 10)" % spn
+	if sb == "":
+		var need2: int = CK_SREQ[ix]
+		if lv < need2:
+			return "Needs %s Mastery %d" % [_cls_name(cid), need2]
+		if ix > 0 and sk_rank("k%s_s%s%d" % [cid, sp, ix - 1]) < 1:
+			return "Needs the node above it first"
+		return ""
+	if lv < 20 or String(msub.get(cid, "")) != sb:
+		return "Needs the %s sub-specialisation (Mastery 20)" % String(CK[cid][sp]["subs"][sb]["n"])
+	if sk_rank("k%s_s%s3" % [cid, sp]) < 1:
+		return "Needs the last %s node first" % spn
+	return ""
+
+
+func _ck_fmt(nd: Array) -> String:
+	var vs: PackedStringArray = []
+	for v in nd[3]:
+		vs.append(_nfmt(float(v)))
+	return String(nd[1]) % "/".join(vs)
+
+
+func _ck_draw_map() -> void:
+	var cid := cls
+	if not CK.has(cid):
+		_txt("This class has no tree", Vector2(0, 560), 26, Color(1, 1, 1, 0.6))
+		return
+	var lv := mx_level(cid)
+	var ccol := _cls_col(cid)
+	var pre := "k%s_" % cid
+	_txt("%s  -  MASTERY %d" % [_cls_name(cid).to_upper(), lv], Vector2(230, 232), 18, ccol, 260.0)
+	for e in ck_edges:
+		if not String(e[0]).begins_with(pre):
+			continue
+		var pa: Vector2 = sk_defs[e[0]]["pos"]
+		var pb: Vector2 = sk_defs[e[1]]["pos"]
+		var on := sk_rank(String(e[0])) > 0 and sk_rank(String(e[1])) > 0
+		var ec: Color = sk_defs[e[1]]["col"]
+		draw_line(pa, pb, Color(ec.r, ec.g, ec.b, 0.8) if on else Color(1, 1, 1, 0.13), 3.0 if on else 2.0)
+	for spv in ["a", "b"]:
+		var sp := String(spv)
+		var sd: Dictionary = CK[cid][sp]
+		var x := 130.0 if sp == "a" else 590.0
+		var act := lv >= 10 and String(mspec.get(cid, "")) == sp
+		var hc := _ck_scol(cid, sp)
+		_txt(String(sd["n"]), Vector2(x - 115.0, 300), 20, hc if act else Color(hc.r, hc.g, hc.b, 0.45), 230.0)
+		var stt := "ACTIVE" if act else ("MASTERY 10" if lv < 10 else "CHOOSE IN MASTERY")
+		_txt(stt, Vector2(x - 115.0, 322), 13, Color(1, 1, 1, 0.75 if act else 0.4), 230.0)
+	for id in sk_defs:
+		var d: Dictionary = sk_defs[id]
+		if not d.has("cls") or String(d["cls"]) != cid:
+			continue
+		var c: Vector2 = d["pos"]
+		var col: Color = d["col"]
+		var rk := sk_rank(String(id))
+		var can := sk_can_buy(String(id))
+		var unl := sk_unlocked(String(id))
+		var apx := bool(d.get("apex", false))
+		var rad := 32.0 if apx else (30.0 if bool(d["key"]) else 24.0)
+		var mxr := _sk_max(String(id))
+		var fill := Color(col.r, col.g, col.b, 0.9 if rk >= mxr else (0.5 if rk == 1 else 0.07))
+		if bool(d["key"]):
+			var dp := PackedVector2Array([c + Vector2(0, -rad), c + Vector2(rad, 0), c + Vector2(0, rad), c + Vector2(-rad, 0)])
+			draw_colored_polygon(dp, Color("0a0c14"))
+			draw_colored_polygon(dp, fill)
+			dp.append(dp[0])
+			draw_polyline(dp, col if unl else Color(col.r, col.g, col.b, 0.35), 3.0)
+		else:
+			draw_circle(c, rad, Color("0a0c14"))
+			draw_circle(c, rad, fill)
+			draw_arc(c, rad, 0.0, TAU, 28, col if unl else Color(col.r, col.g, col.b, 0.35), 3.0)
+		if apx:
+			draw_arc(c, rad + 4.0, 0.0, TAU, 32, Color(1, 1, 1, 0.25 + 0.15 * sin(t * 3.0)), 2.0)
+		if can:
+			draw_arc(c, rad + 6.0 + 2.0 * sin(t * 5.0), 0.0, TAU, 28, Color(1, 1, 1, 0.55), 2.0)
+		if String(id) == sk_sel:
+			draw_arc(c, rad + 10.0, 0.0, TAU, 28, Color.WHITE, 3.0)
+		for k in mxr:
+			var pc := c + Vector2((-6.0 + 12.0 * k) if mxr == 2 else 0.0, rad + 9.0)
+			draw_circle(pc, 3.5, col if rk > k else Color(1, 1, 1, 0.2))
+		var lw := 124.0 if apx else 210.0
+		_txt(String(d["name"]), Vector2(c.x - lw * 0.5, c.y + rad + 28.0), 14, Color(1, 1, 1, 0.8 if unl or rk > 0 else 0.35), lw)
+
+
+# ----- MASTERY screen -----
+
+func _mx_spec_rect(i: int) -> Rect2:
+	return Rect2(40 + 330 * i, 326, 310, 196)
+
+
+func _mx_sub_rect(i: int) -> Rect2:
+	return Rect2(40 + 330 * i, 562, 310, 140)
+
+
+func _draw_mastery(acc: Color) -> void:
+	var cid := mx_cls
+	var col := _cls_col(cid)
+	var lv := mx_level(cid)
+	_button(btn_mx_l, "<", col, 40)
+	_button(btn_mx_r, ">", col, 40)
+	_txt(_cls_name(cid).to_upper() + " MASTERY", Vector2(0, 150), 44, col)
+	var pr := _mx_prog(cid)
+	var head := ("MASTER  -  %d stars" % mx_stars(cid)) if lv >= MX_MAX else ("Level %d / %d" % [lv, MX_MAX])
+	_txt("%s     %d / %d XP" % [head, pr.x, pr.y], Vector2(0, 198), 22, Color("ffd84f"))
+	draw_rect(Rect2(60, 212, 600, 12), Color(1, 1, 1, 0.1))
+	draw_rect(Rect2(60, 212, 600.0 * clampf(float(pr.x) / float(maxi(1, pr.y)), 0.0, 1.0), 12), col)
+	var pct := lv + mini(25, mx_stars(cid))
+	var note := "Play this class to earn mastery XP: kills, elites, bosses and every floor cleared. Each level also adds +1%% coins banked at the end of a run (now +%d%%)." % pct
+	if not class_open(cid):
+		note = "LOCKED - unlock this class in the shop first. " + note
+	_para(note, Vector2(40, 252), 16, Color(1, 1, 1, 0.7), 640.0)
+	if not CK.has(cid):
+		_button(btn_mx_back, "BACK", acc, 28)
+		return
+	_txt("SPECIALISATION  (Mastery 10)", Vector2(40, 314), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	for i in 2:
+		var sp := "a" if i == 0 else "b"
+		var sd: Dictionary = CK[cid][sp]
+		var r := _mx_spec_rect(i)
+		var on := String(mspec.get(cid, "")) == sp
+		var sc := _ck_scol(cid, sp)
+		var can := lv >= 10
+		_obox(r, Color(sc.r, sc.g, sc.b, 0.22 if on else 0.07))
+		_aline(r, sc if (on or can) else Color(1, 1, 1, 0.25), 3.0 if on else 2.0)
+		_txt(String(sd["n"]), Vector2(r.position.x, r.position.y + 34), 26, sc, r.size.x)
+		_para_fit(String(sd["d"]), Vector2(r.position.x + 14, r.position.y + 62), 16, Color.WHITE, r.size.x - 28, 3)
+		var nn: PackedStringArray = []
+		for nd in sd["nodes"]:
+			nn.append(String(nd[0]))
+		_para_fit("Nodes: " + ", ".join(nn), Vector2(r.position.x + 14, r.position.y + 128), 14, Color(1, 1, 1, 0.6), r.size.x - 28, 2)
+		_txt("ACTIVE" if on else ("TAP TO CHOOSE" if can else "LOCKED"), Vector2(r.position.x, r.end.y - 12), 18, sc if on else Color(1, 1, 1, 0.55), r.size.x)
+	_txt("SUB-SPECIALISATION  (Mastery 20)", Vector2(40, 550), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var csp := String(mspec.get(cid, ""))
+	if lv < 10 or not CK[cid].has(csp):
+		_para("Choose a specialisation first. Each one splits into two sub-specialisations at Mastery 20, each with its own keystone node.", Vector2(40, 600), 18, Color(1, 1, 1, 0.5), 640.0)
+	else:
+		for i in 2:
+			var sb := "1" if i == 0 else "2"
+			var sbd: Dictionary = CK[cid][csp]["subs"][sb]
+			var r2 := _mx_sub_rect(i)
+			var on2 := String(msub.get(cid, "")) == sb
+			var sc2 := _ck_scol(cid, csp)
+			var can2 := lv >= 20
+			_obox(r2, Color(sc2.r, sc2.g, sc2.b, 0.22 if on2 else 0.07))
+			_aline(r2, sc2 if (on2 or can2) else Color(1, 1, 1, 0.25), 3.0 if on2 else 2.0)
+			_txt(String(sbd["n"]), Vector2(r2.position.x, r2.position.y + 30), 22, sc2, r2.size.x)
+			var kn: Array = sbd["k"]
+			_para_fit(String(sbd["d"]) + "  Keystone " + String(kn[0]) + ": " + _ck_fmt(kn), Vector2(r2.position.x + 12, r2.position.y + 54), 14, Color.WHITE, r2.size.x - 24, 4)
+			_txt("ACTIVE" if on2 else ("TAP TO CHOOSE" if can2 else "MASTERY 20"), Vector2(r2.position.x, r2.end.y - 8), 16, sc2 if on2 else Color(1, 1, 1, 0.55), r2.size.x)
+	_txt("POWER: " + String(ACTS[cid]["n"]).to_upper() if ACTS.has(cid) else "POWER", Vector2(40, 732), 20, col, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var pl := _pw_lines(cid)
+	for i in 3:
+		var need: int = [5, 15, 25][i]
+		_txt("%s  (Mastery %d): %s" % [["I", "II", "III"][i], need, pl[i]], Vector2(40, 758 + 24 * i), 15, Color("ffd84f") if lv >= need else Color(1, 1, 1, 0.45), 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("REWARDS", Vector2(40, 846), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	for i in MX_MAX:
+		var colx := 40.0 + 330.0 * float(i / 15)
+		var ry := 870.0 + 20.0 * float(i % 15)
+		_txt("%d  %s" % [i + 1, _mx_rew_text(cid, i + 1)], Vector2(colx, ry), 14, Color("ffd84f") if lv >= i + 1 else Color(1, 1, 1, 0.45), 320.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_button(btn_mx_back, "BACK", acc, 28)
+
+
+func _mx_input(p: Vector2) -> void:
+	if btn_mx_back.has_point(p):
+		state = CLASS
+		_sfx("ui")
+		return
+	if btn_mx_l.has_point(p) or btn_mx_r.has_point(p):
+		var ix := 0
+		for i in class_defs.size():
+			if String(class_defs[i]["id"]) == mx_cls:
+				ix = i
+		ix = (ix + (1 if btn_mx_r.has_point(p) else -1) + class_defs.size()) % class_defs.size()
+		mx_cls = String(class_defs[ix]["id"])
+		cls_page = ix
+		_sfx("ui")
+		return
+	if not CK.has(mx_cls):
+		return
+	var lv := mx_level(mx_cls)
+	for i in 2:
+		if _mx_spec_rect(i).has_point(p):
+			if lv < 10:
+				_sfx("blocked")
+				return
+			var sp := "a" if i == 0 else "b"
+			if String(mspec.get(mx_cls, "")) != sp:
+				mspec[mx_cls] = sp
+				msub[mx_cls] = ""
+				cp_dirty = true
+				_save_meta()
+			_sfx("shield")
+			return
+		if _mx_sub_rect(i).has_point(p) and lv >= 10 and CK[mx_cls].has(String(mspec.get(mx_cls, ""))):
+			if lv < 20:
+				_sfx("blocked")
+				return
+			msub[mx_cls] = "1" if i == 0 else "2"
+			cp_dirty = true
+			_save_meta()
+			_sfx("shield")
+			return
+
+
+func _mx_card_line(cid: String) -> void:
+	var lv := mx_level(cid)
+	_txt(("MASTER *%d" % mx_stars(cid)) if lv >= MX_MAX else ("MASTERY %d" % lv), Vector2(114, 284), 16, Color("ffd84f"), 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+	var sn := _spec_name(cid)
+	if sn != "":
+		_txt(sn, Vector2(386, 284), 16, _cls_col(cid), 220.0, HORIZONTAL_ALIGNMENT_RIGHT)
+
+
+# ----- CODEX -----
+
+func _cx_st(k: String, n: int) -> void:
+	var st: Dictionary = cx.get("st", {})
+	st[k] = int(st.get(k, 0)) + n
+	cx["st"] = st
+
+
+func _cx_note(g: String, gs: Dictionary, ts: Dictionary, ms: Dictionary) -> void:
+	if g == "" or not gear_defs.has(gb(g)):
+		return
+	gs[gb(g)] = 1
+	for tid in gtr(g):
+		ts[String(tid)] = 1
+	for mid in gmods(g):
+		ms[String(mid)] = 1
+
+
+func _cx_scan() -> void:
+	if not _mx_on():
+		return
+	var gs: Dictionary = cx.get("gear", {})
+	var ts: Dictionary = cx.get("tr", {})
+	var ms: Dictionary = cx.get("md", {})
+	var rs: Dictionary = cx.get("rl", {})
+	for g in equip.values():
+		_cx_note(String(g), gs, ts, ms)
+	for g2 in bag:
+		_cx_note(String(g2), gs, ts, ms)
+	for rid in relics:
+		rs[String(rid)] = 1
+	cx["gear"] = gs
+	cx["tr"] = ts
+	cx["md"] = ms
+	cx["rl"] = rs
+
+
+func _cx_build(f: int) -> void:
+	if f <= 0:
+		return
+	var lv := mx_level(cls)
+	var sp := String(mspec.get(cls, "")) if lv >= 10 else ""
+	var sb := String(msub.get(cls, "")) if (lv >= 20 and sp != "") else ""
+	var key := cls + "/" + sp + "/" + sb
+	var bl: Dictionary = cx.get("builds", {})
+	bl[key] = maxi(int(bl.get(key, 0)), f)
+	cx["builds"] = bl
+	var cb: Dictionary = cx.get("cbest", {})
+	cb[cls] = maxi(int(cb.get(cls, 0)), f)
+	cx["cbest"] = cb
+
+
+func _cx_open() -> void:
+	state = CODEX
+	cx_tab = 0
+	cx_scroll = 0.0
+	_cx_layout()
+	_sfx("ui")
+
+
+func _cx_layout() -> void:
+	var pm := mode
+	mode = "adv"
+	var lines: Array = _cx_prog_lines() if cx_tab == 0 else _cx_guide_lines()
+	mode = pm
+	cx_lay.clear()
+	var y := 0.0
+	for ln in lines:
+		var k := String(ln[0])
+		var fs := 30 if k == "h" else (22 if k == "s" else (17 if k == "p" else 15))
+		if k == "h" and y > 0.0:
+			y += 24.0
+		elif k == "s":
+			y += 8.0
+		var h := font.get_multiline_string_size(String(ln[1]), HORIZONTAL_ALIGNMENT_LEFT, 640.0, fs).y
+		cx_lay.append([y, fs, String(ln[1]), ln[2], h])
+		y += h + 6.0
+	cx_max = maxf(0.0, y - (CX_BOT - CX_TOP) + 40.0)
+	cx_scroll = clampf(cx_scroll, 0.0, cx_max)
+
+
+func _cx_gui(event: InputEvent) -> bool:
+	if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0 and event.position.y > CX_TOP:
+		cx_scroll = clampf(cx_scroll - event.relative.y, 0.0, cx_max)
+		return true
+	if event is InputEventMouseButton and event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		cx_scroll = clampf(cx_scroll + (80.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -80.0), 0.0, cx_max)
+		return true
+	return false
+
+
+func _cx_input(p: Vector2) -> void:
+	if btn_cx_back.has_point(p):
+		state = MODE
+		_sfx("ui")
+		return
+	if btn_cx_t0.has_point(p) or btn_cx_t1.has_point(p):
+		var nt := 0 if btn_cx_t0.has_point(p) else 1
+		if nt != cx_tab:
+			cx_tab = nt
+			cx_scroll = 0.0
+			_cx_layout()
+		_sfx("ui")
+
+
+func _draw_codex(acc: Color) -> void:
+	for ln in cx_lay:
+		var y: float = CX_TOP + float(ln[0]) - cx_scroll
+		var h: float = ln[4]
+		if y + h < CX_TOP - 40.0 or y > CX_BOT + 10.0:
+			continue
+		_para(String(ln[2]), Vector2(40, y + float(ln[1])), int(ln[1]), ln[3], 640.0)
+	draw_rect(Rect2(0, 0, 720, CX_TOP - 6.0), Color("0a0c14"))
+	draw_rect(Rect2(0, CX_BOT, 720, 400), Color("0a0c14"))
+	draw_line(Vector2(0, CX_TOP - 6.0), Vector2(720, CX_TOP - 6.0), Color(1, 1, 1, 0.15), 2.0)
+	_txt("CODEX", Vector2(0, 130), 52, acc)
+	_button(btn_cx_t0, "PROGRESS", Color("ffd84f") if cx_tab == 0 else Color(1, 1, 1, 0.45), 24)
+	_button(btn_cx_t1, "GUIDE", Color("7fd8ff") if cx_tab == 1 else Color(1, 1, 1, 0.45), 24)
+	if cx_max > 0.0:
+		var fr := cx_scroll / cx_max
+		draw_rect(Rect2(706, CX_TOP + fr * (CX_BOT - CX_TOP - 60.0), 6, 60), Color(1, 1, 1, 0.3))
+	_txt("Drag to scroll", Vector2(0, CX_BOT + 14), 14, Color(1, 1, 1, 0.4))
+	_button(btn_cx_back, "BACK", acc, 28)
+
+
+func _cx_prog_lines() -> Array:
+	var L: Array = []
+	var W := Color.WHITE
+	var G := Color(1, 1, 1, 0.6)
+	var Y := Color("ffd84f")
+	var st: Dictionary = cx.get("st", {})
+	L.append(["h", "OVERVIEW", Y])
+	L.append(["p", "Best adventure floor: %d     Best puzzle floor: %d" % [adv_best, best], W])
+	L.append(["p", "Bank: %d coins     Runs: %d     Deaths: %d" % [bank, int(st.get("runs", 0)), int(st.get("deaths", 0))], W])
+	L.append(["p", "Kills: %d     Elites: %d     Bosses: %d     Floors cleared: %d" % [int(st.get("kills", 0)), int(st.get("elites", 0)), int(st.get("bosses", 0)), int(st.get("floors", 0))], W])
+	var tl := 0
+	for d in class_defs:
+		tl += mx_level(String(d["id"]))
+	L.append(["p", "Total mastery: %d / %d" % [tl, MX_MAX * class_defs.size()], W])
+	L.append(["g", "Stats count from build 75 onward.", G])
+	L.append(["h", "CLASSES AND MASTERY", Y])
+	var cb: Dictionary = cx.get("cbest", {})
+	for d in class_defs:
+		var cid := String(d["id"])
+		var lv := mx_level(cid)
+		var pr := _mx_prog(cid)
+		var c: Color = d["col"]
+		L.append(["s", "%s   -   %s" % [String(d["name"]).to_upper(), ("MASTER, %d stars" % mx_stars(cid)) if lv >= MX_MAX else ("Mastery %d  (%d / %d XP)" % [lv, pr.x, pr.y])], c])
+		if not class_open(cid):
+			L.append(["p", "Locked - unlock it in the shop.", G])
+			continue
+		var sn := _spec_name(cid)
+		L.append(["p", "Best floor: %d     Build: %s" % [int(cb.get(cid, 0)), sn if sn != "" else "base class"], W])
+		if lv < MX_MAX:
+			L.append(["g", "Next: level %d - %s" % [lv + 1, _mx_rew_text(cid, lv + 1)], G])
+	var bl: Dictionary = cx.get("builds", {})
+	var bn := 0
+	var bt := 0
+	var brow: Array = []
+	for d in class_defs:
+		var cid := String(d["id"])
+		if not CK.has(cid):
+			continue
+		var nm := String(d["name"])
+		var keys: Array = [[cid + "//", nm + " (base)"]]
+		for spv in ["a", "b"]:
+			var sp := String(spv)
+			var sd: Dictionary = CK[cid][sp]
+			keys.append([cid + "/" + sp + "/", nm + " - " + String(sd["n"])])
+			for sbv in ["1", "2"]:
+				keys.append([cid + "/" + sp + "/" + String(sbv), nm + " - " + String(sd["n"]) + " - " + String(sd["subs"][String(sbv)]["n"])])
+		brow.append(["s", nm.to_upper(), d["col"]])
+		for k in keys:
+			bt += 1
+			var f := int(bl.get(String(k[0]), 0))
+			if f > 0:
+				bn += 1
+			brow.append(["p", ("[x] %s  -  best floor %d" % [String(k[1]), f]) if f > 0 else ("[  ] %s" % String(k[1])), Y if f > 0 else G])
+	L.append(["h", "BUILDS ACHIEVED  %d / %d" % [bn, bt], Y])
+	L.append(["g", "A build counts once you clear a floor with that class, specialisation and sub-specialisation active.", G])
+	L.append_array(brow)
+	var own := 0
+	var urow: Array = []
+	for sd2 in shop_defs:
+		var mr := (sd2["costs"] as Array).size()
+		var r := up(String(sd2["id"]))
+		if r >= mr:
+			own += 1
+		var tag := "[x] " if r >= mr else (("[%d/%d] " % [r, mr]) if r > 0 else "[  ] ")
+		urow.append(["p", tag + String(sd2["name"]) + "  -  " + String(sd2["desc"]), Y if r >= mr else (W if r > 0 else G)])
+	L.append(["h", "SHOP UNLOCKS  %d / %d" % [own, shop_defs.size()], Y])
+	L.append_array(urow)
+	L.append(["h", "COLLECTION", Y])
+	L.append(["g", "Everything you have carried at the end of a floor is recorded here.", G])
+	var gs: Dictionary = cx.get("gear", {})
+	for slot in ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]:
+		var tot := 0
+		var fn: PackedStringArray = []
+		for gd in gear_list:
+			if String(gd["slot"]) != slot:
+				continue
+			tot += 1
+			if gs.has(String(gd["id"])):
+				fn.append(String(gd["name"]))
+		L.append(["s", "%s  %d / %d" % [String(slot).to_upper(), fn.size(), tot], W])
+		L.append(["g", ", ".join(fn) if fn.size() > 0 else "Nothing found yet", G])
+	var ts: Dictionary = cx.get("tr", {})
+	var tn: PackedStringArray = []
+	for k2 in TRAIT_DEFS:
+		if ts.has(String(k2)):
+			tn.append(String(TRAIT_DEFS[k2]["n"]))
+	L.append(["s", "WEAPON TRAITS  %d / %d" % [tn.size(), TRAIT_DEFS.size()], W])
+	L.append(["g", ", ".join(tn) if tn.size() > 0 else "Nothing found yet", G])
+	var ms: Dictionary = cx.get("md", {})
+	var mn: PackedStringArray = []
+	for k3 in MOD_DEFS:
+		if ms.has(String(k3)):
+			mn.append(String(MOD_DEFS[k3]["n"]))
+	L.append(["s", "GEAR MODS  %d / %d" % [mn.size(), MOD_DEFS.size()], W])
+	L.append(["g", ", ".join(mn) if mn.size() > 0 else "Nothing found yet", G])
+	var rs: Dictionary = cx.get("rl", {})
+	var rn: PackedStringArray = []
+	var rt := 0
+	for rd in relic_defs:
+		if not rd.has("adv"):
+			continue
+		rt += 1
+		if rs.has(String(rd["id"])):
+			rn.append(_aname(String(rd["id"]), String(rd["name"])))
+	L.append(["s", "RELICS  %d / %d" % [rn.size(), rt], W])
+	L.append(["g", ", ".join(rn) if rn.size() > 0 else "Nothing found yet", G])
+	return L
+
+
+func _cx_guide_lines() -> Array:
+	var L: Array = []
+	var W := Color.WHITE
+	var G := Color(1, 1, 1, 0.62)
+	var Y := Color("ffd84f")
+	var B := Color("7fd8ff")
+	L.append(["h", "CLASS MASTERY", Y])
+	L.append(["p", "Every class has its own mastery level (1 to 30). You earn mastery XP for the class you are playing: 1 per kill, +2 for elites, +1 for affixed enemies, +20 for bosses, and 8 + 2 x floor for every floor cleared. Level n needs 50 + 20 x n XP.", W])
+	L.append(["p", "Every level adds +1% coins banked when a run ends. Past level 30 you earn a Mastery Star every 1500 XP; each star adds another +1% (up to 25).", W])
+	L.append(["p", "Rewards apply automatically at the start of each run: max health, air, skill points, coins, tools, a gear piece and a tool slot. Power upgrades change your class power. Class nodes open on the CLASS TREE page of the skill screen and cost normal skill points.", W])
+	var rl: PackedStringArray = []
+	for i in MX_MAX:
+		rl.append("%d: %s" % [i + 1, _mx_rew_text("scout", i + 1).replace("Trailblazer", "class node").replace("Light Feet", "class node").replace("Evasive", "class node").replace("Second Breath", "class node").replace("Scavenger's Nose", "class node").replace("Windwalker", "class keystone")])
+	L.append(["g", "Reward track:  " + ",  ".join(rl), G])
+	L.append(["s", "Specialisations", B])
+	L.append(["p", "At Mastery 10 pick one of two specialisations (on the MASTERY screen, from class select). It gives an always-on passive and opens 4 spec nodes. At Mastery 20 pick one of its two sub-specialisations: another passive and a keystone worth 3 points. You can switch between runs for free; nodes from an inactive spec stop working.", W])
+	L.append(["s", "Class tree unlocks", B])
+	L.append(["p", "Core nodes open at Mastery 1, 3, 6, 8, 12 and 16 (each needs the one above it). Spec nodes open at 10, 11, 13 and 17. Sub keystones need Mastery 20 and the last spec node.", W])
+	L.append(["h", "CLASSES, POWERS AND BUILDS", Y])
+	for d in class_defs:
+		var cid := String(d["id"])
+		var c: Color = d["col"]
+		L.append(["s", String(d["name"]).to_upper(), c])
+		L.append(["p", _atext("cls_" + cid, String(d["desc"])), W])
+		L.append(["p", _act_desc(cid), W])
+		var pl := _pw_lines(cid)
+		L.append(["g", "Power upgrades - I (Mastery 5): %s.  II (Mastery 15): %s.  III (Mastery 25): %s." % [pl[0], pl[1], pl[2]], G])
+		if not CK.has(cid):
+			continue
+		var cn: PackedStringArray = []
+		for nd in CK[cid]["core"]:
+			cn.append("%s - %s" % [String(nd[0]), _ck_fmt(nd)])
+		L.append(["g", "Core tree: " + ".  ".join(cn) + ".", G])
+		for spv in ["a", "b"]:
+			var sp := String(spv)
+			var sd: Dictionary = CK[cid][sp]
+			L.append(["p", "%s (Mastery 10): %s" % [String(sd["n"]), String(sd["d"])], _ck_scol(cid, sp)])
+			var sn: PackedStringArray = []
+			for nd2 in sd["nodes"]:
+				sn.append("%s - %s" % [String(nd2[0]), _ck_fmt(nd2)])
+			L.append(["g", "Nodes: " + ".  ".join(sn) + ".", G])
+			for sbv in ["1", "2"]:
+				var sbd: Dictionary = sd["subs"][String(sbv)]
+				var kn: Array = sbd["k"]
+				L.append(["g", "   %s (Mastery 20): %s  Keystone %s - %s." % [String(sbd["n"]), String(sbd["d"]), String(kn[0]), _ck_fmt(kn)], W])
+	L.append(["h", "ELEMENTS", Y])
+	L.append(["p", "Any weapon trait tagged with an element applies it on hit, so element skills, relics and specs work with every element trait.", W])
+	L.append(["p", "FIRE - burns the enemy every step (Ignite: 2 + floor/2 damage for 3 steps). Kindling, Pyromancy and Elementalist add steps.", Color("ff9a3c")])
+	L.append(["p", "SHOCK - 25% chance to stun on hit; a stunned enemy loses its next action. Conductor, Storm Call and Stormcaller raise the chance.", Color("ffe14f")])
+	L.append(["p", "CRYO - the first hit chills and freezes an enemy for a step. Frozen = stunned + chilled. Deep Freeze and Frost Bite add damage to frozen enemies.", Color("9fe8ff")])
+	L.append(["p", "TOXIC - poison stacks and hurts every step. Catalyst and Venom raise the stack cap.", Color("9dff6a")])
+	L.append(["p", "BLOOD - bleeding enemies lose 10% of their max health every step (Hemorrhage, Blood Frenzy). With the Boiling Blood apex, bleed also counts as an element for reactions.", Color("ff4d6d")])
+	L.append(["s", "Reactions", B])
+	L.append(["p", "Need the Elemental Reactions skill or the Archmage sub-spec (they stack). Power = the sum of both. Base = 2 + level/2. The same enemy can't react again for 2 steps.", W])
+	L.append(["p", "FIRE + CRYO = STEAM: base x power to the target and every enemy next to it.", W])
+	L.append(["p", "SHOCK + TOXIC = CORRODE: the target takes +50% damage from everything for 3 steps.", W])
+	L.append(["p", "FIRE + TOXIC = DETONATE: consumes burn and poison for (poison stacks x 3 + burn damage) x power.", W])
+	L.append(["p", "CRYO + SHOCK = SHATTER: stuns for 2 steps and deals (base + 1) x power.", W])
+	L.append(["p", "BLOOD + ANY = BOIL (Boiling Blood): (base + 2) x power, and every reaction heals you.", W])
+	L.append(["s", "Element traits", B])
+	for tk in TRAIT_DEFS:
+		var td: Dictionary = TRAIT_DEFS[tk]
+		var tags: Array = td.get("t", [])
+		var el := false
+		for tg in tags:
+			if String(tg) in ["fire", "shock", "cryo", "toxic"]:
+				el = true
+		if el:
+			L.append(["g", "%s [%s]: %s" % [String(td["n"]), ", ".join(PackedStringArray(tags)), String(td["d"])], W])
+	L.append(["h", "STATUS EFFECTS", Y])
+	L.append(["p", "Stun: loses its next action.  Freeze: stunned and chilled.  Root: can't move but can still hit.  Mark: takes extra damage from mark bonuses.  Bleed / Burn / Poison: damage each step.  Corrode: +50% damage taken.", W])
+	L.append(["p", "On you - Acid halves your armour, Frost halves your attack, Poison and Burn hurt every step. Mind Shield and Toxin Filter mods reduce them.", W])
+	L.append(["h", "WEAPON TRAITS  (%d)" % TRAIT_DEFS.size(), Y])
+	var packed := {}
+	for pkid in PACKS:
+		var pn := String(pkid)
+		for sd3 in shop_defs:
+			if String(sd3["id"]) == pn:
+				pn = String(sd3["name"])
+		var tl: Array = PACKS[pkid]["t"]
+		if tl.is_empty():
+			continue
+		L.append(["s", pn + "  (shop pack)", B])
+		for tid in tl:
+			packed[String(tid)] = true
+			if TRAIT_DEFS.has(tid):
+				L.append(["g", "%s: %s" % [String(TRAIT_DEFS[tid]["n"]), String(TRAIT_DEFS[tid]["d"])], W])
+	L.append(["s", "Standard pool", B])
+	for tk2 in TRAIT_DEFS:
+		if not packed.has(String(tk2)):
+			L.append(["g", "%s: %s" % [String(TRAIT_DEFS[tk2]["n"]), String(TRAIT_DEFS[tk2]["d"])], W])
+	L.append(["h", "GEAR MODS  (%d)" % MOD_DEFS.size(), Y])
+	L.append(["p", "Helmets, armour, boots and trinkets roll mods. RARE mods only roll on tier 4+ gear (12% per mod slot).", W])
+	for slot in ["helmet", "armour", "boots", "trinket"]:
+		L.append(["s", String(slot).to_upper(), B])
+		for mk in MOD_DEFS:
+			var md: Dictionary = MOD_DEFS[mk]
+			if String(md.get("slot", "")) == slot:
+				L.append(["g", "%s%s: %s" % [String(md["n"]), "  (RARE)" if bool(md.get("hi", false)) else "", String(md["d"])], Color("ffb347") if bool(md.get("hi", false)) else W])
+	L.append(["h", "GEAR SETS", Y])
+	for sid in GEAR_SETS:
+		var gsd: Array = GEAR_SETS[sid]
+		var pn2: PackedStringArray = []
+		for gid in gsd[1]:
+			pn2.append(String(gear_defs[gid]["name"]) if gear_defs.has(gid) else String(gid))
+		L.append(["s", String(gsd[0]), B])
+		L.append(["g", "Pieces: " + ", ".join(pn2), G])
+		L.append(["g", "2 pieces: %s.   3 pieces: %s." % [String(gsd[2]), String(gsd[3])], W])
+	L.append(["h", "MONSTER AFFIXES", Y])
+	for ak in AFFIX_DEFS:
+		var ad: Dictionary = AFFIX_DEFS[ak]
+		L.append(["g", "%s: %s" % [String(ad["n"]), String(ad["d"])], ad["col"]])
+	L.append(["h", "RELICS", Y])
+	for rd in relic_defs:
+		if not rd.has("adv"):
+			continue
+		L.append(["g", "%s%s: %s" % [_aname(String(rd["id"]), String(rd["name"])), "  (CURSED)" if rd.has("curse") else "", _atext(String(rd["id"]), String(rd["desc"]))], Color("ff8a7a") if rd.has("curse") else W])
+	L.append(["s", "Relic synergies", B])
+	for sy in synergies:
+		if not bool(sy.get("adv", false)):
+			continue
+		var an := String(sy["a"])
+		var bn := String(sy["b"])
+		for rd2 in relic_defs:
+			if String(rd2["id"]) == an:
+				an = _aname(an, String(rd2["name"]))
+			elif String(rd2["id"]) == bn:
+				bn = _aname(bn, String(rd2["name"]))
+		L.append(["g", "%s + %s: %s" % [an, bn, _atext("syn_%s_%s" % [String(sy["a"]), String(sy["b"])], String(sy["text"]))], W])
+	L.append(["h", "TOOLS", Y])
+	for uid in use_defs:
+		var ud: Dictionary = use_defs[uid]
+		L.append(["g", "%s: %s" % [_use_name(String(uid)), String(ud.get("desc", ""))], W])
+	L.append(["h", "WORLD RULES", Y])
+	for wk in WORLD_RULE_TEXT:
+		L.append(["g", String(WORLD_RULE_TEXT[wk]), W])
+	L.append(["h", "SKILL WEB TIPS", Y])
+	L.append(["p", "You get a skill point every 3 levels. Inner branches start at the centre; keystones (diamonds) cost 2 points and need a rank 2 node next to them. Outer hybrid branches sit between two inner branches, and apex nodes need both neighbouring outer keystones (3 points). Respec costs coins and refunds everything, including class nodes.", W])
+	return L
+
+
+func _mx_selftest() -> void:
+	var bad := 0
+	mode = "adv"
+	var keep_x := mxp.duplicate()
+	var keep_s := mspec.duplicate()
+	var keep_b := msub.duplicate()
+	var keep_c := cx.duplicate(true)
+	save_off = false
+	for d in class_defs:
+		var cid := String(d["id"])
+		mxp[cid] = _mx_base(25) + 10
+		mspec[cid] = "b"
+		msub[cid] = "2"
+		cls = cid
+		cp_dirty = true
+		if mx_level(cid) != 25:
+			print("FAIL level ", cid, " ", mx_level(cid))
+			bad += 1
+		for l in range(1, MX_MAX + 1):
+			if _mx_rew_text(cid, l) == "":
+				print("FAIL reward text ", cid, " ", l)
+				bad += 1
+		var p := _cls_pass()
+		if float(p.get("hp", 0.0)) <= 0.0:
+			print("FAIL passives ", cid, " ", p)
+			bad += 1
+		skills.clear()
+		skill_pts = 999
+		var bought := 0
+		for pass_i in 6:
+			for id in sk_defs:
+				if sk_defs[id].has("cls") and String(sk_defs[id]["cls"]) == cid:
+					_ck_lock_reason(String(id))
+					while sk_can_buy(String(id)):
+						sk_buy(String(id))
+						bought += 1
+		if bought != 6 * 2 + 4 * 2 + 1:
+			print("FAIL class tree buys ", cid, " ", bought)
+			bad += 1
+		for id2 in skills:
+			if sk_defs[id2].has("cls") and String(sk_defs[id2]["spec"]) == "a":
+				print("FAIL bought other spec ", id2)
+				bad += 1
+		print("mx ", cid, " pass ", p, " pw ", _pw_lines(cid)[0], " sk(hp) ", sk("hp"))
+	var pl := _cx_prog_lines()
+	var gl := _cx_guide_lines()
+	cx_tab = 1
+	_cx_layout()
+	print("codex progress lines %d guide lines %d height %d" % [pl.size(), gl.size(), int(cx_max)])
+	if pl.size() < 20 or gl.size() < 100:
+		bad += 1
+	skills.clear()
+	mxp = keep_x
+	mspec = keep_s
+	msub = keep_b
+	cx = keep_c
+	save_off = true
+	cp_dirty = true
+	mode = "puzzle"
+	cls = "scout"
+	print("MX TEST DONE bad=%d" % bad)
