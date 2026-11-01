@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 76
+const BUILD := 77
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -6696,7 +6696,7 @@ func gear(stat: String) -> float:
 		var id := String(equip[slot])
 		if id == "" or not gear_defs.has(gb(id)):
 			continue
-		var st: Dictionary = gear_defs[gb(id)]["stats"]
+		var st: Dictionary = gstats(id)
 		tot += float(st.get(stat, 0))
 		if mode == "adv":
 			for mid in gmods(id):
@@ -7466,9 +7466,9 @@ func _reforge(k: int) -> void:
 	var gd: Dictionary = gear_defs[base]
 	var sl := String(gd["slot"])
 	if sl == "weapon" or sl == "ranged":
-		bag[k] = base + _roll_traits(null, int(gd["tier"]), int((gd["stats"] as Dictionary).get("range", 0)) > 0)
+		bag[k] = _with_stats(base + _roll_traits(null, int(gd["tier"]), int((gd["stats"] as Dictionary).get("range", 0)) > 0), id)
 	else:
-		bag[k] = base + _roll_mods(null, int(gd["tier"]), sl)
+		bag[k] = _with_stats(base + _roll_mods(null, int(gd["tier"]), sl), id)
 	_asm_build()
 	_sfx("big")
 
@@ -7747,7 +7747,7 @@ func gprice(id: String) -> int:
 
 
 func _gear_desc_id(id: String) -> String:
-	return _gear_desc(gear_defs[gb(id)])
+	return _gear_desc(gear_defs[gb(id)], id)
 
 
 func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String:
@@ -9044,7 +9044,7 @@ func _tier_col(t: int) -> Color:
 	return Color.WHITE
 
 
-func _gear_desc(d: Dictionary) -> String:
+func _gear_desc(d: Dictionary, gid := "") -> String:
 	var labels := {
 		"atk": "+%d attack", "crit": "%d%% crit chance", "leech": "heal %d per hit", "armor": "+%d armour", "hp": "+%d max HP",
 		"shield": "+%d start shield", "air": "+%d max air", "airsave": "%d%% less air per step", "sight": "+%d sight",
@@ -9052,9 +9052,9 @@ func _gear_desc(d: Dictionary) -> String:
 		"pod": "+%d air per pod", "range": "shoots %d tiles in a line", "rangeb": "+%d range for ranged weapons", "noammo": "%d%% chance not to consume ammo", "rangedef": "-%d damage from enemy shots", "hazres": "%d%% less hazard damage",
 	}
 	var parts: Array[String] = []
-	var st: Dictionary = d["stats"]
+	var st: Dictionary = gstats(gid) if gid != "" else d["stats"]
 	for k in st:
-		parts.append(String(labels[k]) % int(st[k]))
+		parts.append(String(labels.get(k, "+%d " + String(k))) % int(st[k]))
 	return ", ".join(parts)
 
 
@@ -9089,7 +9089,7 @@ func _adv_roll_gear(rng: RandomNumberGenerator, bonus := 0) -> String:
 		rid += _roll_traits(rng, int(gd["tier"]), int((gd["stats"] as Dictionary).get("range", 0)) > 0)
 	else:
 		rid += _roll_mods(rng, int(gd["tier"]), String(gd["slot"]))
-	return rid
+	return _roll_base(rid, rng)
 
 
 func _adv_apply_change(old_hp: int, old_ox: float) -> void:
@@ -9281,7 +9281,7 @@ func _draw_trade(acc: Color) -> void:
 			if otr != "":
 				_txt(otr, Vector2(rr.position.x + 108, rr.position.y + 84), 17, Color("ffd84f"), 340.0, HORIZONTAL_ALIGNMENT_LEFT)
 				dy = 108.0
-			_para(_gear_desc(gd), Vector2(rr.position.x + 108, rr.position.y + dy), 17, Color(1, 1, 1, 0.8), 340.0)
+			_para(_gear_desc(gd, String(o["id"])), Vector2(rr.position.x + 108, rr.position.y + dy), 17, Color(1, 1, 1, 0.8), 340.0)
 		else:
 			var uid := String(o["id"])
 			_use_icon(uid, Vector2(rr.position.x + 56, rr.position.y + 67), 70)
@@ -9976,7 +9976,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			var gd: Dictionary = gear_defs[gb(gid2)]
 			adv_pts += 2
 			if _adv_give_gear(gid2):
-				msg = "Found %s! %s" % [gd["name"], _gear_desc(gd)]
+				msg = "Found %s! %s" % [gd["name"], _gear_desc(gd, gid2)]
 				for tid2 in gtr(gid2):
 					msg += "   %s: %s" % [TRAIT_DEFS[tid2]["n"], TRAIT_DEFS[tid2]["d"]]
 				for mid2 in gmods(gid2):
@@ -12031,8 +12031,8 @@ func _inv_do_sort() -> void:
 func _cmp_line(prev: String) -> String:
 	var sl := String(gear_defs[gb(prev)]["slot"])
 	var cur := String(equip.get(sl, ""))
-	var a: Dictionary = gear_defs[gb(prev)]["stats"]
-	var b: Dictionary = gear_defs[gb(cur)]["stats"] if cur != "" else {}
+	var a: Dictionary = gstats(prev)
+	var b: Dictionary = gstats(cur) if cur != "" else {}
 	var keys: Array = a.keys()
 	for k in b.keys():
 		if not keys.has(k):
@@ -12236,7 +12236,7 @@ func _draw_char_tab(acc: Color) -> void:
 		_txt(String(gd2["slot"]).to_upper(), rr.position + Vector2(98, 56), 16, gc, 90.0, HORIZONTAL_ALIGNMENT_LEFT)
 		if gtrait_line(bid) != "":
 			_txt(gtrait_line(bid), rr.position + Vector2(190, 56), 14, Color("ffd84f"), 240.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_txt(_gear_desc(gd2), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt(_gear_desc(gd2, bid), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_button(_chr_equip_rect(idx), "EQUIP", gc, 22)
 		_button(_chr_sell_rect(idx), "SELL %d" % _sell_val(bid), Color("ffc93c"), 18)
 		if sk("reforge") > 0.0:
@@ -12292,7 +12292,7 @@ func _draw_row_partial(idx: int) -> void:
 		if gtrait_line(bid) != "":
 			_txt(gtrait_line(bid), rr.position + Vector2(190, 56), 14, Color("ffd84f"), 240.0, HORIZONTAL_ALIGNMENT_LEFT)
 	if y0 + 84.0 - 15.0 >= lt and y0 + 84.0 + 5.0 <= lb:
-		_txt(_gear_desc(gd2), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt(_gear_desc(gd2, bid), rr.position + Vector2(98, 84), 15, Color(1, 1, 1, 0.75), 440.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var btns: Array = [[_chr_equip_rect(idx), "EQUIP", gc, 22], [_chr_sell_rect(idx), "SELL %d" % _sell_val(bid), Color("ffc93c"), 18]]
 	if sk("reforge") > 0.0:
 		btns.append([_chr_forge_rect(idx), "FORGE %d/%d" % [_forge_cost(bid), scrap], Color("c9a36b") if scrap >= _forge_cost(bid) else Color(1, 1, 1, 0.35), 15])
@@ -14636,12 +14636,13 @@ func _cx_build(f: int) -> void:
 func _cx_open() -> void:
 	state = CODEX
 	cx_tab = 0
+	cx_sec = -1
 	cx_scroll = 0.0
 	_cx_layout()
 	_sfx("ui")
 
 
-func _cx_layout() -> void:
+func _cx_layout_old() -> void:
 	var pm := mode
 	mode = "adv"
 	var lines: Array = _cx_prog_lines() if cx_tab == 0 else _cx_guide_lines()
@@ -14662,7 +14663,7 @@ func _cx_layout() -> void:
 	cx_scroll = clampf(cx_scroll, 0.0, cx_max)
 
 
-func _cx_gui(event: InputEvent) -> bool:
+func _cx_gui_old(event: InputEvent) -> bool:
 	if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0 and event.position.y > CX_TOP:
 		cx_scroll = clampf(cx_scroll - event.relative.y, 0.0, cx_max)
 		return true
@@ -14672,7 +14673,7 @@ func _cx_gui(event: InputEvent) -> bool:
 	return false
 
 
-func _cx_input(p: Vector2) -> void:
+func _cx_input_old(p: Vector2) -> void:
 	if btn_cx_back.has_point(p):
 		state = MODE
 		_sfx("ui")
@@ -14688,6 +14689,7 @@ func _cx_input(p: Vector2) -> void:
 
 func _draw_codex(acc: Color) -> void:
 	_obox(Rect2(24, CX_TOP - 4.0, 672, CX_BOT - CX_TOP + 8.0), Color(acc.r, acc.g, acc.b, 0.06))
+	_cx_draw_list()
 	for ln in cx_lay:
 		var y: float = CX_TOP + float(ln[0]) - cx_scroll
 		var h: float = ln[4]
@@ -14703,8 +14705,8 @@ func _draw_codex(acc: Color) -> void:
 	if cx_max > 0.0:
 		var fr := cx_scroll / cx_max
 		draw_rect(Rect2(706, CX_TOP + fr * (CX_BOT - CX_TOP - 60.0), 6, 60), Color(1, 1, 1, 0.3))
-	_txt("Drag to scroll", Vector2(0, CX_BOT + 14), 14, Color(1, 1, 1, 0.4))
-	_button(btn_cx_back, "BACK", acc, 28)
+	_txt("Tap a section to open it, drag to scroll" if cx_sec < 0 else "Drag to scroll", Vector2(0, CX_BOT + 14), 14, Color(1, 1, 1, 0.4))
+	_button(btn_cx_back, "SECTIONS" if cx_sec >= 0 else "BACK", acc, 28)
 
 
 func _cx_prog_lines() -> Array:
@@ -15854,3 +15856,211 @@ func _ex_selftest() -> int:
 	floor_n = kf
 	an_key = -1
 	return bad
+
+
+# ===== B77: codex sections, rolled gear base stats =====
+
+var cx_sec := -1                # -1 = section list, else the open section
+var cx_secs: Array = []         # [title, colour, lines]
+var cx_press := Vector2(-1, -1)
+var cx_moved := false
+var gs_cache: Dictionary = {}
+var tp_cache: Dictionary = {}
+# Extra stats a slot + tier can roll on top of what that tier's base items have.
+# Format: {"armour": {3: {"hazres": [10, 30]}}}  (values are [min, max])
+const GEAR_POOL_EXTRA := {}
+
+
+func _cx_layout() -> void:
+	var pm := mode
+	mode = "adv"
+	var lines: Array = _cx_prog_lines() if cx_tab == 0 else _cx_guide_lines()
+	mode = pm
+	cx_secs.clear()
+	for ln in lines:
+		if String(ln[0]) == "h" or cx_secs.is_empty():
+			cx_secs.append([String(ln[1]) if String(ln[0]) == "h" else "GENERAL", ln[2], []])
+			if String(ln[0]) == "h":
+				continue
+		(cx_secs[cx_secs.size() - 1][2] as Array).append(ln)
+	cx_lay.clear()
+	var y := 0.0
+	if cx_sec < 0 or cx_sec >= cx_secs.size():
+		cx_sec = -1
+		y = float(cx_secs.size()) * 66.0 + 16.0
+	else:
+		var sec: Array = cx_secs[cx_sec]
+		var th := font.get_multiline_string_size(String(sec[0]), HORIZONTAL_ALIGNMENT_LEFT, 640.0, 30).y
+		cx_lay.append([0.0, 30, String(sec[0]), sec[1], th])
+		y = th + 12.0
+		for ln in sec[2]:
+			var k := String(ln[0])
+			var fs := 22 if k == "s" else (17 if k == "p" else 15)
+			if k == "s":
+				y += 8.0
+			var h := font.get_multiline_string_size(String(ln[1]), HORIZONTAL_ALIGNMENT_LEFT, 640.0, fs).y
+			cx_lay.append([y, fs, String(ln[1]), ln[2], h])
+			y += h + 6.0
+	cx_max = maxf(0.0, y - (CX_BOT - CX_TOP) + 40.0)
+	cx_scroll = clampf(cx_scroll, 0.0, cx_max)
+
+
+func _cx_draw_list() -> void:
+	if cx_sec >= 0:
+		return
+	for i in cx_secs.size():
+		var r := Rect2(40, CX_TOP + 8.0 + float(i) * 66.0 - cx_scroll, 640, 58)
+		if r.end.y < CX_TOP or r.position.y > CX_BOT:
+			continue
+		var c: Color = cx_secs[i][1]
+		_obox(r, Color(c.r, c.g, c.b, 0.10))
+		_aline(r, Color(c.r, c.g, c.b, 0.7), 2.0)
+		_txt(String(cx_secs[i][0]), Vector2(r.position.x + 20, r.position.y + 38), 24, c, 540.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt(">", Vector2(r.end.x - 50, r.position.y + 39), 28, c, 30.0)
+
+
+func _cx_tap_list(p: Vector2) -> void:
+	if cx_sec >= 0 or p.x < 40.0 or p.x > 680.0:
+		return
+	var fy := p.y - CX_TOP - 8.0 + cx_scroll
+	var i := int(floor(fy / 66.0))
+	if fy < 0.0 or fy - float(i) * 66.0 > 58.0 or i < 0 or i >= cx_secs.size():
+		return
+	cx_sec = i
+	cx_scroll = 0.0
+	_cx_layout()
+	_sfx("ui")
+
+
+func _cx_gui(event: InputEvent) -> bool:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if event.position.y > CX_TOP and event.position.y < CX_BOT:
+				cx_press = event.position
+				cx_moved = false
+				return true
+			cx_press = Vector2(-1, -1)
+			return false
+		if cx_press.x >= 0.0:
+			var pp := cx_press
+			cx_press = Vector2(-1, -1)
+			if not cx_moved:
+				_cx_tap_list(pp)
+			return true
+		return false
+	if event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0 and cx_press.x >= 0.0:
+		if event.position.distance_to(cx_press) > 12.0:
+			cx_moved = true
+		if cx_moved:
+			cx_scroll = clampf(cx_scroll - event.relative.y, 0.0, cx_max)
+		return true
+	if event is InputEventMouseButton and event.pressed and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		cx_scroll = clampf(cx_scroll + (80.0 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -80.0), 0.0, cx_max)
+		return true
+	return false
+
+
+func _cx_input(p: Vector2) -> void:
+	if btn_cx_back.has_point(p):
+		if cx_sec >= 0:
+			cx_sec = -1
+			cx_scroll = 0.0
+			_cx_layout()
+		else:
+			state = MODE
+		_sfx("ui")
+		return
+	if btn_cx_t0.has_point(p) or btn_cx_t1.has_point(p):
+		var nt := 0 if btn_cx_t0.has_point(p) else 1
+		if nt != cx_tab or cx_sec >= 0:
+			cx_tab = nt
+			cx_sec = -1
+			cx_scroll = 0.0
+			_cx_layout()
+		_sfx("ui")
+
+
+# ----- rolled base stats: item id = base@traits_or_mods@stat=v,stat=v -----
+
+func gstats(id: String) -> Dictionary:
+	if gs_cache.has(id):
+		return gs_cache[id]
+	var out := {}
+	if id.get_slice_count("@") >= 3:
+		for p in id.get_slice("@", 2).split(","):
+			if p.contains("="):
+				out[p.get_slice("=", 0)] = int(p.get_slice("=", 1))
+	if out.is_empty() and gear_defs.has(gb(id)):
+		out = gear_defs[gb(id)]["stats"]
+	gs_cache[id] = out
+	return out
+
+
+func _with_stats(nid: String, old: String) -> String:
+	if old.get_slice_count("@") < 3:
+		return nid
+	return nid + ("@" if nid.contains("@") else "@@") + old.get_slice("@", 2)
+
+
+# stat -> [min, max] over every base item of this slot and tier (+ GEAR_POOL_EXTRA)
+func _tier_pool(slot: String, tier: int) -> Dictionary:
+	var key := "%s_%d" % [slot, tier]
+	if tp_cache.has(key):
+		return tp_cache[key]
+	var pool := {}
+	for d in gear_list:
+		if String(d["slot"]) != slot or int(d["tier"]) != tier:
+			continue
+		var st: Dictionary = d["stats"]
+		for k in st:
+			var v := int(st[k])
+			if pool.has(k):
+				pool[k] = [mini(int(pool[k][0]), v), maxi(int(pool[k][1]), v)]
+			else:
+				pool[k] = [v, v]
+	var ex: Dictionary = GEAR_POOL_EXTRA.get(slot, {})
+	var ext: Dictionary = ex.get(tier, {})
+	for k2 in ext:
+		pool[k2] = [int(ext[k2][0]), int(ext[k2][1])]
+	tp_cache[key] = pool
+	return pool
+
+
+func _rv(pool: Dictionary, k: String, rng: RandomNumberGenerator) -> int:
+	var lo := int(pool[k][0])
+	var hi := int(pool[k][1])
+	if lo == hi:
+		lo = maxi(1, int(floor(float(lo) * 0.75)))
+		hi = maxi(lo, int(ceil(float(hi) * 1.25)))
+	return rng.randi_range(lo, hi) if rng != null else randi_range(lo, hi)
+
+
+func _roll_base(rid: String, rng: RandomNumberGenerator) -> String:
+	var b := gb(rid)
+	if not gear_defs.has(b):
+		return rid
+	var gd: Dictionary = gear_defs[b]
+	var pool := _tier_pool(String(gd["slot"]), int(gd["tier"]))
+	var base: Dictionary = gd["stats"]
+	var out := {}
+	if base.has("atk"):
+		out["atk"] = _rv(pool, "atk", rng)
+	if base.has("range"):
+		out["range"] = int(base["range"])
+	var keys: Array = []
+	for k in pool:
+		if String(k) != "range" and not out.has(k):
+			keys.append(String(k))
+	for i in range(keys.size() - 1, 0, -1):
+		var j := (rng.randi() if rng != null else randi()) % (i + 1)
+		var tmp = keys[i]
+		keys[i] = keys[j]
+		keys[j] = tmp
+	var n := maxi(1, base.size())
+	while out.size() < n and keys.size() > 0:
+		var k2 := String(keys.pop_back())
+		out[k2] = _rv(pool, k2, rng)
+	var parts: PackedStringArray = []
+	for k3 in out:
+		parts.append("%s=%d" % [k3, int(out[k3])])
+	return rid + ("@" if rid.contains("@") else "@@") + ",".join(parts)
