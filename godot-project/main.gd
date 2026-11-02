@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 81
+const BUILD := 82
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -398,8 +398,8 @@ var btn_menu := Rect2(596, 20, 104, 46)
 var btn_invmenu := Rect2(20, 76, 190, 56)
 var menu_armed := -10.0
 var btn_retry := Rect2(160, 790, 400, 76)
-var btn_newrun := Rect2(160, 790, 400, 76)
-var btn_shop := Rect2(160, 880, 400, 76)
+var btn_newrun := Rect2(160, 1060, 400, 76)
+var btn_shop := Rect2(160, 1150, 400, 76)
 var btn_back := Rect2(250, 1010, 220, 64)
 var btn_shop2 := Rect2(480, 1100, 200, 76)
 var btn_prev := Rect2(40, 1010, 190, 64)
@@ -5331,7 +5331,12 @@ func _draw_overlay(acc: Color) -> void:
 				lc = Color("ffb0a0")
 			elif line.contains("NEW BEST"):
 				lc = Color("ffd84f")
-			_txt(line, Vector2(0, ly), 26, lc)
+			if line.begins_with("NEW! "):
+				# bold yellow: draw twice, 2px apart
+				_txt(line, Vector2(-1, ly), 28, Color("ffd84f"))
+				_txt(line, Vector2(1, ly), 28, Color("ffd84f"))
+			else:
+				_txt(line, Vector2(0, ly), 26, lc)
 			ly += 42
 			li += 1
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
@@ -16834,7 +16839,7 @@ func _ul_run_end() -> String:
 	runs_done += 1
 	var s := ""
 	var nw: Array = UL_STEPS[runs_done]
-	s = "NEW! %s - %s" % [nw[0], nw[1]]
+	s = "NEW! %s\n%s" % [nw[0], nw[1]]
 	if runs_done < UL_STEPS.size() - 1 and ul_all == 0:
 		s += "\nNext run unlocks: %s" % String(UL_STEPS[runs_done + 1][0])
 	return s
