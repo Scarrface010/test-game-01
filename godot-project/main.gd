@@ -298,6 +298,8 @@ var tut_zone := -1
 var tut_prev_cls := "scout"
 # hidden gear test room: tap the SETTINGS title 5 times to unlock its button
 var testroom := false
+var in_base := false      # B85: walking around the Station Base hub before a run
+var base_prev_save_off := false
 var test_pending := false
 var test_unlocked := false
 var set_taps := 0
@@ -344,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 83
+const BUILD := 84
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -750,6 +752,7 @@ func _make_defs() -> void:
 	{"id": "sp", "name": "Quick Study", "desc": "Adventure: start each run with +1 skill point per rank", "costs": [400, 800, 1400]},
 	{"id": "vet", "name": "Veteran Training", "desc": "Adventure: start each run 1 level higher per rank", "costs": [180, 360, 600]},
 	]
+	_nr_setup()
 
 
 func up(id: String) -> int:
@@ -773,6 +776,8 @@ func _pack_open(kind: String, id: String) -> bool:
 	for pk in PACKS:
 		if (PACKS[pk][kind] as Array).has(id):
 			return up(String(pk)) > 0
+	if kind == "r" and id.begins_with("nr_"):
+		return up(_nr_pack_of(id)) > 0
 	return true
 
 
@@ -876,6 +881,8 @@ func _coin_val_base() -> int:
 	v += relic_n("amidas")
 	if relic_n("greedy") > 0:
 		v *= 3
+	if relic_n("nr_debt") > 0:
+		v = int(round(float(v) * 1.5))
 	if fmod == "danger":
 		v += 1
 	return v
@@ -1648,6 +1655,7 @@ func _remove_mon(c: Vector2i) -> void:
 	thief_held.erase(c)
 	tur.erase(c)
 	affix.erase(c)
+	nr_m.erase(c)
 	mstat.erase(c)
 
 
@@ -1674,7 +1682,7 @@ func _die(why: String) -> void:
 	if mini:
 		_mini_end("Knocked out: " + why)
 		return
-	if tutorial or testroom:
+	if tutorial or testroom or in_base:
 		hp = hp_cap()
 		oxy = oxy_max
 		msg = "Knocked out! Tutorial: you are back on your feet"
@@ -1959,6 +1967,11 @@ func _mini_end(why: String) -> void:
 	mini_done = false
 	save_off = mini_prev_save_off
 	_adv_unstash()
+	if in_base:
+		state = PLAY
+		msg = "Puzzle practice: %s" % why
+		_sfx("ui")
+		return
 	coins += g
 	state = TRADE
 	trade_med = false
@@ -2007,7 +2020,7 @@ const SHOP_RELIC_IDS := ["p_elem", "p_blood", "p_combo", "p_relic", "p_fort", "p
 func _shop_tab_of(id: String) -> int:
 	if id.begins_with("c_"):
 		return 0
-	if SHOP_RELIC_IDS.has(id):
+	if SHOP_RELIC_IDS.has(id) or NR_PACKS.has(id):
 		return 1
 	return 2
 
@@ -2984,11 +2997,6 @@ func _gui_input(event: InputEvent) -> void:
 		_ws_input(p)
 		return
 	if state == MODE:
-		if ul(7) and btn_codex.has_point(p):
-			_ul_tap(7)
-			cx_ret = MODE
-			_cx_open()
-			return
 		if btn_lb.has_point(p):
 			_lb_open()
 			_sfx("ui")
@@ -3042,10 +3050,6 @@ func _gui_input(event: InputEvent) -> void:
 				cls_page += 1
 				_sfx("ui")
 			return
-		if ul(8) and (btn_hz_m.has_point(p) or btn_hz_p.has_point(p)):
-			_ul_tap(8)
-			_hz_tap(String(class_defs[cls_page]["id"]), btn_hz_p.has_point(p))
-			return
 		if btn_cpick.has_point(p):
 			if DEEDS.has(String(class_defs[cls_page]["id"])) and not class_open(String(class_defs[cls_page]["id"])):
 				_sfx("blocked")
@@ -3062,27 +3066,9 @@ func _gui_input(event: InputEvent) -> void:
 			if test_pending:
 				_test_room_start()
 				return
-			_new_run()
-			_first_tut()
+			_base_start()
 			return
-		if ul(6) and btn_work.has_point(p):
-			_ul_tap(6)
-			_ct_fill()
-			state = WORKSHOP
-			_sfx("ui")
-			return
-		if ul(4) and btn_mast.has_point(p):
-			_ul_tap(4)
-			mx_cls = String(class_defs[cls_page]["id"])
-			state = MASTERY
-			_sfx("ui")
-			return
-		if btn_shop2.has_point(p):
-			shop_return = CLASS
-			shop_page = 0
-			state = SHOP
-			_sfx("ui")
-		elif btn_wipe.has_point(p):
+		if btn_wipe.has_point(p):
 			if t - reset_armed < 4.0:
 				_wipe_progress()
 			else:
@@ -3113,10 +3099,12 @@ func _gui_input(event: InputEvent) -> void:
 			return
 		for i in relic_choices.size():
 			if _relic_rect(i).has_point(p):
-				var id: String = relic_choices[i]["id"]
-				relics[id] = relic_n(id) + 1
-				if mode == "adv":
-					_adv_relic_applied(id)
+				var ids: Array = relic_choices[i].get("pair", [relic_choices[i]["id"]])
+				for id0 in ids:
+					var id := String(id0)
+					relics[id] = relic_n(id) + 1
+					if mode == "adv":
+						_adv_relic_applied(id)
 				_sfx("big")
 				relic_pick = i
 				pick_t = t
@@ -3162,6 +3150,8 @@ func _gui_input(event: InputEvent) -> void:
 					return
 			if btn_back.has_point(p):
 				mini_pick = false
+				if in_base:
+					state = PLAY
 				_sfx("ui")
 			return
 		if btn_back.has_point(p):
@@ -4068,6 +4058,8 @@ func _settings_input(p: Vector2) -> void:
 		return
 	if test_unlocked and BTN_TEST.has_point(p):
 		test_pending = true
+		if in_base:
+			_base_end()
 		mode = "adv"
 		set_ret = MODE
 		state = CLASS
@@ -5307,9 +5299,6 @@ func _draw_overlay(acc: Color) -> void:
 		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 70), 52, ma, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_button(btn_tut, "HOW TO PLAY", Color("ffd84f"), 34, "help")
 		_button(btn_lb, "LEADERBOARD", Color("7fd8ff"), 34, "trophy")
-		if ul(7):
-			_button(btn_codex, "CODEX", Color("c9a2ff"), 34)
-			_ul_dot(btn_codex, 7)
 		_button(btn_quit, "QUIT", Color("ff8a8a"), 30)
 		if save_info != "":
 			_panel(btn_cont, Color("6dff9a"), 0.2)
@@ -5470,18 +5459,10 @@ func _draw_overlay(acc: Color) -> void:
 			_para(_lock_text(cid), Vector2(124, 640), 24, Color(1, 1, 1, 0.6), 472.0)
 		_button(btn_cl_l, "<", acc if cls_page > 0 else Color(1, 1, 1, 0.2), 56)
 		_button(btn_cl_r, ">", acc if cls_page < class_defs.size() - 1 else Color(1, 1, 1, 0.2), 56)
-		if ul(8):
-			_hz_row(cid)
 		for i in (0 if mode == "adv" else class_defs.size()):
 			draw_circle(Vector2(360 + (i - (class_defs.size() - 1) * 0.5) * 30.0, 978), 8.0 if i == cls_page else 5.0, cc if i == cls_page else Color(1, 1, 1, 0.3))
 		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else _lock_btn(cid), cc if copen else Color("ffc93c"), 28)
-		_button(btn_shop2, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
-		if ul(4):
-			_button(btn_mast, "MASTERY", Color("ffd84f"), 28)
-			_ul_dot(btn_mast, 4)
-		if ul(6):
-			_button(btn_work, "WORKSHOP", Color("ff4fd8"), 28)
-			_ul_dot(btn_work, 6)
+		_txt("Shop, Workshop, Mastery and Threat are in your Station Base", Vector2(0, 1040), 18, Color(1, 1, 1, 0.5))
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP and mini_pick:
@@ -5644,7 +5625,7 @@ func _mon_seen(c: Vector2i) -> bool:
 
 
 func adv_oxy_max() -> float:
-	return _oxy_max_base() * (1.25 if gm("heartstation") else 1.0)
+	return _oxy_max_base() * (1.25 if gm("heartstation") else 1.0) * (0.5 if relic_n("nr_thin") > 0 else 1.0)
 
 
 func _oxy_max_base() -> float:
@@ -5988,7 +5969,7 @@ func _draw_world_banner() -> void:
 
 
 func _world_rule() -> String:
-	if mode != "adv" or tutorial or testroom or arena or themes.is_empty():
+	if mode != "adv" or tutorial or testroom or in_base or arena or themes.is_empty():
 		return ""
 	var wr := String(WORLD_RULES[tidx() % WORLD_RULES.size()])
 	if wr == "supply" and tidx() >= WORLD_RULES.size():
@@ -6004,7 +5985,7 @@ func _adv_in_room(c: Vector2i) -> bool:
 
 
 func _guide_on() -> bool:
-	return mode == "adv" and not tutorial and not arena and floor_n == 1 and adv_best == 0
+	return mode == "adv" and not tutorial and not in_base and not arena and floor_n == 1 and adv_best == 0
 
 
 func _guide_say(k: String, text: String) -> bool:
@@ -6334,6 +6315,9 @@ func _adv_gen() -> void:
 	if testroom:
 		_adv_gen_test()
 		return
+	if in_base:
+		_adv_gen_base()
+		return
 	if arena:
 		_adv_gen_arena()
 		return
@@ -6451,6 +6435,8 @@ func _adv_gen() -> void:
 			nm = rng.randi_range(0, 2)
 			if i == far:
 				nm = maxi(nm, 1)
+			if relic_n("nr_hunger") > 0 and rng.randf() < 0.35:
+				nm += 1
 			if r.size.x * r.size.y >= 45 and floor_n >= 3 and rng.randf() < 0.5:
 				nm += 1
 		for k in nm:
@@ -6746,7 +6732,7 @@ func gear(stat: String) -> float:
 
 
 func hp_cap() -> int:
-	return int(float(_hp_cap_base()) * (1.25 if gm("heartstation") else 1.0) * (_hz_frag() if mode == "adv" else 1.0))
+	return maxi(1, int(float(_hp_cap_base()) * (1.25 if gm("heartstation") else 1.0) * (_hz_frag() if mode == "adv" else 1.0) * (0.5 if relic_n("nr_fragile") > 0 else 1.0)))
 
 
 func _hp_cap_base() -> int:
@@ -6768,6 +6754,8 @@ func armor_total() -> int:
 		at += int(sk("hold"))
 	if gm("bulwarkp") and _wall_adj(pos):
 		at += 3
+	if relic_n("nr_pack") > 0:
+		at += _near_mons(pos, 1, []).size()
 	if gm("fortress") and hp * 4 > hp_cap() * 3:
 		at *= 2
 	return at / 2 if p_acid > 0 else at
@@ -6779,7 +6767,7 @@ func p_atk() -> int:
 
 
 func _p_atk_raw() -> int:
-	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0))
+	return level + boost + int(gear("atk")) + int(sk("atk")) + int(pk.get("mel", 0)) + nr_l_atk + nr_thin_atk
 
 
 func _ranged_atk() -> int:
@@ -6821,6 +6809,11 @@ func mon_atk(c: Vector2i) -> int:
 		if _is_frenzied(c):
 			a += maxi(2, a / 2)
 		a += _hz_atk(c)
+		if relic_n("nr_ledger") > 0:
+			var rc := 0
+			for rk in relics:
+				rc += int(relics[rk])
+			a = int(round(float(a) * (1.0 + 0.02 * float(rc))))
 	return a
 
 
@@ -6835,6 +6828,10 @@ func mon_hp_max(c: Vector2i) -> int:
 		if String(affix.get(c, "")) == "brute":
 			h *= 2
 		h = int(float(h) * _hz_hp(c))
+		if relic_n("nr_fragile") > 0:
+			h = maxi(1, h / 2)
+		if ev_idol:
+			h = int(float(h) * 1.25)
 	return h
 
 
@@ -6916,6 +6913,8 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 		if mons.has(src):
 			_adv_damage_mon(src, a)
 		return true
+	if _nr_dodge(src):
+		return true
 	if randf() * 100.0 < dodge_chance():
 		_pop(pos, "DODGE", Color("9fe8ff"))
 		_fx_ring(vis_pos, Color("9fe8ff"), 1.1, 0.35, 3.0)
@@ -6961,12 +6960,14 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	if sk("msupp") > 0.0 and _mk(src):
 		a = maxi(1, int(round(float(a) * (1.0 - sk("msupp") / 100.0))))
 	a = _ck_hurt(a, src)
+	a = _nr_flip(a)
 	if a <= 0:
 		return true
 	var d := dmg_taken(a)
 	var absorbed := mini(sh, d)
 	sh -= absorbed
 	hp -= d - absorbed
+	_nr_hurt(src, d)
 	_ck_hurt_after(src, d, absorbed)
 	if _any_tr("reprisal"):
 		repr_ready = true
@@ -7024,6 +7025,8 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 		_pop(pos, "SECOND WIND", Color("9fffc0"))
 		msg += "   Second Wind! You cling on"
 		return true
+	if hp <= 0 and _nr_rewind():
+		return true
 	if hp <= 0 and _phoenix():
 		return true
 	if hp <= 0:
@@ -7045,6 +7048,7 @@ func _adv_env_hurt(d: int, text: String, why: String, snd := "spike") -> bool:
 	var absorbed := mini(sh, d)
 	sh -= absorbed
 	hp -= d - absorbed
+	_nr_hurt(Vector2i(-1, -1), d)
 	_pop(pos, "-%d" % d, Color("ff6a6a") if absorbed < d else Color("7db2ff"))
 	if absorbed > 0:
 		_fx_ring(vis_pos, Color("7db2ff"), 0.9, 0.35, 5.0)
@@ -7393,6 +7397,8 @@ func _tool_spend(i: int) -> void:
 		_arc_foundry()
 	if sk("overclk") > 0.0:
 		sh = mini(sh_cap(), sh + int(sk("overclk")))
+	if _nr_encore():
+		return
 	tool_uses += 1
 	if relic_n("spare") > 0 and tool_uses % 3 == 0:
 		_pop(pos, "REFUNDED", Color("4fd1c5"))
@@ -7754,7 +7760,12 @@ func gtr(id: String) -> Array:
 func wtr() -> Array:
 	if mode != "adv":
 		return []
-	return gtr(String(equip.get("ranged" if shooting else "weapon", "")))
+	var wa: Array = gtr(String(equip.get("ranged" if shooting else "weapon", "")))
+	if nr_tmp_tr.is_empty():
+		return wa
+	wa = wa.duplicate()
+	wa.append_array(nr_tmp_tr)
+	return wa
 
 
 func has_tr(id: String) -> bool:
@@ -7847,11 +7858,11 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 
 
 func crit_chance() -> float:
-	return gear("crit") + sk("crit") + ((sk("rcrit") + _set_stat("rcrit")) if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 5.0 * relic_n("luckychip") + (10.0 if gcoin_buff() == 0 else 0.0) + tgt_crit
+	return gear("crit") + sk("crit") + ((sk("rcrit") + _set_stat("rcrit")) if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 5.0 * relic_n("luckychip") + (10.0 if gcoin_buff() == 0 else 0.0) + tgt_crit + nr_l_crit
 
 
 func dodge_chance() -> float:
-	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0) + (10.0 if gcoin_buff() == 1 else 0.0) + (10.0 if gm("reflex") and p_moved else 0.0)
+	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0) + (10.0 if gcoin_buff() == 1 else 0.0) + (10.0 if gm("reflex") and p_moved else 0.0) + nr_l_dodge
 
 
 func _bleed_dmg(c: Vector2i) -> int:
@@ -9458,6 +9469,7 @@ func _adv_init_run() -> void:
 			equip[String(gear_defs[gb(kid)]["slot"])] = kid
 		else:
 			bag.append(kid)
+	_nr_init_run()
 	_mx_init_run()
 
 
@@ -9484,6 +9496,14 @@ func _adv_relic_applied(id: String) -> void:
 		_adv_level_up(3)
 	elif ["pyro", "storm", "frost", "toxi", "bloodpact", "hood"].has(id):
 		hp += 4
+	elif id == "nr_crown":
+		_adv_level_up(5)
+	elif id == "nr_lung2":
+		nr_lung2_v = 30.0
+	elif id == "nr_thin" or id == "nr_fragile":
+		oxy_max = adv_oxy_max()
+		oxy = minf(oxy, oxy_max)
+		hp = mini(hp, hp_cap())
 
 
 func _adv_scaled(raw: int) -> int:
@@ -9576,6 +9596,8 @@ func _adv_begin() -> void:
 		banner_t0 = t
 	else:
 		banner_rule = ""
+	_nr_begin()
+	_ev_begin()
 
 
 func _adv_next() -> void:
@@ -9696,6 +9718,7 @@ func _adv_path(target: Vector2i) -> Array[Vector2i]:
 
 func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	run_kills += 1
+	_nr_kill_pre(nc)
 	_mx_kill(nc, is_boss)
 	var back := 0
 	if thief_held.has(nc):
@@ -9738,6 +9761,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		mult += 0.4
 	if has_tr("harvest"):
 		mult += 0.3
+	mult += 0.25 * relic_n("nr_hunger")
 	if randf() * 100.0 < sk("lucky"):
 		mult += 1.0
 		_pop(nc, "LUCKY!", Color("ffd84f"))
@@ -9768,6 +9792,7 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 			msg += "  +10 coins + " + _use_name(it)
 		else:
 			msg += "  +10 coins"
+	_nr_kill(nc, was_elite, is_boss, was_affix)
 	_sfx("elite" if (was_elite or is_boss) else "win")
 
 
@@ -9797,7 +9822,7 @@ func _adv_fight(nc: Vector2i) -> int:
 		if not _adv_hurt(mon_atk(nc), nm, nc):
 			return 0
 		return 2
-	var dmg := _tr_hit_mod(nc, p_atk())
+	var dmg := _nr_dmg(nc, _tr_hit_mod(nc, p_atk()), false)
 	if gm("huntereye") and mon_hp_now(nc) >= mon_hp_max(nc):
 		dmg += 2
 	if gm("charger") and chg_n >= 2:
@@ -9821,12 +9846,15 @@ func _adv_fight(nc: Vector2i) -> int:
 		if lk > 0 and hp < hp_cap():
 			_p_heal(lk)
 		left = _tr_on_hit(nc, dmg, crit, false, left)
+		left -= _nr_ghost(nc, dmg)
 	if left <= 0 and mons.has(nc):
 		_adv_kill(nc, nm, lv, is_boss)
 		return 1
 	if not mons.has(nc):
 		return 1
 	mon_hp[nc] = left
+	if not missed and _nr_after_hit(nc):
+		return 2
 	msg = ("%s dodges!" % nm) if missed else ("You hit %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(nc)])
 	_sfx("step")
 	mon_lunge[nc] = [t + 0.12, Vector2(pos - nc).normalized()]
@@ -9868,6 +9896,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			wbox_from = ranged_mode
 			wbox_t0 = Time.get_ticks_msec()
 			ranged_mode = false
+			_nr_swap()
 			_sfx("ui")
 			_pop(pos, "MELEE", Color("ff8a4f"))
 		var res := _adv_fight(nc)
@@ -9897,6 +9926,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			if _give_use(got):
 				gm = " + " + _use_name(got)
 			msg = "Vault opened! +10 coins, +12 XP%s" % gm
+			_nr_vault()
 			for vk in int(sk("vault")):
 				var vx := _random_use()
 				if _give_use(vx):
@@ -9913,7 +9943,14 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		items.erase(nc)
 		pick_c = nc
 		pick_kind = kind
-		if kind.begins_with("use_"):
+		if kind.begins_with("bs_"):
+			items[nc] = kind
+			snd = ""
+			call_deferred("_bs_open", kind)
+		elif kind.begins_with("ev_"):
+			_ev_touch(nc, kind)
+			snd = ""
+		elif kind.begins_with("use_"):
 			var uid := kind.substr(4)
 			if _give_use(uid):
 				msg = "Got %s: %s" % [_use_name(uid), _atext("tool_" + uid, String(use_defs[uid]["desc"]))]
@@ -9929,6 +9966,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			adv_pts += 2
 			msg = "Key! Find the locked vault"
 			_pop(nc, "KEY", Color("ffd84f"))
+			_nr_key()
 			snd = "coin"
 		elif kind == "pod":
 			if oxy >= oxy_max:
@@ -10238,8 +10276,13 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 				_pop(pos, "+%d HP" % healed, Color("ff8a9a"))
 			else:
 				heal_spent = true
-		if oxy < oxy_max - 0.5:
-			msg = "O2 station: air fully restored"
+		var o2_left := _o2_left(pos)
+		if oxy < oxy_max - 0.5 and o2_left <= 0:
+			msg = "O2 station depleted - find another one"
+			_pop(pos, "DEPLETED", Color("8a93a8"))
+		elif oxy < oxy_max - 0.5:
+			o2_used[pos] = int(o2_used.get(pos, 0)) + 1
+			msg = "O2 station: air fully restored (%d uses left)" % (o2_left - 1)
 			_pop(pos, "AIR FULL", Color("7fd8ff"))
 			snd = "lamp"
 		if healed > 0:
@@ -10248,7 +10291,8 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			snd = "lamp"
 		elif heal_spent:
 			msg += "   Recycler is spent: %d heals per floor" % STATION_USES
-		oxy = oxy_max
+		if o2_left > 0:
+			oxy = oxy_max
 	if scan_steps > 0:
 		scan_steps -= 1
 	if decoy_steps > 0:
@@ -10308,6 +10352,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 	if moved and haz_hit != "":
 		if not _adv_haz_trigger(haz_hit, nc, nc - from_c):
 			return
+	_nr_step(moved, fought)
 	if _oxy_dead():
 		return
 	if moved and pos == stairs and not mons.has(stairs):
@@ -10394,6 +10439,9 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 	if mstat.has(a):
 		mstat[b] = mstat[a]
 		mstat.erase(a)
+	if nr_m.has(a):
+		nr_m[b] = nr_m[a]
+		nr_m.erase(a)
 
 
 func _cloak_break() -> void:
@@ -10479,6 +10527,8 @@ func _lane_ok(a: Vector2i, b: Vector2i, rg: int) -> bool:
 		var m: Vector2i = a + st * i
 		if not _aopen(m) or mons.has(m) or vaults.has(m):
 			return false
+		if a != pos and corpses.has(m) and relic_n("nr_hollow") > 0:
+			return false
 	return true
 
 
@@ -10558,7 +10608,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		_pop(pos, "FREE SHOT", Color("6dff9a"))
 	else:
 		ammo = maxi(0, ammo - (2 if relic_n("heavyammo") > 0 else 1))
-	var dmg := _tr_hit_mod(c, _ranged_hv())
+	var dmg := _nr_dmg(c, _tr_hit_mod(c, _ranged_hv()), true)
 	if sk("fardmg") > 0.0 and maxi(absi(c.x - pos.x), absi(c.y - pos.y)) >= 3:
 		dmg = int(round(float(dmg) * (1.0 + sk("fardmg") / 100.0)))
 	if act_rico:
@@ -10591,7 +10641,10 @@ func _adv_shoot_do(c: Vector2i) -> void:
 	else:
 		mon_hp[c] = left
 		msg = ("%s dodges the shot!" % nm) if missed else ("You shoot %s for %d (%d/%d HP)" % [nm, dmg, left, mon_hp_max(c)])
+		if not missed:
+			_nr_after_hit(c)
 	_sfx("shoot")
+	_nr_shot(c, dmg)
 	if act_rico and dmg > 0:
 		act_rico = false
 		_act_ricochet(c, dmg)
@@ -10603,7 +10656,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 			kinds[c] = "rager"
 			msg += "  It charges you at full speed!"
 			_sfx("aggro")
-	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c):
+	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c) and not _turned(c):
 		mon_lunge[c] = [t + 0.12, Vector2(pos - c).normalized()]
 		if not _adv_hurt(mon_atk(c), nm, c):
 			return
@@ -10614,6 +10667,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		rw_hist.pop_front()
 	_act_tick()
 	oxy -= _shot_cost()
+	_nr_step(false, true)
 	if scan_steps > 0:
 		scan_steps -= 1
 	if decoy_steps > 0:
@@ -10650,7 +10704,7 @@ func _tur_lane(c: Vector2i) -> Array[Vector2i]:
 	var dv: Vector2i = TDIRS[int(tur[c]["d"])]
 	for st in range(1, TUR_RANGE + 1):
 		var n: Vector2i = c + dv * st
-		if not _aopen(n) or vaults.has(n):
+		if not _aopen(n) or vaults.has(n) or (corpses.has(n) and relic_n("nr_hollow") > 0):
 			break
 		out.append(n)
 		if mons.has(n):
@@ -10872,6 +10926,7 @@ func _adv_clear() -> void:
 	else:
 		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
 	relic_choices = _roll_relics(1 if boss_floor else 0)
+	_nr_clear()
 	state = CLEAR
 
 
@@ -11411,6 +11466,7 @@ func _adv_input(p: Vector2) -> void:
 		wbox_from = ranged_mode
 		wbox_t0 = Time.get_ticks_msec()
 		ranged_mode = not ranged_mode
+		_nr_swap()
 		walk.clear()
 		_sfx("ui")
 		return
@@ -11792,6 +11848,9 @@ func _adv_draw() -> void:
 				_ctext("EXIT" if ok else "%d" % adv_req, ctr + Vector2(0, AC * 0.1), int(AC * 0.2), dc)
 			elif stations.has(c):
 				_draw_station(ctr)
+				if _o2_left(c) <= 0:
+					draw_circle(ctr, AC * 0.42, Color(0.05, 0.06, 0.1, 0.6))
+					_ctext("EMPTY", ctr + Vector2(0, AC * 0.08), int(AC * 0.2), Color("8a93a8"))
 			elif meds.has(c):
 				_draw_med(ctr)
 			elif merchants.has(c):
@@ -11801,7 +11860,11 @@ func _adv_draw() -> void:
 			elif items.has(c):
 				var kind2: String = items[c]
 				draw_circle(ctr + Vector2(0, AC * 0.25), AC * 0.2, Color(0, 0, 0, 0.25))
-				if kind2.begins_with("use_"):
+				if kind2.begins_with("bs_"):
+					_bs_draw(ctr, kind2, bob)
+				elif kind2.begins_with("ev_"):
+					_ev_draw(ctr, kind2, bob)
+				elif kind2.begins_with("use_"):
 					_use_icon(kind2.substr(4), ctr + Vector2(0, bob), AC * 0.55)
 				elif kind2 == "key":
 					_draw_key(ctr + Vector2(0, bob), AC * 0.8)
@@ -11894,10 +11957,12 @@ func _adv_draw() -> void:
 		draw_rect(Rect2(mm.position.x + 3 + stairs.x * msc - 1, mm.position.y + 3 + stairs.y * msc - 1, 5, 5), Color("6dff9a") if adv_pts >= adv_req else Color("ff8a8a"))
 	for stc in stations:
 		if _aseen(stc):
-			draw_rect(Rect2(mm.position.x + 3 + stc.x * msc - 1, mm.position.y + 3 + stc.y * msc - 1, 4, 4), Color("7fd8ff"))
+			draw_rect(Rect2(mm.position.x + 3 + stc.x * msc - 1, mm.position.y + 3 + stc.y * msc - 1, 4, 4), Color("7fd8ff") if _o2_left(stc) > 0 else Color("5a6070"))
 	for mdc in meds:
 		if _aseen(mdc):
 			draw_rect(Rect2(mm.position.x + 3 + mdc.x * msc - 1, mm.position.y + 3 + mdc.y * msc - 1, 4, 4), Color("6dff9a"))
+	if ev_c.x >= 0 and items.has(ev_c):
+		draw_rect(Rect2(mm.position.x + 3 + ev_c.x * msc - 2, mm.position.y + 3 + ev_c.y * msc - 2, 6, 6), Color("ff5dff"))
 	if gm("prospect") or gm("gcompass"):
 		for vcc in vaults:
 			draw_rect(Rect2(mm.position.x + 3 + vcc.x * msc - 1, mm.position.y + 3 + vcc.y * msc - 1, 4, 4), Color("ffd84f"))
@@ -12193,6 +12258,9 @@ func _chr_input(p: Vector2) -> void:
 		if sk("reforge") > 0.0 and _chr_forge_rect(k).has_point(p):
 			_reforge(k)
 			return
+		if _fuse_ok(k) and _fuse_rect(k).has_point(p):
+			_fuse(k)
+			return
 		if _chr_sell_rect(k).has_point(p):
 			if gmods(String(bag[k])).has("heartstation"):
 				_pop(pos, "CAN'T SELL", Color("ff8a8a"))
@@ -12302,6 +12370,8 @@ func _draw_char_tab(acc: Color) -> void:
 		_button(_chr_sell_rect(idx), "SELL %d" % _sell_val(bid), Color("ffc93c"), 18)
 		if sk("reforge") > 0.0:
 			_button(_chr_forge_rect(idx), "FORGE %d/%d" % [_forge_cost(bid), scrap], Color("c9a36b") if scrap >= _forge_cost(bid) else Color(1, 1, 1, 0.35), 15)
+		if _fuse_ok(idx):
+			_button(_fuse_rect(idx), "FUSE", Color("c07cff"), 18)
 	if inv_scroll_max > 0.0:
 		var tot := _inv_view().size() * 110.0
 		var vh := CHR_LIST_BOT - CHR_LIST_TOP - chr_off
@@ -12393,6 +12463,8 @@ func _menu_leave() -> void:
 			_tut_map_end(false)
 		if testroom:
 			_test_room_end()
+		if in_base:
+			_base_end()
 		state = MODE
 		_sfx("ui")
 	else:
@@ -13888,7 +13960,7 @@ const CK := {
 
 
 func _mx_on() -> bool:
-	return mode == "adv" and not tutorial and not testroom and not mini
+	return mode == "adv" and not tutorial and not testroom and not mini and not in_base
 
 
 func _mx_need(l: int) -> int:
@@ -14604,7 +14676,7 @@ func _draw_mastery(acc: Color) -> void:
 
 func _mx_input(p: Vector2) -> void:
 	if btn_mx_back.has_point(p):
-		state = CLASS
+		state = PLAY if in_base else CLASS
 		_sfx("ui")
 		return
 	if btn_mx_l.has_point(p) or btn_mx_r.has_point(p):
@@ -15555,7 +15627,7 @@ func _draw_workshop(acc: Color) -> void:
 
 func _ws_input(p: Vector2) -> void:
 	if btn_ws_back.has_point(p):
-		state = CLASS
+		state = PLAY if in_base else CLASS
 		_sfx("ui")
 		return
 	for i in WS_DEFS.size():
@@ -16813,6 +16885,7 @@ const UL_STEPS := [
 	["WORKSHOP + CONTRACTS", "Spend coins and boss cores on research."],
 	["CODEX", "Everything you have found, on the main menu."],
 	["THREAT LEVELS", "Raise the threat on class select for bigger rewards."],
+	["WEAPON FUSION", "On an O2 station, open the BAG and FUSE a spare weapon into yours."],
 ]
 
 
@@ -16864,3 +16937,974 @@ func _ul_save(cfg: ConfigFile) -> void:
 	cfg.set_value("ul", "runs", runs_done)
 	cfg.set_value("ul", "all", ul_all)
 	cfg.set_value("ul", "tap", ul_tapped)
+
+
+
+# ---------------------------------------------------------------- B84: new relic packs (Adventure)
+const NR_DEFS := [
+	{"id": "nr_after", "name": "Afterimage", "desc": "Every 5th melee hit is repeated by a ghost copy for half damage", "max": 1, "adv": true},
+	{"id": "nr_rewind", "name": "Rewind Coil", "desc": "Once per floor, a killing blow sends you back to where you stood 8 steps ago, with the health you had then", "max": 1, "adv": true},
+	{"id": "nr_encore", "name": "Encore", "desc": "The first tool you use each floor is not used up", "max": 1, "adv": true},
+	{"id": "nr_copycat", "name": "Copycat Lens", "desc": "The first elite you kill each floor lends you its power: +25% damage for the rest of the floor", "max": 1, "adv": true},
+	{"id": "nr_patient", "name": "Patient Strike", "desc": "Your first hit on each enemy deals +50% damage (+100% on elites)", "max": 1, "adv": true},
+	{"id": "nr_hitrun", "name": "Hit and Run", "desc": "After a kill, melee attacks can't hit you for your next 3 moves", "max": 1, "adv": true},
+	{"id": "nr_metro", "name": "Metronome", "desc": "Alternate move, attack, move, attack: each beat adds +10% damage (max +50%). Breaking the rhythm resets it", "max": 1, "adv": true},
+	{"id": "nr_grudge", "name": "Grudge Plate", "desc": "Each time an enemy hits you, you deal +10% damage to that enemy (stacks)", "max": 1, "adv": true},
+	{"id": "nr_wager", "name": "Wager Chip", "desc": "Each floor you bet some coins. Clear the floor without taking damage to win 3x back", "max": 1, "adv": true},
+	{"id": "nr_flip", "name": "Coin-Flip Armour", "desc": "Every hit you take is a coin flip: no damage, or double damage", "max": 1, "adv": true},
+	{"id": "nr_double", "name": "Double or Nothing", "desc": "One relic card after each floor is two relics fused: take both, or something else", "max": 1, "adv": true},
+	{"id": "nr_jackpot", "name": "Jackpot Counter", "desc": "Every 7th kill pays out coins and a random tool", "max": 1, "adv": true},
+	{"id": "nr_leech", "name": "Leech Hook", "desc": "Each kill steals a stat until the floor ends: +1 attack, +3% crit or +3% dodge", "max": 1, "adv": true},
+	{"id": "nr_thief", "name": "Trait Thief", "desc": "Elites with an affix have a 25% chance to drop gear with stronger traits", "max": 1, "adv": true},
+	{"id": "nr_puppet", "name": "Puppet String", "desc": "The first enemy you hit each floor (not bosses) fights for you for 6 steps", "max": 1, "adv": true},
+	{"id": "nr_hollow", "name": "Hollow Host", "desc": "Corpses become cover: enemy shots can't pass through them", "max": 1, "adv": true},
+	{"id": "nr_hunger", "name": "Hunger Beacon", "desc": "About 30% more enemies, and every kill gives +1 coin and +25% XP", "max": 1, "adv": true},
+	{"id": "nr_chain", "name": "Chain Reaction", "desc": "A kill within 2 steps of your last kill sends out a shockwave that hits nearby enemies", "max": 1, "adv": true},
+	{"id": "nr_pack", "name": "Pack Leader", "desc": "+1 armour for each enemy next to you", "max": 1, "adv": true},
+	{"id": "nr_laststd", "name": "Last Standing", "desc": "Killing the last enemy on a floor gives you a random relic", "max": 1, "adv": true},
+	{"id": "nr_lung", "name": "Lung Bank", "desc": "Air left when you clear a floor is banked, and refills you when you drop under 20% air", "max": 1, "adv": true},
+	{"id": "nr_lung2", "name": "Second Lung", "desc": "A 30-air reserve that only drains once your air is empty. Refills at O2 stations", "max": 1, "adv": true},
+	{"id": "nr_thin", "name": "Thin Air", "desc": "Half max air, but every kill restores 20 air and gives +1 attack for the floor", "max": 1, "adv": true, "curse": true},
+	{"id": "nr_bubble", "name": "Bubble Shield", "desc": "The first time you drop under 25% air each floor, gain a shield worth 20% of max health", "max": 1, "adv": true},
+	{"id": "nr_quick", "name": "Quickdraw", "desc": "The first shot after swapping to ranged deals double damage", "max": 1, "adv": true},
+	{"id": "nr_bayo", "name": "Bayonet", "desc": "The first melee hit after swapping to melee refunds 1 ammo", "max": 1, "adv": true},
+	{"id": "nr_hot", "name": "Hot Barrel", "desc": "Every 3rd shot in a row sets the target on fire", "max": 1, "adv": true},
+	{"id": "nr_brass", "name": "Brass Collector", "desc": "Shots have a 30% chance to give their ammo back", "max": 1, "adv": true},
+	{"id": "nr_skel", "name": "Skeleton Swarm", "desc": "Each key you pick up has a 30% chance to spawn a bonus loot cache with gear nearby", "max": 1, "adv": true},
+	{"id": "nr_tsense", "name": "Treasure Sense", "desc": "Vaults also contain a piece of gear, one rarity higher", "max": 1, "adv": true},
+	{"id": "nr_bounty", "name": "Bounty Board", "desc": "Each floor names an enemy type. Kill all of them to get a random relic", "max": 1, "adv": true},
+	{"id": "nr_overtime", "name": "Overtime", "desc": "Every kill after the exit is unlocked gives +3 coins", "max": 1, "adv": true},
+	{"id": "nr_debt", "name": "Mark of Debt", "desc": "Coins are worth +50%, but you pay 50 coins every floor until you kill a boss", "max": 1, "adv": true, "curse": true},
+	{"id": "nr_crown", "name": "Withered Crown", "desc": "+5 levels, but you lose 50 max health for every floor you leave with an enemy still alive", "max": 1, "adv": true, "curse": true},
+	{"id": "nr_fragile", "name": "Fragile Time", "desc": "Enemies have half health, and so do you. 3 kills in a row without taking damage fully heal you (once per floor)", "max": 1, "adv": true, "curse": true},
+	{"id": "nr_ledger", "name": "Soul Ledger", "desc": "Bosses give 2 random relics, but every relic you own makes enemies hit 2% harder", "max": 1, "adv": true, "curse": true},
+	{"id": "nr_pit", "name": "Pit Stop", "desc": "Your first visit to each O2 station gives your weapon a random trait for that floor", "max": 1, "adv": true},
+	{"id": "nr_relay", "name": "Relay Node", "desc": "Your warp beacon also refills your air like an O2 station", "max": 1, "adv": true},
+	{"id": "nr_dmedic", "name": "Drone Medic", "desc": "A med drone heals you 5% of max health after every 3 kills", "max": 1, "adv": true},
+	{"id": "nr_last", "name": "Last Stand", "desc": "Below 20% health you deal double damage and kills heal 10% of max health", "max": 1, "adv": true},
+]
+const NR_PACKS := {
+	"p_echo": {"t": [], "r": ["nr_after", "nr_rewind", "nr_encore", "nr_copycat"]},
+	"p_mom": {"t": [], "r": ["nr_patient", "nr_hitrun", "nr_metro", "nr_grudge"]},
+	"p_gamb": {"t": [], "r": ["nr_wager", "nr_flip", "nr_double", "nr_jackpot"]},
+	"p_para": {"t": [], "r": ["nr_leech", "nr_thief", "nr_puppet", "nr_hollow"]},
+	"p_swarm": {"t": [], "r": ["nr_hunger", "nr_chain", "nr_pack", "nr_laststd"]},
+	"p_oxy": {"t": [], "r": ["nr_lung", "nr_lung2", "nr_thin", "nr_bubble"]},
+	"p_arse": {"t": [], "r": ["nr_quick", "nr_bayo", "nr_hot", "nr_brass"]},
+	"p_vault": {"t": [], "r": ["nr_skel", "nr_tsense", "nr_bounty", "nr_overtime"]},
+	"p_hex": {"t": [], "r": ["nr_debt", "nr_crown", "nr_fragile", "nr_ledger"]},
+	"p_stat": {"t": [], "r": ["nr_pit", "nr_relay", "nr_dmedic", "nr_last"]},
+}
+const NR_SHOP := [
+	{"id": "p_echo", "name": "Echo Pack", "desc": "4 relics that repeat, rewind and copy", "costs": [90]},
+	{"id": "p_mom", "name": "Momentum Pack", "desc": "4 relics for timing, first strikes and grudges", "costs": [90]},
+	{"id": "p_gamb", "name": "Gambit Pack", "desc": "4 relics that bet on your luck", "costs": [90]},
+	{"id": "p_para", "name": "Parasite Pack", "desc": "4 relics that steal from enemies", "costs": [90]},
+	{"id": "p_swarm", "name": "Swarm Pack", "desc": "4 relics: more enemies, more reward", "costs": [90]},
+	{"id": "p_oxy", "name": "Oxygen Pack", "desc": "4 relics that turn air into a resource", "costs": [90]},
+	{"id": "p_arse", "name": "Arsenal Pack", "desc": "4 relics for swapping melee and ranged", "costs": [90]},
+	{"id": "p_vault", "name": "Vault Pack", "desc": "4 relics for keys, vaults and bounties", "costs": [90]},
+	{"id": "p_hex", "name": "Hex Pack", "desc": "4 cursed relics with a way out", "costs": [110]},
+	{"id": "p_stat", "name": "Station Pack", "desc": "4 relics for O2 stations, beacons and last stands", "costs": [90]},
+]
+
+var nr_m: Dictionary = {}          # Vector2i -> {"h": first hit done, "g": grudge stacks}
+var nr_hits := 0
+var nr_hr := 0
+var nr_metro := 0
+var nr_last := ""
+var nr_copy := false
+var nr_encore_used := false
+var nr_rw_used := false
+var nr_puppet_used := false
+var nr_ls_done := false
+var nr_wager := 0
+var nr_wlost := false
+var nr_kills := 0
+var nr_l_atk := 0
+var nr_l_crit := 0.0
+var nr_l_dodge := 0.0
+var nr_lk_step := -99
+var nr_ktype := -1
+var nr_btype := -1
+var nr_bank := 0.0
+var nr_lung2_v := 30.0
+var nr_thin_atk := 0
+var nr_bubble_used := false
+var nr_qd := false
+var nr_bay := false
+var nr_shots := 0
+var nr_debt_paid := false
+var nr_frag_k := 0
+var nr_frag_done := false
+var nr_pit: Dictionary = {}
+var nr_tmp_tr: Array = []
+
+
+func _nr_setup() -> void:
+	for d in NR_DEFS:
+		relic_defs.append(d)
+	for d2 in NR_SHOP:
+		var dup := false
+		for s in shop_defs:
+			if s["id"] == d2["id"]:
+				dup = true
+		if not dup:
+			shop_defs.append(d2)
+	for k in NR_PACKS:
+		if not ups.has(k):
+			ups[k] = 0
+
+
+func _nr_pack_of(id: String) -> String:
+	for pk0 in NR_PACKS:
+		if (NR_PACKS[pk0]["r"] as Array).has(id):
+			return String(pk0)
+	return ""
+
+
+func _nr_md(c: Vector2i) -> Dictionary:
+	if not nr_m.has(c):
+		nr_m[c] = {}
+	return nr_m[c]
+
+
+func _nr_foes() -> int:
+	var n := 0
+	for c in mons:
+		if _ck_foe(c):
+			n += 1
+	return n
+
+
+func _nr_give_relic(why: String) -> void:
+	for d in _roll_relics(0):
+		if d.has("curse"):
+			continue
+		var id := String(d["id"])
+		relics[id] = relic_n(id) + 1
+		_adv_relic_applied(id)
+		_pop(pos, String(d["name"]).to_upper(), Color("ffd84f"))
+		msg += "   %s: you get %s!" % [why, String(d["name"])]
+		_sfx("big")
+		return
+
+
+func _nr_free_near(c0: Vector2i) -> Vector2i:
+	for r in range(1, 4):
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				var c := c0 + Vector2i(dx, dy)
+				if c == pos or c == c0 or not _ain(c) or not _aopen(c):
+					continue
+				if mons.has(c) or items.has(c) or vaults.has(c) or coin_at.has(c) or spikes.has(c) or haz.has(c) or stations.has(c) or merchants.has(c) or meds.has(c) or tur.has(c) or c == stairs:
+					continue
+				return c
+	return Vector2i(-1, -1)
+
+
+# damage multiplier for one of your attacks
+func _nr_dmg(c: Vector2i, dmg: int, ranged: bool) -> int:
+	var m := 1.0
+	if relic_n("nr_patient") > 0 and not _nr_md(c).has("h"):
+		_nr_md(c)["h"] = true
+		m += 1.0 if elite.has(c) else 0.5
+		_pop(c, "FIRST STRIKE", Color("ffd27a"))
+	if relic_n("nr_grudge") > 0 and nr_m.has(c):
+		m += 0.1 * float(int(nr_m[c].get("g", 0)))
+	if relic_n("nr_metro") > 0:
+		nr_metro = 0 if nr_last == "a" else mini(5, nr_metro + 1)
+		m += 0.1 * float(nr_metro)
+	nr_last = "a"
+	if nr_copy:
+		m += 0.25
+	if relic_n("nr_last") > 0 and hp * 5 < hp_cap():
+		m += 1.0
+	if ranged:
+		nr_bay = false
+		if nr_qd:
+			nr_qd = false
+			m += 1.0
+			_pop(pos, "QUICKDRAW", Color("ffc24f"))
+	else:
+		nr_qd = false
+		nr_shots = 0
+		if nr_bay:
+			nr_bay = false
+			if ammo < ammo_max():
+				ammo += 1
+				_pop(pos, "+1 AMMO", Color("ffc24f"))
+	if m == 1.0:
+		return dmg
+	return maxi(1, int(round(float(dmg) * m)))
+
+
+func _nr_ghost(c: Vector2i, dmg: int) -> int:
+	if relic_n("nr_after") <= 0 or dmg <= 0:
+		return 0
+	nr_hits += 1
+	if nr_hits % 5 != 0:
+		return 0
+	var g := maxi(1, dmg / 2)
+	_pop(c, "ECHO -%d" % g, Color("c8f1ff"))
+	return g
+
+
+# returns true when the enemy was turned into a puppet
+func _nr_after_hit(c: Vector2i) -> bool:
+	if relic_n("nr_puppet") <= 0 or nr_puppet_used or not mons.has(c) or tur.has(c) or (boss_floor and c == boss_cell):
+		return false
+	nr_puppet_used = true
+	_st_get(c)["tn"] = 6
+	_pop(c, "PUPPET", Color("6dff9a"))
+	msg += "   Puppet String: it fights for you for 6 steps"
+	return true
+
+
+func _nr_shot(c: Vector2i, dmg: int) -> void:
+	if relic_n("nr_hot") > 0:
+		nr_shots += 1
+		if nr_shots % 3 == 0 and mons.has(c):
+			_st_burn(c, 3, maxi(1, dmg / 4))
+			_pop(c, "HOT BARREL", Color("ff7a45"))
+	if relic_n("nr_brass") > 0 and ammo < ammo_max() and randf() < 0.3:
+		ammo += 1
+		_pop(pos, "+1 AMMO", Color("ffc24f"))
+
+
+func _nr_swap() -> void:
+	if ranged_mode:
+		nr_qd = relic_n("nr_quick") > 0
+	else:
+		nr_bay = relic_n("nr_bayo") > 0
+
+
+func _nr_kill_pre(c: Vector2i) -> void:
+	nr_ktype = -1 if tur.has(c) else int(mons.get(c, -1))
+
+
+func _nr_kill(c: Vector2i, was_elite: bool, is_boss: bool, was_affix: bool) -> void:
+	nr_kills += 1
+	nr_m.erase(c)
+	if relic_n("nr_hitrun") > 0:
+		nr_hr = 3
+	if relic_n("nr_leech") > 0:
+		var r := randi() % 3
+		if r == 0:
+			nr_l_atk += 1
+			_pop(pos, "+1 ATK", Color("ff5d8a"))
+		elif r == 1:
+			nr_l_crit += 3.0
+			_pop(pos, "+3% CRIT", Color("ff5d8a"))
+		else:
+			nr_l_dodge += 3.0
+			_pop(pos, "+3% DODGE", Color("ff5d8a"))
+	if relic_n("nr_thief") > 0 and was_elite and was_affix and randf() < 0.25:
+		var gid := _adv_roll_gear(null, 1)
+		if _adv_give_gear(gid):
+			msg += "   Trait Thief: " + gname(gid)
+	if relic_n("nr_copycat") > 0 and was_elite and not nr_copy:
+		nr_copy = true
+		_pop(pos, "COPIED +25%", Color("c07cff"))
+	if relic_n("nr_jackpot") > 0 and nr_kills % 7 == 0:
+		var jc := 5 + floor_n
+		coins += jc
+		var jt := _random_use()
+		_give_use(jt)
+		_pop(c, "JACKPOT +%d" % jc, Color("ffd84f"))
+		_sfx("coin")
+	if relic_n("nr_hunger") > 0:
+		coins += coin_val()
+	if relic_n("nr_chain") > 0:
+		if adv_steps - nr_lk_step <= 2:
+			for o in _near_mons(c, 1, []):
+				_adv_damage_mon(o, maxi(1, p_atk() / 2), Color("ffe14f"))
+			_fx_ring(Vector2(c), Color("ffe14f"), 1.4, 0.4, 5.0)
+			_pop(c, "CHAIN", Color("ffe14f"))
+		nr_lk_step = adv_steps
+	if relic_n("nr_thin") > 0:
+		oxy = minf(oxy_max, oxy + 20.0)
+		nr_thin_atk += 1
+	if relic_n("nr_overtime") > 0 and adv_pts >= adv_req:
+		coins += 3
+		_pop(c, "+3 OVERTIME", Color("ffc93c"))
+	if relic_n("nr_bounty") > 0 and nr_btype >= 0 and nr_ktype == nr_btype:
+		var left := 0
+		for m2 in mons:
+			if not tur.has(m2) and int(mons[m2]) == nr_btype:
+				left += 1
+		if left == 0:
+			nr_btype = -1
+			_nr_give_relic("Bounty complete")
+	if is_boss:
+		nr_debt_paid = true
+		if relic_n("nr_ledger") > 0:
+			_nr_give_relic("Soul Ledger")
+			_nr_give_relic("Soul Ledger")
+	if relic_n("nr_fragile") > 0 and not nr_frag_done:
+		nr_frag_k += 1
+		if nr_frag_k >= 3:
+			nr_frag_done = true
+			hp = hp_cap()
+			_pop(pos, "FULL HEAL", Color("6dff9a"))
+	if relic_n("nr_dmedic") > 0 and nr_kills % 3 == 0:
+		_p_heal(maxi(1, hp_cap() / 20))
+		_pop(pos, "DRONE HEAL", Color("6dff9a"))
+	if relic_n("nr_last") > 0 and hp * 5 < hp_cap():
+		_p_heal(maxi(1, hp_cap() / 10))
+	if relic_n("nr_laststd") > 0 and not nr_ls_done and _nr_foes() == 0:
+		nr_ls_done = true
+		_nr_give_relic("Last Standing")
+
+
+func _nr_dodge(src: Vector2i) -> bool:
+	if nr_hr <= 0 or src.x < 0 or not mons.has(src):
+		return false
+	_pop(pos, "UNTOUCHABLE", Color("9fe8ff"))
+	msg += "   Hit and Run: you slip the attack"
+	return true
+
+
+func _nr_flip(a: int) -> int:
+	if relic_n("nr_flip") <= 0 or a <= 0:
+		return a
+	if randf() < 0.5:
+		_pop(pos, "FLIP: 0", Color("ffd84f"))
+		return 0
+	_pop(pos, "FLIP: x2", Color("ff6a5c"))
+	return a * 2
+
+
+func _nr_hurt(src: Vector2i, d: int) -> void:
+	if d <= 0:
+		return
+	if relic_n("nr_grudge") > 0 and mons.has(src):
+		_nr_md(src)["g"] = int(_nr_md(src).get("g", 0)) + 1
+	if nr_wager > 0 and not nr_wlost:
+		nr_wlost = true
+		_pop(pos, "WAGER LOST", Color("ff6a5c"))
+	nr_frag_k = 0
+
+
+func _nr_rewind() -> bool:
+	if relic_n("nr_rewind") <= 0 or nr_rw_used or rw_hist.is_empty():
+		return false
+	nr_rw_used = true
+	var snap: Array = rw_hist[0]
+	var rp: Vector2i = snap[0]
+	if not mons.has(rp) and not vaults.has(rp):
+		pos = rp
+	hp = maxi(1, int(snap[1]))
+	walk.clear()
+	_fx_burst(vis_pos, Color("c07cff"), 16, 3.0, 0.5, 5.0)
+	_pop(pos, "REWIND", Color("c07cff"))
+	msg += "   Rewind Coil pulls you back in time!"
+	_sfx("warp")
+	_adv_update_vis()
+	return true
+
+
+func _nr_encore() -> bool:
+	if relic_n("nr_encore") <= 0 or nr_encore_used:
+		return false
+	nr_encore_used = true
+	_pop(pos, "ENCORE", Color("4fd1c5"))
+	return true
+
+
+func _nr_key() -> void:
+	if relic_n("nr_skel") <= 0 or randf() >= 0.3:
+		return
+	var c := _nr_free_near(pick_c)
+	if c.x < 0:
+		return
+	items[c] = "gear_" + _adv_roll_gear(null, 0)
+	_pop(c, "LOOT CACHE", Color("ffd84f"))
+	msg += "   Skeleton Swarm: a loot cache appears nearby"
+
+
+func _nr_vault() -> void:
+	if relic_n("nr_tsense") <= 0:
+		return
+	var gid := _adv_roll_gear(null, 1)
+	if _adv_give_gear(gid):
+		msg += " + " + gname(gid)
+
+
+func _nr_step(moved: bool, attacked: bool) -> void:
+	if in_base:
+		oxy = oxy_max
+	_ev_tick()
+	if moved and not attacked:
+		if nr_last == "m":
+			nr_metro = 0
+		nr_last = "m"
+		if nr_hr > 0:
+			nr_hr -= 1
+	if moved and relic_n("nr_pit") > 0 and stations.has(pos) and not nr_pit.has(pos):
+		nr_pit[pos] = true
+		var pool: Array = []
+		var have := wtr()
+		for k in TRAIT_DEFS:
+			if trait_open(String(k)) and not have.has(k):
+				pool.append(k)
+		if not pool.is_empty():
+			var tid = pool[randi() % pool.size()]
+			nr_tmp_tr.append(tid)
+			_pop(pos, String(TRAIT_DEFS[tid]["n"]).to_upper(), Color("4fd1c5"))
+			msg += "   Pit Stop: %s for this floor" % String(TRAIT_DEFS[tid]["n"])
+	if moved and relic_n("nr_lung2") > 0 and stations.has(pos):
+		nr_lung2_v = 30.0
+	if moved and relic_n("nr_relay") > 0 and warp_bc.x >= 0 and pos == warp_bc and oxy < oxy_max - 0.5:
+		oxy = oxy_max
+		_pop(pos, "AIR FULL", Color("7fd8ff"))
+	if relic_n("nr_lung2") > 0 and oxy < 0.0 and nr_lung2_v > 0.0:
+		var take := minf(nr_lung2_v, -oxy + 1.0)
+		nr_lung2_v -= take
+		oxy += take
+		_pop(pos, "SECOND LUNG", Color("7fd8ff"))
+	if relic_n("nr_lung") > 0 and nr_bank > 0.0 and oxy < oxy_max * 0.2:
+		var give := minf(nr_bank, oxy_max - oxy)
+		nr_bank -= give
+		oxy += give
+		_pop(pos, "+%d AIR (BANK)" % int(give), Color("7fd8ff"))
+	if relic_n("nr_bubble") > 0 and not nr_bubble_used and oxy < oxy_max * 0.25:
+		nr_bubble_used = true
+		var b := maxi(1, hp_cap() / 5)
+		sh += b
+		_pop(pos, "+%d BUBBLE" % b, Color("7db2ff"))
+
+
+func _nr_init_run() -> void:
+	nr_debt_paid = false
+	nr_bank = 0.0
+	nr_lung2_v = 30.0
+	nr_kills = 0
+	nr_hits = 0
+
+
+func _nr_begin() -> void:
+	nr_hr = 0
+	nr_l_atk = 0
+	nr_l_crit = 0.0
+	nr_l_dodge = 0.0
+	nr_copy = false
+	nr_encore_used = false
+	nr_rw_used = false
+	nr_puppet_used = false
+	nr_ls_done = false
+	nr_frag_k = 0
+	nr_frag_done = false
+	nr_bubble_used = false
+	nr_pit.clear()
+	nr_tmp_tr.clear()
+	nr_thin_atk = 0
+	nr_metro = 0
+	nr_last = ""
+	nr_shots = 0
+	nr_qd = false
+	nr_bay = false
+	nr_lk_step = -99
+	nr_m.clear()
+	nr_wager = 0
+	nr_wlost = false
+	nr_btype = -1
+	o2_used.clear()
+	if mode != "adv" or tutorial:
+		return
+	if relic_n("nr_wager") > 0 and coins > 0:
+		nr_wager = mini(coins, 10 + 2 * floor_n)
+		coins -= nr_wager
+		msg += "   Wager Chip: %d coins bet" % nr_wager
+	if relic_n("nr_bounty") > 0 and not arena:
+		var types: Array = []
+		for c in mons:
+			if not tur.has(c) and not (boss_floor and c == boss_cell) and not types.has(int(mons[c])):
+				types.append(int(mons[c]))
+		if not types.is_empty():
+			nr_btype = int(types[randi() % types.size()])
+			var names: Array = cur_theme()["mons"]
+			msg += "   Bounty: kill every %s" % String(names[(nr_btype - 1) % names.size()])
+
+
+func _nr_clear() -> void:
+	if nr_wager > 0:
+		if nr_wlost:
+			over_sub += "\nWager lost (%d coins)" % nr_wager
+		else:
+			coins += nr_wager * 3
+			over_sub += "\nWager won! +%d coins" % (nr_wager * 3)
+		nr_wager = 0
+	if relic_n("nr_lung") > 0 and oxy > 0.0:
+		nr_bank = minf(adv_oxy_max(), nr_bank + oxy)
+	if relic_n("nr_debt") > 0 and not nr_debt_paid:
+		var lose := mini(coins, 50)
+		coins -= lose
+		over_sub += "\nMark of Debt: -%d coins" % lose
+	if relic_n("nr_crown") > 0 and _nr_foes() > 0:
+		hp_max = maxi(1, hp_max - 50)
+		hp = mini(hp, hp_cap())
+		over_sub += "\nWithered Crown: -50 max health"
+	if relic_n("nr_double") > 0 and relic_choices.size() >= 2:
+		var used: Array = []
+		for d0 in relic_choices:
+			used.append(String(d0["id"]))
+		var pair: Array = []
+		for d in _roll_relics(2):
+			if not d.has("curse") and not used.has(String(d["id"])) and pair.size() < 2:
+				pair.append(d)
+		if pair.size() == 2:
+			relic_choices[relic_choices.size() - 1] = {"id": String(pair[0]["id"]), "name": "%s + %s" % [pair[0]["name"], pair[1]["name"]], "desc": "DOUBLE: take both.  %s.  %s" % [pair[0]["desc"], pair[1]["desc"]], "max": 1, "pair": [String(pair[0]["id"]), String(pair[1]["id"])]}
+
+
+
+# ---------------------------------------------------------------- B84: O2 station limit
+var o2_used: Dictionary = {}   # Vector2i -> refills used this floor
+
+
+func o2_cap() -> int:
+	if arena or tutorial:
+		return 999
+	return maxi(3, 11 - floor_n)
+
+
+func _o2_left(c: Vector2i) -> int:
+	return o2_cap() - int(o2_used.get(c, 0))
+
+
+# ---------------------------------------------------------------- B84: weapon fusion (unlock step 9)
+const FUSE_MAX := 5
+
+
+func _fuse_rect(k: int) -> Rect2:
+	return Rect2(416, 666 + chr_off + _inv_y(k) + 54, 124, 38)
+
+
+# a spare weapon in the pack can be fused into the equipped weapon of the same slot
+func _fuse_ok(k: int) -> bool:
+	if mode != "adv" or not ul(9) or not stations.has(pos) or k < 0 or k >= bag.size():
+		return false
+	var bid := String(bag[k])
+	var slot := String(gear_defs[gb(bid)]["slot"])
+	if slot != "weapon" and slot != "ranged":
+		return false
+	var eid := String(equip.get(slot, ""))
+	if eid == "":
+		return false
+	var et := gtr(eid)
+	if et.size() >= FUSE_MAX:
+		return false
+	for tid in gtr(bid):
+		if not et.has(tid):
+			return true
+	return false
+
+
+func _fuse(k: int) -> void:
+	var bid := String(bag[k])
+	var slot := String(gear_defs[gb(bid)]["slot"])
+	var eid := String(equip[slot])
+	var et: Array = gtr(eid)
+	var pool: Array = []
+	for tid in gtr(bid):
+		if not et.has(tid):
+			pool.append(tid)
+	var got = pool[randi() % pool.size()]
+	var keep: Array = []
+	for tid2 in et:
+		keep.append(String(tid2))
+	keep.append(String(got))
+	for mid in gmods(eid):
+		keep.append(String(mid))
+	var nid := gb(eid) + "@" + ",".join(keep)
+	equip[slot] = nid
+	bag.remove_at(k)
+	chr_sel = -1
+	_pop(pos, "FUSED: " + String(TRAIT_DEFS[got]["n"]).to_upper(), Color("c07cff"))
+	msg = "Fusion! Your %s gained %s" % [gname(nid), String(TRAIT_DEFS[got]["n"])]
+	_sfx("big")
+
+
+# ---------------------------------------------------------------- B84: floor events (one per floor from floor 2)
+const EV_DEFS := {
+	"distress": {"n": "Distress Beacon", "d": "Answer it: 2 hunters ambush you. Kill both within 20 steps for gear and coins", "col": Color("ff6a5c"), "g": "!"},
+	"reactor": {"n": "Unstable Reactor", "d": "Reach it before the countdown ends for XP and shield, or it blows up", "col": Color("ffb347"), "g": "R"},
+	"lab": {"n": "Sealed Lab", "d": "Break in for 15% of your health: 2 tools and XP inside", "col": Color("6dff9a"), "g": "L"},
+	"crew": {"n": "Trapped Crew", "d": "Free them and an elite guard wakes up. Kill it for a relic", "col": Color("7fd8ff"), "g": "C"},
+	"drone": {"n": "Black Market Drone", "d": "Sells one random relic for coins", "col": Color("c07cff"), "g": "$"},
+	"supply": {"n": "Supply Beacon", "d": "Call in a drop: medkit, air and ammo land here 10 steps later", "col": Color("ffc24f"), "g": "S"},
+	"purge": {"n": "Purge Console", "d": "Clears every spike and hazard on the floor, but every enemy charges you", "col": Color("e8f4ff"), "g": "P"},
+	"training": {"n": "Training Terminal", "d": "Kill 3 enemies within 25 steps for a skill point", "col": Color("ffd84f"), "g": "T"},
+	"idol": {"n": "Cursed Idol", "d": "+1 level now, but enemies on this floor get 25% more health", "col": Color("ff5d8a"), "g": "I"},
+	"datacore": {"n": "Data Core", "d": "Download a full level of XP, but 3 hunters come for you", "col": Color("4fd1c5"), "g": "D"},
+	"medbay": {"n": "Med Bay Overload", "d": "Full health and shield, but every O2 station on the floor drops to 1 use", "col": Color("ff8a9a"), "g": "+"},
+}
+var ev_id := ""
+var ev_c := Vector2i(-1, -1)
+var ev_run := ""       # active timed event
+var ev_end := 0        # adv_steps deadline
+var ev_k0 := 0
+var ev_idol := false
+
+
+func _ev_free(c: Vector2i) -> bool:
+	return _ain(c) and _aopen(c) and c != pos and c != stairs and not mons.has(c) and not items.has(c) and not vaults.has(c) and not coin_at.has(c) and not spikes.has(c) and not haz.has(c) and not stations.has(c) and not merchants.has(c) and not meds.has(c) and not tur.has(c)
+
+
+func _ev_far_cell(mind: int) -> Vector2i:
+	for i in 300:
+		var c := Vector2i(randi() % AW, randi() % AH)
+		if _ev_free(c) and _cheb(c, pos) >= mind:
+			return c
+	return Vector2i(-1, -1)
+
+
+func _ev_spawn(c: Vector2i, el: bool) -> void:
+	if c.x < 0:
+		return
+	mons[c] = _adv_scaled(2 if el else 1)
+	kinds[c] = "hunter"
+	if el:
+		elite[c] = true
+	_nr_md(c)["ev"] = true
+	_fx_ring(Vector2(c), Color("ff6a5c"), 1.2, 0.4, 5.0)
+
+
+func _ev_left() -> int:
+	var n := 0
+	for c in nr_m:
+		if mons.has(c) and bool(nr_m[c].get("ev", false)):
+			n += 1
+	return n
+
+
+func _ev_begin() -> void:
+	ev_id = ""
+	ev_c = Vector2i(-1, -1)
+	ev_run = ""
+	ev_idol = false
+	if mode != "adv" or tutorial or testroom or in_base or arena or boss_floor or floor_n < 2 or randf() > 0.75:
+		return
+	var c := _ev_far_cell(8)
+	if c.x < 0:
+		return
+	var keys0: Array = EV_DEFS.keys()
+	ev_id = String(keys0[randi() % keys0.size()])
+	ev_c = c
+	items[c] = "ev_" + ev_id
+	adv_seen[_ai(c)] = 1
+	var d: Dictionary = EV_DEFS[ev_id]
+	msg += "   EVENT: %s - %s" % [d["n"], d["d"]]
+	if ev_id == "reactor":
+		ev_run = "reactor"
+		ev_end = adv_steps + _cheb(c, pos) * 2 + 25
+	_adv_mini_update()
+
+
+func _ev_touch(c: Vector2i, kind: String) -> void:
+	var id := kind.substr(3)
+	var d: Dictionary = EV_DEFS.get(id, {"n": "Event"})
+	var nm := String(d["n"])
+	match id:
+		"distress":
+			_ev_spawn(_nr_free_near(c), false)
+			_ev_spawn(_nr_free_near(c), false)
+			ev_run = "distress"
+			ev_end = adv_steps + 20
+			msg = "%s: it's an ambush! Kill both within 20 steps" % nm
+		"reactor":
+			if ev_run == "reactor":
+				ev_run = ""
+				_adv_gain_xp(maxi(5, xp_need() / 2))
+				sh += 10
+				coins += 5 + floor_n
+				msg = "Reactor vented! +XP, +10 shield, +%d coins" % (5 + floor_n)
+			else:
+				msg = "The reactor is already cold"
+		"lab":
+			var cost := maxi(1, int(hp_cap() * 0.15))
+			if hp <= cost + 1:
+				items[c] = kind
+				msg = "%s: you need %d health to break in" % [nm, cost]
+				return
+			hp -= cost
+			_give_use(_random_use())
+			_give_use(_random_use())
+			_adv_gain_xp(maxi(4, xp_need() / 3))
+			msg = "%s: -%d health, 2 tools and XP" % [nm, cost]
+		"crew":
+			_ev_spawn(_nr_free_near(c), true)
+			ev_run = "crew"
+			ev_end = adv_steps + 9999
+			msg = "%s freed! Their elite guard wakes up - kill it for a relic" % nm
+		"drone":
+			var price := 25 + 5 * floor_n
+			if coins < price:
+				items[c] = kind
+				msg = "%s: a relic for %d coins (you have %d)" % [nm, price, coins]
+				return
+			coins -= price
+			_nr_give_relic(nm)
+		"supply":
+			ev_run = "supply"
+			ev_end = adv_steps + 10
+			msg = "%s: drop incoming in 10 steps" % nm
+		"purge":
+			spikes.clear()
+			haz.clear()
+			for m in mons:
+				if not tur.has(m) and not (boss_floor and m == boss_cell):
+					kinds[m] = "rager"
+			msg = "%s: hazards cleared - every enemy is coming for you!" % nm
+			_sfx("aggro")
+		"training":
+			ev_run = "training"
+			ev_end = adv_steps + 25
+			ev_k0 = run_kills
+			msg = "%s: kill 3 enemies within 25 steps" % nm
+		"idol":
+			_adv_level_up(1)
+			ev_idol = true
+			msg = "%s: +1 level, enemies are tougher this floor" % nm
+		"datacore":
+			_adv_gain_xp(xp_need())
+			for i in 3:
+				_ev_spawn(_ev_far_cell(7), false)
+			msg = "%s downloaded! 3 hunters are on their way" % nm
+		"medbay":
+			hp = hp_cap()
+			sh = maxi(sh, sh_cap())
+			for st in stations:
+				o2_used[st] = maxi(int(o2_used.get(st, 0)), o2_cap() - 1)
+			msg = "%s: fully healed, O2 stations drop to 1 use" % nm
+	_pop(c, nm.to_upper(), d.get("col", Color.WHITE))
+	_sfx("big")
+
+
+func _ev_tick() -> void:
+	if ev_run == "" or mode != "adv":
+		return
+	var left := ev_end - adv_steps
+	match ev_run:
+		"reactor":
+			if left <= 0:
+				ev_run = ""
+				items.erase(ev_c)
+				_fx_ring(Vector2(ev_c), Color("ffb347"), 3.0, 0.6, 8.0)
+				_shake(8.0, 0.4)
+				_adv_env_hurt(maxi(1, hp_cap() / 4), "The reactor blows! You lose %d health", "Caught in a reactor blast")
+			elif left <= 10 or left % 5 == 0:
+				_pop(pos, "REACTOR %d" % left, Color("ffb347"))
+		"distress", "crew":
+			if _ev_left() == 0:
+				var was := ev_run
+				ev_run = ""
+				if was == "crew":
+					_nr_give_relic("Crew rescued")
+				else:
+					var gid := _adv_roll_gear(null, 1)
+					_adv_give_gear(gid)
+					coins += 8 + floor_n
+					msg += "   Ambush beaten! +%d coins and %s" % [8 + floor_n, gname(gid)]
+					_pop(pos, "AMBUSH BEATEN", Color("6dff9a"))
+			elif left <= 0:
+				ev_run = ""
+				_pop(pos, "TOO SLOW", Color("ff8a8a"))
+			elif ev_run == "distress" and (left <= 5 or left % 5 == 0):
+				_pop(pos, "AMBUSH %d" % left, Color("ff6a5c"))
+		"supply":
+			if left <= 0:
+				ev_run = ""
+				for k in ["hp", "pod", "ammocrate"]:
+					var sc := _nr_free_near(ev_c)
+					if sc.x >= 0:
+						items[sc] = k
+				_fx_ring(Vector2(ev_c), Color("ffc24f"), 2.0, 0.5, 6.0)
+				msg += "   Supply drop has landed!"
+		"training":
+			if run_kills - ev_k0 >= 3:
+				ev_run = ""
+				skill_pts += 1
+				_pop(pos, "+1 SKILL POINT", Color("ffd84f"))
+				msg += "   Training complete: +1 skill point"
+			elif left <= 0:
+				ev_run = ""
+				_pop(pos, "TRAINING FAILED", Color("ff8a8a"))
+			elif left <= 5 or left % 5 == 0:
+				_pop(pos, "TRAINING %d/3  %d" % [run_kills - ev_k0, left], Color("ffd84f"))
+
+
+func _ev_draw(ctr: Vector2, kind: String, bob: float) -> void:
+	var d: Dictionary = EV_DEFS.get(kind.substr(3), {})
+	var col: Color = d.get("col", Color.WHITE)
+	var k := 0.5 + 0.5 * sin(t * 4.0)
+	var p := ctr + Vector2(0, bob)
+	draw_circle(p, AC * 0.36, Color(col.r, col.g, col.b, 0.18 + 0.12 * k))
+	draw_circle(p, AC * 0.26, Color("0a0c14"))
+	draw_arc(p, AC * 0.26, 0.0, TAU, 24, col, 3.0)
+	_ctext(String(d.get("g", "?")), p + Vector2(0, AC * 0.1), int(AC * 0.3), col)
+
+# ===== B85: Station Base hub (walk into rooms; START begins the run) =====
+
+# id, label, unlock step, colour, glyph, terminal cell
+const BS_ROOMS := [
+	["start", "START", 0, Color("6dff9a"), ">", Vector2i(8, 2)],
+	["shop", "OUTFITTER", 0, Color("ffc93c"), "$", Vector2i(1, 6)],
+	["settings", "SETTINGS", 0, Color("c9d3f0"), "*", Vector2i(15, 6)],
+	["puzzle", "PUZZLE", 0, Color("9fb3d9"), "#", Vector2i(1, 9)],
+	["mastery", "MASTERY", 4, Color("ffd84f"), "M", Vector2i(15, 9)],
+	["workshop", "WORKSHOP", 6, Color("ff4fd8"), "W", Vector2i(1, 12)],
+	["codex", "CODEX", 7, Color("c9a2ff"), "C", Vector2i(15, 12)],
+	["thr_m", "THREAT -", 8, Color("ff6a5c"), "-", Vector2i(5, 2)],
+	["thr_p", "THREAT +", 8, Color("ff6a5c"), "+", Vector2i(11, 2)],
+]
+
+
+func _bs_def(id: String) -> Array:
+	for d in BS_ROOMS:
+		if String(d[0]) == id:
+			return d
+	return []
+
+
+func _base_start() -> void:
+	in_base = true
+	base_prev_save_off = save_off
+	save_off = true
+	mode = "adv"
+	_new_run(1)
+	adv_seen.fill(1)
+	hp = hp_cap()
+	oxy = oxy_max
+	msg = "STATION BASE: walk into a room. Walk through START to begin the run."
+	_sfx("big")
+
+
+func _base_end() -> void:
+	in_base = false
+	save_off = base_prev_save_off
+	walk.clear()
+	aim = -1
+	joy_on = false
+	joy_dir = Vector2i.ZERO
+
+
+func _adv_gen_base() -> void:
+	AW = 17
+	AH = 17
+	adv_open.resize(AW * AH)
+	adv_open.fill(0)
+	adv_seen.resize(AW * AH)
+	adv_seen.fill(1)
+	adv_rooms.clear()
+	for dd in [mons, elite, items, spikes, haz, tur, corpses, coin_at, walls, portals, kinds, thief_held, vaults, stations, meds, merchants, mon_hp, affix, mstat, hull_holes, cracked]:
+		dd.clear()
+	var hall := Rect2i(3, 4, 11, 11)
+	adv_rooms.append(hall)
+	for x in range(hall.position.x, hall.end.x):
+		for y in range(hall.position.y, hall.end.y):
+			adv_open[_ai(Vector2i(x, y))] = 1
+	for d in BS_ROOMS:
+		if not ul(int(d[2])):
+			continue
+		var c: Vector2i = d[5]
+		items[c] = "bs_" + String(d[0])
+		adv_open[_ai(c)] = 1
+		# short corridor from the hall wall to the terminal
+		if c.y <= 3:
+			adv_open[_ai(Vector2i(c.x, 3))] = 1
+		elif c.x < 3:
+			adv_open[_ai(Vector2i(2, c.y))] = 1
+		else:
+			adv_open[_ai(Vector2i(14, c.y))] = 1
+	start = Vector2i(8, 13)
+	pos = start
+	stairs = Vector2i(8, 0)   # closed wall cell: the run starts from the START terminal
+	boss_floor = false
+	boss_cell = Vector2i(-1, -1)
+	adv_req = 999
+	adv_pts_total = 0
+
+
+func _bs_new(step: int) -> bool:
+	return step > 0 and ul_all == 0 and ul_tapped & (1 << step) == 0
+
+
+func _bs_open(kind: String) -> void:
+	if not in_base or state != PLAY:
+		return
+	walk.clear()
+	joy_on = false
+	joy_dir = Vector2i.ZERO
+	swipe_on = false
+	var id := kind.substr(3)
+	var d := _bs_def(id)
+	if d.size() > 0 and int(d[2]) > 0:
+		_ul_tap(int(d[2]))
+	match id:
+		"start":
+			_sfx("big")
+			_base_end()
+			_new_run()
+			_first_tut()
+		"shop":
+			shop_return = PLAY
+			shop_tab = 0
+			shop_page = 0
+			state = SHOP
+			_sfx("ui")
+		"settings":
+			set_ret = PLAY
+			state = SETTINGS
+			_sfx("ui")
+		"puzzle":
+			shop_return = PLAY
+			mini_pick = true
+			state = SHOP
+			_sfx("ui")
+		"mastery":
+			mx_cls = cls
+			state = MASTERY
+			_sfx("ui")
+		"workshop":
+			_ct_fill()
+			state = WORKSHOP
+			_sfx("ui")
+		"codex":
+			cx_ret = PLAY
+			_cx_open()
+		"thr_m", "thr_p":
+			_hz_tap(cls, id == "thr_p")
+			var mx := int(hz_max.get(cls, 0))
+			var cur := clampi(int(hz_sel.get(cls, 0)), 0, mx)
+			msg = "THREAT %d / %d for this class" % [cur, mx]
+			if cur > 0:
+				msg += ": +%d%% coins, +%d%% mastery XP" % [15 * cur, 10 * cur]
+			elif mx == 0:
+				msg += " (clear floor 5 to unlock threat 1)"
+
+
+func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
+	var d := _bs_def(kind.substr(3))
+	if d.is_empty():
+		return
+	var col: Color = d[3]
+	var k := 0.5 + 0.5 * sin(t * 3.0)
+	var p := ctr + Vector2(0, bob * 0.5)
+	if String(d[0]) == "start":
+		draw_circle(ctr, AC * 0.5, Color(col.r, col.g, col.b, 0.1 + 0.08 * k))
+		_spr(spr_gen.icon("door_open"), ctr, AC * 0.92)
+	elif String(d[0]) == "shop":
+		_draw_merchant(ctr)
+	else:
+		draw_circle(p, AC * 0.38, Color(col.r, col.g, col.b, 0.14 + 0.1 * k))
+		draw_rect(Rect2(p - Vector2(AC * 0.28, AC * 0.28), Vector2(AC * 0.56, AC * 0.56)), Color("0a0c14"))
+		draw_rect(Rect2(p - Vector2(AC * 0.28, AC * 0.28), Vector2(AC * 0.56, AC * 0.56)), col, false, 3.0)
+		_ctext(String(d[4]), p + Vector2(0, AC * 0.1), int(AC * 0.3), col)
+	var lbl := String(d[1])
+	if String(d[0]).begins_with("thr_"):
+		lbl += " (%d)" % clampi(int(hz_sel.get(cls, 0)), 0, int(hz_max.get(cls, 0)))
+	_ctext(lbl, ctr + Vector2(0, AC * 0.62), int(AC * 0.17), col)
+	if _bs_new(int(d[2])):
+		_ctext("NEW!", ctr + Vector2(0, -AC * 0.55 + sin(t * 5.0) * 3.0), int(AC * 0.2), Color("ff5d5d"))
+
