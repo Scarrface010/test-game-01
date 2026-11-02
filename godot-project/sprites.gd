@@ -1074,6 +1074,7 @@ func _player_hi(accent: Color, cls: String, frame: int, dir: int, eq: Dictionary
 const CHAR_HI := "res://art/chars/%s.png"
 const CHAR_GEAR := "res://art/chars/gear/%s_%s.png"
 const CharBands := preload("res://char_bands.gd")
+const GEAR_FIT := "scout"   # the body all gear is drawn for
 # weapon hand: art/chars/hands/<cls>.png is the class's fist, redrawn over the weapon (char_hands.py)
 const CHAR_HAND := "res://art/chars/hands/%s.png"
 const CharHands := preload("res://char_hands.gd")
@@ -1089,23 +1090,19 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	var layers: Array = []
 	for slot in ["armour", "boots", "helmet"]:
 		var gid := String(eq.get(slot, ""))
-		if gid == "" or not ResourceLoader.exists(CHAR_GEAR % [gid, cls]):
+		# every class body is warped to the scout's proportions (norm/normalize.py), so one gear sheet fits all
+		if gid == "" or not ResourceLoader.exists(CHAR_GEAR % [gid, GEAR_FIT]):
 			continue
 		var bd: Dictionary = CharBands.B.get(gid, {})
-		if bd.has(cls):
-			var r: Array = bd[cls][col]
+		if bd.has(GEAR_FIT):
+			var r: Array = bd[GEAR_FIT][col]
 			base.fill_rect(Rect2i(0, int(r[0]), HW, maxi(0, int(r[1]) - int(r[0]))), Color(0, 0, 0, 0))
-		var g: Image = (load(CHAR_GEAR % [gid, cls]) as Texture2D).get_image()
+		var g: Image = (load(CHAR_GEAR % [gid, GEAR_FIT]) as Texture2D).get_image()
 		g.convert(Image.FORMAT_RGBA8)
 		layers.append(g.get_region(Rect2i(col * HW, 0, HW, HH)))
 	for l in layers:
 		base.blend_rect(l, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	_hip_trinket(base, eq, col)
-	if cls == "brute" and col == 0:
-		var bs := base.duplicate() as Image
-		bs.resize(int(HW * 0.93), int(HH * 0.93), Image.INTERPOLATE_LANCZOS)
-		base.fill(Color(0, 0, 0, 0))
-		base.blend_rect(bs, Rect2i(0, 0, bs.get_width(), bs.get_height()), Vector2i((HW - bs.get_width()) / 2, HH - bs.get_height()))
 	var wid := String(eq.get("weapon", ""))
 	var hi_wpn: Image = null
 	if USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
