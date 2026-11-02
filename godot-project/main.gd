@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 82
+const BUILD := 83
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -13239,8 +13239,8 @@ func _buzz(ms: int) -> void:
 	if buzz_ok < 0:
 		buzz_ok = 0
 		if OS.get_name() == "Android":
-			if OS.get_granted_permissions().has("android.permission.VIBRATE"):
-				buzz_ok = 1
+			# get_granted_permissions() only lists dangerous permissions, so VIBRATE (a normal one) never shows up there. The APK built from B83 on ships it.
+			buzz_ok = 1
 		elif OS.has_feature("web"):
 			buzz_ok = 1
 	if buzz_ok == 1:
