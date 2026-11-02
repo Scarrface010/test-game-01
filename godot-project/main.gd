@@ -344,7 +344,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 80
+const BUILD := 81
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -469,6 +469,7 @@ func _ready() -> void:
 		lb_sent["puzzle"] = int(cfg.get_value("lb", "sent_puzzle", 0))
 		lb_sent["adv"] = int(cfg.get_value("lb", "sent_adv", 0))
 		_mx_load(cfg)
+		_ul_load(cfg)
 		if migrate_shop:
 			_save_meta()
 	if lb_uid == "":
@@ -956,6 +957,7 @@ func _save_meta() -> void:
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
 	cfg.set_value("s", "shop_v2", true)
 	_mx_save(cfg)
+	_ul_save(cfg)
 	for k in ups:
 		cfg.set_value("ups", k, int(ups[k]))
 	cfg.save("user://best.cfg")
@@ -1718,6 +1720,7 @@ func _die(why: String) -> void:
 	bank += delta
 	run_banked += delta
 	_mx_death()
+	var ul_line := _ul_run_end()
 	_save_meta()
 	_lb_note(reached, true)
 	_sfx("death")
@@ -1728,8 +1731,10 @@ func _die(why: String) -> void:
 		dl.append("Steps %d   Gear found %d" % [run_steps, run_gear])
 	dl.append("Floors cleared %d   Best %d%s" % [reached, adv_best if mode == "adv" else best, "   NEW BEST!" if was_best else ""])
 	dl.append("Banked +%d coins (total %d)" % [delta, bank])
-	if mode == "adv" and _mx_on():
+	if mode == "adv" and _mx_on() and ul(4):
 		dl.append(_mx_death_line(mxb))
+	if ul_line != "":
+		dl.append(ul_line)
 	over_sub = "\n".join(dl)
 
 
@@ -1769,7 +1774,8 @@ func _roll_relics(extra: int) -> Array:
 			continue
 		if relic_n(String(d["id"])) < int(d["max"]):
 			if d.has("curse"):
-				cursed.append(d)
+				if ul(5):
+					cursed.append(d)
 			else:
 				normal.append(d)
 	normal.shuffle()
@@ -2978,7 +2984,8 @@ func _gui_input(event: InputEvent) -> void:
 		_ws_input(p)
 		return
 	if state == MODE:
-		if btn_codex.has_point(p):
+		if ul(7) and btn_codex.has_point(p):
+			_ul_tap(7)
 			cx_ret = MODE
 			_cx_open()
 			return
@@ -3035,7 +3042,8 @@ func _gui_input(event: InputEvent) -> void:
 				cls_page += 1
 				_sfx("ui")
 			return
-		if btn_hz_m.has_point(p) or btn_hz_p.has_point(p):
+		if ul(8) and (btn_hz_m.has_point(p) or btn_hz_p.has_point(p)):
+			_ul_tap(8)
 			_hz_tap(String(class_defs[cls_page]["id"]), btn_hz_p.has_point(p))
 			return
 		if btn_cpick.has_point(p):
@@ -3057,12 +3065,14 @@ func _gui_input(event: InputEvent) -> void:
 			_new_run()
 			_first_tut()
 			return
-		if btn_work.has_point(p):
+		if ul(6) and btn_work.has_point(p):
+			_ul_tap(6)
 			_ct_fill()
 			state = WORKSHOP
 			_sfx("ui")
 			return
-		if btn_mast.has_point(p):
+		if ul(4) and btn_mast.has_point(p):
+			_ul_tap(4)
 			mx_cls = String(class_defs[cls_page]["id"])
 			state = MASTERY
 			_sfx("ui")
@@ -3912,6 +3922,8 @@ func _draw_saves(acc: Color) -> void:
 
 
 func _sk_banner() -> void:
+	if not ul(2):
+		return
 	var k := t - sk_ban_t0
 	if sk_ban_n <= 0 or k < 0.0 or k > 4.0:
 		return
@@ -4071,7 +4083,7 @@ func _settings_input(p: Vector2) -> void:
 		set_ret = MODE
 		_sfx("ui")
 		return
-	for i in 7:
+	for i in 8:
 		if _set_rect(i).has_point(p):
 			if i == 0:
 				set_res = 1 - set_res
@@ -4086,9 +4098,11 @@ func _settings_input(p: Vector2) -> void:
 				_apply_sound()
 			elif i == 5:
 				set_sfxv = (set_sfxv + 1) % 4
-			else:
+			elif i == 6:
 				set_vib = 1 - set_vib
 				_buzz(60)
+			else:
+				ul_all = 1 - ul_all
 			_apply_display()
 			_save_meta()
 			_sfx("ui")
@@ -4119,6 +4133,7 @@ func _draw_settings(acc: Color) -> void:
 		"MUSIC: " + String(VOL_NAMES[set_mus]),
 		"SOUND FX: " + String(VOL_NAMES[set_sfxv]),
 		"VIBRATION: " + ("ON" if set_vib == 1 else "OFF"),
+		"SHOW ALL FEATURES: " + ("ON" if ul_all == 1 else "OFF"),
 	]
 	var hints := [
 		"Native is sharpest. 720p is faster on weak phones.",
@@ -4128,8 +4143,9 @@ func _draw_settings(acc: Color) -> void:
 		"Music volume. SOUND ON/OFF (top left) mutes all.",
 		"Volume of sound effects.",
 		"Short buzzes on hits, kills and taps (phones).",
+		"Off: new features unlock over your first runs.",
 	]
-	for i in 7:
+	for i in 8:
 		var r := _set_rect(i)
 		_button(r, String(labels[i]), Color("c9d3f0"), 24)
 		_txt(String(hints[i]), Vector2(0, r.end.y + 30), 23, Color(1, 1, 1, 0.7))
@@ -5291,7 +5307,9 @@ func _draw_overlay(acc: Color) -> void:
 		_txt("ADVENTURE", Vector2(btn_mode_a.position.x + 24, btn_mode_a.position.y + 70), 52, ma, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 		_button(btn_tut, "HOW TO PLAY", Color("ffd84f"), 34, "help")
 		_button(btn_lb, "LEADERBOARD", Color("7fd8ff"), 34, "trophy")
-		_button(btn_codex, "CODEX", Color("c9a2ff"), 34)
+		if ul(7):
+			_button(btn_codex, "CODEX", Color("c9a2ff"), 34)
+			_ul_dot(btn_codex, 7)
 		_button(btn_quit, "QUIT", Color("ff8a8a"), 30)
 		if save_info != "":
 			_panel(btn_cont, Color("6dff9a"), 0.2)
@@ -5447,13 +5465,18 @@ func _draw_overlay(acc: Color) -> void:
 			_para(_lock_text(cid), Vector2(124, 640), 24, Color(1, 1, 1, 0.6), 472.0)
 		_button(btn_cl_l, "<", acc if cls_page > 0 else Color(1, 1, 1, 0.2), 56)
 		_button(btn_cl_r, ">", acc if cls_page < class_defs.size() - 1 else Color(1, 1, 1, 0.2), 56)
-		_hz_row(cid)
+		if ul(8):
+			_hz_row(cid)
 		for i in (0 if mode == "adv" else class_defs.size()):
 			draw_circle(Vector2(360 + (i - (class_defs.size() - 1) * 0.5) * 30.0, 978), 8.0 if i == cls_page else 5.0, cc if i == cls_page else Color(1, 1, 1, 0.3))
 		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else _lock_btn(cid), cc if copen else Color("ffc93c"), 28)
 		_button(btn_shop2, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
-		_button(btn_mast, "MASTERY", Color("ffd84f"), 28)
-		_button(btn_work, "WORKSHOP", Color("ff4fd8"), 28)
+		if ul(4):
+			_button(btn_mast, "MASTERY", Color("ffd84f"), 28)
+			_ul_dot(btn_mast, 4)
+		if ul(6):
+			_button(btn_work, "WORKSHOP", Color("ff4fd8"), 28)
+			_ul_dot(btn_work, 6)
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP and mini_pick:
@@ -5996,7 +6019,7 @@ func _guide_tick() -> void:
 		return
 	if oxy < oxy_max * 0.5 and _guide_say("air", "Half your air is gone. Walk onto an O2 station to refill it, or grab an air pod."):
 		return
-	if skill_pts > 0 and _guide_say("skill", "You have a skill point! Tap SKILLS to spend it."):
+	if ul(2) and skill_pts > 0 and _guide_say("skill", "You have a skill point! Tap SKILLS to spend it."):
 		return
 	for dx in range(-3, 4):
 		for dy in range(-3, 4):
@@ -8330,7 +8353,7 @@ func _tr_tick() -> void:
 func _roll_affixes() -> void:
 	affix.clear()
 	mstat.clear()
-	if floor_n < 3:
+	if floor_n < 3 or not ul(5):
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = adv_seed * 31 + floor_n * 7 + 5
@@ -9098,15 +9121,18 @@ func _adv_roll_gear(rng: RandomNumberGenerator, bonus := 0) -> String:
 		tier += 1
 	tier = clampi(tier + bonus, 1, 7 if floor_n >= 26 else (6 if floor_n >= 19 else (5 if floor_n >= 13 else 4)))
 	var pool: Array = []
+	var guns_ok := ul(1) or cls == "gunslinger"
 	for d in gear_list:
-		if int(d["tier"]) == tier:
+		if int(d["tier"]) == tier and (guns_ok or String(d["slot"]) != "ranged"):
 			pool.append(d)
 	if pool.is_empty():
 		pool = gear_list
 	var idx := (rng.randi() if rng != null else randi()) % pool.size()
 	var gd: Dictionary = pool[idx]
 	var rid := String(gd["id"])
-	if String(gd["slot"]) == "weapon" or String(gd["slot"]) == "ranged":
+	if not ul(3) and (String(gd["slot"]) == "weapon" or String(gd["slot"]) == "ranged"):
+		pass
+	elif String(gd["slot"]) == "weapon" or String(gd["slot"]) == "ranged":
 		rid += _roll_traits(rng, int(gd["tier"]), int((gd["stats"] as Dictionary).get("range", 0)) > 0)
 	else:
 		rid += _roll_mods(rng, int(gd["tier"]), String(gd["slot"]))
@@ -11356,7 +11382,8 @@ func _adv_input(p: Vector2) -> void:
 			on_slot = true
 	if not on_slot:
 		tool_sel = -1
-	if btn_skill.has_point(p):
+	if ul(2) and btn_skill.has_point(p):
+		_ul_tap(2)
 		state = SKILLS
 		walk.clear()
 		aim = -1
@@ -11880,8 +11907,10 @@ func _adv_draw() -> void:
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
 	# HUD
 	_button(btn_inv, "MENU", acc)
-	_button(btn_skill, "SKILLS", Color("ffd84f") if skill_pts > 0 else acc, 19)
-	if skill_pts > 0:
+	if ul(2):
+		_button(btn_skill, "SKILLS", Color("ffd84f") if skill_pts > 0 else acc, 19)
+		_ul_dot(btn_skill, 2)
+	if ul(2) and skill_pts > 0:
 		draw_circle(btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 13.0, Color("ff5d5d"))
 		_ctext(str(skill_pts), btn_skill.position + Vector2(btn_skill.size.x - 6, 6), 16, Color.WHITE)
 	_hud_panels(acc, 124.0)
@@ -16762,3 +16791,71 @@ func _ck_salvage(c: Vector2i, big: bool, p: int) -> void:
 		_pop(pos, "TOOL!", Color("4fd1c5"))
 	if sk("c_sdref") > 0.0:
 		_ck_cut(int(sk("c_sdref")))
+
+
+# ===== B81: gradual unlocks (systems appear over the first runs; content stays open) =====
+
+var runs_done := 0     # finished Adventure runs
+var ul_all := 0        # settings: show every feature straight away
+var ul_tapped := 0     # bit per step: its new button was tapped (clears the red dot)
+const UL_STEPS := [
+	["", ""],
+	["RANGED WEAPONS", "Guns can drop now. Tap MELEE/RANGED to swap."],
+	["SKILL WEB", "Levels give skill points. Tap SKILLS in a run."],
+	["WEAPON TRAITS", "Weapons drop with random bonus traits."],
+	["CLASS MASTERY", "Runs level your class. Tap MASTERY on class select."],
+	["CURSED RELICS + ELITES", "Risky relics (you can skip) and tougher enemies."],
+	["WORKSHOP + CONTRACTS", "Spend coins and boss cores on research."],
+	["CODEX", "Everything you have found, on the main menu."],
+	["THREAT LEVELS", "Raise the threat on class select for bigger rewards."],
+]
+
+
+func ul(step: int) -> bool:
+	if ul_all == 1 or runs_done >= step:
+		return true
+	return step == 8 and int((cx.get("st", {}) as Dictionary).get("bosses", 0)) > 0
+
+
+func _ul_tap(step: int) -> void:
+	if ul_tapped & (1 << step) == 0:
+		ul_tapped |= 1 << step
+		_save_meta()
+
+
+func _ul_dot(r: Rect2, step: int) -> void:
+	if ul_all == 0 and ul_tapped & (1 << step) == 0:
+		draw_circle(r.position + Vector2(r.size.x - 8, 8), 10.0, Color("ff5d5d"))
+
+
+func _ul_run_end() -> String:
+	if not _mx_on() or runs_done >= UL_STEPS.size() - 1:
+		return ""
+	runs_done += 1
+	var s := ""
+	var nw: Array = UL_STEPS[runs_done]
+	s = "NEW! %s - %s" % [nw[0], nw[1]]
+	if runs_done < UL_STEPS.size() - 1 and ul_all == 0:
+		s += "\nNext run unlocks: %s" % String(UL_STEPS[runs_done + 1][0])
+	return s
+
+
+func _ul_load(cfg: ConfigFile) -> void:
+	ul_all = clampi(int(cfg.get_value("ul", "all", 0)), 0, 1)
+	var r := int(cfg.get_value("ul", "runs", -1))
+	if r < 0:
+		# existing save from before B81: players with progress get everything open
+		var st: Dictionary = cx.get("st", {})
+		r = int(st.get("deaths", 0))
+		if not mxp.is_empty() or cores > 0 or adv_best > 0:
+			r = maxi(r, UL_STEPS.size() - 1)
+		ul_tapped = 0x1FF if r >= UL_STEPS.size() - 1 else 0
+	else:
+		ul_tapped = int(cfg.get_value("ul", "tap", 0))
+	runs_done = r
+
+
+func _ul_save(cfg: ConfigFile) -> void:
+	cfg.set_value("ul", "runs", runs_done)
+	cfg.set_value("ul", "all", ul_all)
+	cfg.set_value("ul", "tap", ul_tapped)
