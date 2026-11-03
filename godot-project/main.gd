@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 88
+const BUILD := 89
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -18002,9 +18002,10 @@ func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
 		var bt := float(bs_boot.get(String(d[0]), 0.0))
 		if not locked and bt > 0.5:
 			draw_circle(p, AC * 0.46, Color(col.r, col.g, col.b, (0.1 + 0.08 * k) * (bt - 0.5) * 2.0))
-		_spr(spr_gen.icon("bs_" + String(d[0]) + ("_off" if locked else "")), ctr, AC * 0.92)
+		if not _bs_term(d, ctr, locked, bt, col):
+			_spr(spr_gen.icon("bs_" + String(d[0]) + ("_off" if locked else "")), ctr, AC * 0.92)
 		if not locked:
-			if bt < 0.999:
+			if bt < 0.999 and _bs_tex(String(d[0]) + "_dark") == null:
 				draw_rect(Rect2(ctr - Vector2(AC * 0.46, AC * 0.46), Vector2(AC * 0.92, AC * 0.92)), Color(0, 0, 0, 0.5 * (1.0 - bt)))
 			if bt > 0.02 and bt < 0.999:
 				var scy := ctr.y - AC * 0.4 + AC * 0.8 * fmod(bt * 3.0, 1.0)
@@ -18202,6 +18203,8 @@ func _amb_world_draw(ti: int) -> void:
 		if m.get("dead", false):
 			_amb_dead_draw(m, q2, a2, acc)
 			continue
+		if _crit_draw(m, q2, a2, acc, moving, dv):
+			continue
 		match String(m["k"]):
 			"bot":
 				draw_circle(q2 + Vector2(0, AC * 0.1), AC * 0.17, Color(0, 0, 0, 0.3 * a2))
@@ -18387,6 +18390,19 @@ func _amb_dead_draw(m: Dictionary, q2: Vector2, a2: float, acc: Color) -> void:
 	var k := String(m["k"])
 	var age := t - float(m["dt"])
 	var ph2: float = m["ph"]
+	var dtx := _crit_tex(k + "_dead")
+	if dtx != null:
+		var dfl := -1.0 if (m["d"] as Vector2i).x < 0 else 1.0
+		var pop := 1.0 + 0.35 * clampf(1.0 - age / 0.15, 0.0, 1.0)
+		draw_circle(q2 + Vector2(0, AC * 0.2), AC * 0.14, Color(0, 0, 0, 0.22 * a2))
+		_crit_blit(dtx, q2 + Vector2(0, AC * 0.24), AC * 0.46 / pop, dfl * pop, Color(1, 1, 1, a2))
+		if k == "bot" and fmod(t + ph2, 2.3) < 0.12:
+			var sp3 := q2 + Vector2(0, AC * 0.02)
+			draw_line(sp3, sp3 + Vector2(AC * 0.08, -AC * 0.1), Color(1, 0.9, 0.4, a2), 2.0)
+			draw_line(sp3, sp3 + Vector2(-AC * 0.07, -AC * 0.08), Color(1, 0.9, 0.4, a2), 2.0)
+		elif k == "wisp" and age < 1.5:
+			draw_circle(q2, AC * 0.12 * (1.0 + age), Color(acc.r, acc.g, acc.b, 0.15 * (1.0 - age / 1.5) * a2))
+		return
 	if k == "bot":
 		var dk := Color(0.12, 0.12, 0.16, a2)
 		draw_circle(q2 + Vector2(0, AC * 0.1), AC * 0.18, Color(0, 0, 0, 0.3 * a2))
@@ -18491,6 +18507,116 @@ func _boss_card(u: float, acc: Color) -> void:
 
 
 func _frost_draw(band: Rect2, k: float) -> void:
+	if frost_tx.is_empty():
+		for i in 10:
+			var fp := "res://art/fx/frost_%d.png" % i
+			frost_tx.append(load(fp) if ResourceLoader.exists(fp) else null)
+	if frost_tx[0] == null or frost_tx[9] == null:
+		_frost_draw_code(band, k)
+		return
+	if t - frost_last > 0.4:
+		frost_vis = 0.0
+	frost_last = t
+	frost_vis = lerpf(frost_vis, k, 0.04)
+	var f := clampf((frost_vis - 0.05) / 0.95, 0.0, 1.0) * 9.0
+	var i0 := int(floor(f))
+	var i1 := mini(i0 + 1, 9)
+	var u := f - float(i0)
+	var br := 0.9 + 0.1 * sin(t * 1.6)
+	var fade := 0.2 + 0.8 * clampf(f / 3.0, 0.0, 1.0)
+	draw_texture_rect(frost_tx[i0], band, false, Color(1, 1, 1, br * fade))
+	if u > 0.001 and i1 != i0:
+		draw_texture_rect(frost_tx[i1], band, false, Color(1, 1, 1, u * br * fade))
+	draw_rect(band, Color(0.7, 0.85, 1.0, 0.05 * k * (0.8 + 0.2 * sin(t * 2.0))))
+
+
+# ===== B89: ComfyUI critters + frost =====
+var frost_tx: Array = []
+var frost_vis := 0.0
+var frost_last := -10.0
+var bs_png: Dictionary = {}
+var crit_tx: Dictionary = {}
+
+
+func _bs_tex(n: String) -> Texture2D:
+	if not bs_png.has(n):
+		var bp := "res://art/pickups/bs_%s_64.png" % n
+		bs_png[n] = load(bp) if ResourceLoader.exists(bp) else null
+	return bs_png[n]
+
+
+func _spr_fl(tx: Texture2D, ctr: Vector2, size: float, flip: bool, mod: Color) -> void:
+	var w := -size if flip else size
+	draw_texture_rect(tx, Rect2(ctr.x - w * 0.5, ctr.y - size * 0.5, w, size), false, mod)
+
+
+func _bs_term(d: Array, ctr: Vector2, locked: bool, bt: float, col: Color) -> bool:
+	var id := String(d[0])
+	var lit := _bs_tex(id)
+	var dark := _bs_tex(id + "_dark")
+	if lit == null or dark == null:
+		return false
+	var flip := (d[5] as Vector2i).x > 7   # right-hand terminals face left
+	var sz := AC * 0.92
+	if locked:
+		var off := _bs_tex(id + "_off")
+		_spr_fl(off if off != null else dark, ctr, sz, flip, Color.WHITE)
+		return true
+	_spr_fl(dark, ctr, sz, flip, Color.WHITE)
+	if bt > 0.0:
+		_spr_fl(lit, ctr, sz, flip, Color(1, 1, 1, clampf(bt * 1.4, 0.0, 1.0)))
+	var gl := _bs_tex(id + "_glow")
+	if gl != null and bt > 0.2:
+		var flick := 1.0 if bt > 0.98 else (0.4 if sin(t * 45.0) > 0.3 else 1.0)
+		var pa := clampf((bt - 0.2) / 0.8, 0.0, 1.0) * (0.6 + 0.25 * sin(t * 2.4 + ctr.x * 0.01)) * flick
+		_spr_fl(gl, ctr, sz * 1.18, flip, Color(col.r, col.g, col.b, pa * 0.45))
+		_spr_fl(gl, ctr, sz, flip, Color(lerpf(col.r, 1.0, 0.5), lerpf(col.g, 1.0, 0.5), lerpf(col.b, 1.0, 0.5), pa * 0.7))
+	return true
+
+
+func _crit_tex(k: String) -> Texture2D:
+	if not crit_tx.has(k):
+		var cp := "res://art/critters/%s.png" % k
+		crit_tx[k] = load(cp) if ResourceLoader.exists(cp) else null
+	return crit_tx[k]
+
+
+func _crit_blit(tx: Texture2D, foot: Vector2, s: float, sx: float, c: Color) -> void:
+	var w := s * sx
+	draw_texture_rect(tx, Rect2(foot.x - w * 0.5, foot.y - s, w, s), false, c)
+
+
+func _crit_draw(m: Dictionary, q2: Vector2, a2: float, acc: Color, moving: bool, dv: Vector2) -> bool:
+	var k := String(m["k"])
+	var tx := _crit_tex(k)
+	if tx == null:
+		return false
+	var ph: float = m["ph"]
+	var fl := -1.0 if dv.x < 0.0 else 1.0
+	var c := Color(1, 1, 1, a2)
+	match k:
+		"rat":
+			var hop := absf(sin(t * 18.0)) * AC * 0.03 if moving else 0.0
+			draw_circle(q2 + Vector2(0, AC * 0.2), AC * 0.12, Color(0, 0, 0, 0.25 * a2))
+			_crit_blit(tx, q2 + Vector2(0, AC * 0.22 - hop), AC * 0.46, fl, c)
+		"bot":
+			var bob := sin(t * (16.0 if moving else 3.0) + ph) * AC * 0.012
+			draw_circle(q2 + Vector2(0, AC * 0.2), AC * 0.16, Color(0, 0, 0, 0.3 * a2))
+			_crit_blit(tx, q2 + Vector2(0, AC * 0.22 + bob), AC * 0.5, fl, c)
+		"moth":
+			var hv := q2 + Vector2(sin(t * 1.9 + ph) * AC * 0.18, -AC * 0.22 + sin(t * 3.7 + ph) * AC * 0.08)
+			var fw := 0.55 + 0.45 * absf(sin(t * 22.0 + ph))
+			draw_circle(hv, AC * 0.16, Color(1, 0.8, 0.95, 0.1 * a2))
+			_crit_blit(tx, hv + Vector2(0, AC * 0.18), AC * 0.4, fw, c)
+		_:
+			var wq := q2 + Vector2(0, -AC * 0.2 + sin(t * 2.3 + ph) * AC * 0.1)
+			var g2 := 0.6 + 0.4 * sin(t * 4.0 + ph)
+			draw_circle(wq, AC * 0.24, Color(acc.r, acc.g, acc.b, 0.1 * a2 * g2))
+			_crit_blit(tx, wq + Vector2(0, AC * 0.2), AC * 0.4, 1.0, Color(1, 1, 1, a2 * (0.8 + 0.2 * g2)))
+	return true
+
+
+func _frost_draw_code(band: Rect2, k: float) -> void:
 	var fc := Color(0.82, 0.93, 1.0)
 	for i in 9:
 		var fade := 1.0 - float(i) / 9.0
