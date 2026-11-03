@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 85
+const BUILD := 86
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -11848,6 +11848,13 @@ func _adv_draw() -> void:
 				_ctext("EXIT" if ok else "%d" % adv_req, ctr + Vector2(0, AC * 0.1), int(AC * 0.2), dc)
 			elif stations.has(c):
 				_draw_station(ctr)
+				var o2n := _o2_left(c)
+				if o2n > 0:
+					var o2p := ctr + Vector2(AC * 0.34, -AC * 0.3)
+					var o2c := Color("7fd8ff") if o2n > 1 else Color("ffb347")
+					draw_circle(o2p, AC * 0.17, Color("0a0c14"))
+					draw_arc(o2p, AC * 0.17, 0.0, TAU, 20, o2c, 2.0)
+					_ctext(str(o2n), o2p + Vector2(0, AC * 0.06), int(AC * 0.2), o2c)
 				if _o2_left(c) <= 0:
 					draw_circle(ctr, AC * 0.42, Color(0.05, 0.06, 0.1, 0.6))
 					_ctext("EMPTY", ctr + Vector2(0, AC * 0.08), int(AC * 0.2), Color("8a93a8"))
@@ -11975,6 +11982,17 @@ func _adv_draw() -> void:
 			var cpp := mm.position + Vector2(3, 3) + Vector2(pos) * msc
 			draw_line(cpp, cpp + cdv.normalized() * 22.0, Color("6dff9a"), 2.0)
 	draw_rect(Rect2(mm.position.x + 3 + pos.x * msc - 2, mm.position.y + 3 + pos.y * msc - 2, 5, 5), Color.WHITE)
+	# B86: floor event tag, so the event on this floor is always readable
+	if ev_id != "" and EV_DEFS.has(ev_id) and (items.has(ev_c) or ev_run != "") and not in_base:
+		var evd: Dictionary = EV_DEFS[ev_id]
+		var evc: Color = evd["col"]
+		var evr := Rect2(mm.end.x + 8, mm.position.y, 330, 62)
+		_panel(evr, evc, 0.16, false)
+		var evt := "EVENT: " + String(evd["n"]).to_upper()
+		if ev_run != "" and ev_run != "crew" and ev_end - adv_steps > 0 and ev_end - adv_steps < 500:
+			evt += "  (%d steps)" % (ev_end - adv_steps)
+		_txt(evt, Vector2(evr.position.x + 10, evr.position.y + 20), 17, evc, evr.size.x - 20.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_para_fit(String(evd["d"]), Vector2(evr.position.x + 10, evr.position.y + 38), 14, Color(1, 1, 1, 0.85), evr.size.x - 20.0, 2)
 	# HUD
 	_button(btn_inv, "MENU", acc)
 	if ul(2):
@@ -15098,6 +15116,11 @@ func _cx_guide_lines() -> Array:
 	L.append(["h", "WORLD RULES", Y])
 	for wk in WORLD_RULE_TEXT:
 		L.append(["g", String(WORLD_RULE_TEXT[wk]), W])
+	L.append(["h", "FLOOR EVENTS", Y])
+	L.append(["p", "From floor 2, most floors hide one event (magenta dot on the minimap). A tag by the minimap names it. Events are optional.", W])
+	for evk in EV_DEFS:
+		var evd: Dictionary = EV_DEFS[evk]
+		L.append(["g", "%s: %s" % [String(evd["n"]), String(evd["d"])], evd["col"]])
 	L.append(["h", "SKILL WEB TIPS", Y])
 	L.append(["p", "You get a skill point every 3 levels. Inner branches start at the centre; keystones (diamonds) cost 2 points and need a rank 2 node next to them. Outer hybrid branches sit between two inner branches, and apex nodes need both neighbouring outer keystones (3 points). Respec costs coins and refunds everything, including class nodes.", W])
 	L.append_array(_ex_guide_lines())
@@ -17740,9 +17763,7 @@ func _ev_draw(ctr: Vector2, kind: String, bob: float) -> void:
 	var k := 0.5 + 0.5 * sin(t * 4.0)
 	var p := ctr + Vector2(0, bob)
 	draw_circle(p, AC * 0.36, Color(col.r, col.g, col.b, 0.18 + 0.12 * k))
-	draw_circle(p, AC * 0.26, Color("0a0c14"))
-	draw_arc(p, AC * 0.26, 0.0, TAU, 24, col, 3.0)
-	_ctext(String(d.get("g", "?")), p + Vector2(0, AC * 0.1), int(AC * 0.3), col)
+	_spr(spr_gen.icon(kind), p, AC * 0.85)
 
 # ===== B85: Station Base hub (walk into rooms; START begins the run) =====
 
@@ -17750,11 +17771,10 @@ func _ev_draw(ctr: Vector2, kind: String, bob: float) -> void:
 const BS_ROOMS := [
 	["start", "START", 0, Color("6dff9a"), ">", Vector2i(7, 1)],
 	["shop", "OUTFITTER", 0, Color("ffc93c"), "$", Vector2i(6, 12)],
-	["settings", "SETTINGS", 0, Color("c9d3f0"), "*", Vector2i(9, 12)],
 	["puzzle", "PUZZLE", 0, Color("9fb3d9"), "#", Vector2i(6, 10)],
-	["mastery", "MASTERY", 4, Color("ffd84f"), "M", Vector2i(9, 10)],
+	["mastery", "MASTERY", 4, Color("ffd84f"), "M", Vector2i(9, 12)],
 	["workshop", "WORKSHOP", 6, Color("ff4fd8"), "W", Vector2i(6, 8)],
-	["codex", "CODEX", 7, Color("c9a2ff"), "C", Vector2i(9, 8)],
+	["codex", "CODEX", 7, Color("c9a2ff"), "C", Vector2i(9, 10)],
 	["thr_m", "THREAT -", 8, Color("ff6a5c"), "-", Vector2i(6, 6)],
 	["thr_p", "THREAT +", 8, Color("ff6a5c"), "+", Vector2i(9, 6)],
 ]
@@ -17851,10 +17871,6 @@ func _bs_open(kind: String) -> void:
 			shop_page = 0
 			state = SHOP
 			_sfx("ui")
-		"settings":
-			set_ret = PLAY
-			state = SETTINGS
-			_sfx("ui")
 		"puzzle":
 			shop_return = PLAY
 			mini_pick = true
@@ -17895,13 +17911,10 @@ func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
 	if String(d[0]) == "start":
 		draw_circle(ctr, AC * 0.5, Color(col.r, col.g, col.b, 0.1 + 0.08 * k))
 		_spr(spr_gen.icon("door_open"), ctr, AC * 0.92)
-	elif String(d[0]) == "shop":
-		_draw_merchant(ctr)
 	else:
-		draw_circle(p, AC * 0.38, Color(col.r, col.g, col.b, 0.14 + 0.1 * k))
-		draw_rect(Rect2(p - Vector2(AC * 0.28, AC * 0.28), Vector2(AC * 0.56, AC * 0.56)), Color("0a0c14"))
-		draw_rect(Rect2(p - Vector2(AC * 0.28, AC * 0.28), Vector2(AC * 0.56, AC * 0.56)), col, false, 3.0)
-		_ctext(String(d[4]), p + Vector2(0, AC * 0.1), int(AC * 0.3), col)
+		if not locked:
+			draw_circle(p, AC * 0.46, Color(col.r, col.g, col.b, 0.1 + 0.08 * k))
+		_spr(spr_gen.icon("bs_" + String(d[0]) + ("_off" if locked else "")), ctr, AC * 0.92)
 	var lbl := String(d[1])
 	if String(d[0]).begins_with("thr_"):
 		lbl += " (%d)" % clampi(int(hz_sel.get(cls, 0)), 0, int(hz_max.get(cls, 0)))

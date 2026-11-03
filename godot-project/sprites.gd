@@ -2114,6 +2114,160 @@ func item(kind: String) -> ImageTexture:
 	return t
 
 
+# ---------------------------------------------------------------- station base terminals
+
+func _bs_col(id: String) -> Color:
+	var m := {"shop": "ffc93c", "settings": "c9d3f0", "puzzle": "9fb3d9", "mastery": "ffd84f", "workshop": "ff4fd8", "codex": "c9a2ff", "thr_m": "ff6a5c", "thr_p": "ff6a5c"}
+	return Color(String(m.get(id, "6dff9a")))
+
+
+func _bs_picto(cv, id: String, acc: Color, bg: Color) -> void:
+	if id == "shop":
+		cv.disc(16, 13.5, 5.0, acc)
+		cv.disc(16, 13.5, 3.5, acc.darkened(0.35))
+		cv.rect(15, 10, 2, 7, acc)
+	elif id == "settings":
+		cv.disc(16, 13.5, 4.5, acc)
+		for i in 8:
+			var a := i * TAU / 8.0
+			cv.rect(int(15 + cos(a) * 5.8), int(12.5 + sin(a) * 5.8), 2, 2, acc)
+		cv.disc(16, 13.5, 2.0, bg)
+	elif id == "puzzle":
+		cv.rect(10, 9, 5, 4, acc)
+		cv.rect(16, 9, 5, 4, acc.darkened(0.25))
+		cv.rect(10, 14, 5, 4, acc.darkened(0.25))
+		cv.rect(17, 15, 5, 4, acc)
+	elif id == "mastery":
+		var pts: Array = []
+		for i in 10:
+			var r := 6.5 if i % 2 == 0 else 2.8
+			var a := -PI / 2.0 + i * PI / 5.0
+			pts.append(Vector2(16 + cos(a) * r, 14 + sin(a) * r))
+		cv.poly(pts, acc)
+	elif id == "workshop":
+		cv.line(10, 18, 18, 10, acc)
+		cv.line(11, 18, 19, 10, acc)
+		cv.disc(19.5, 9.5, 3.4, acc)
+		cv.disc(21, 8, 1.4, bg)
+	elif id == "codex":
+		cv.rect(10, 9, 12, 10, acc)
+		cv.rect(15, 9, 2, 10, bg)
+		cv.rect(11, 11, 3, 1, bg)
+		cv.rect(18, 11, 3, 1, bg)
+		cv.rect(11, 14, 3, 1, bg)
+		cv.rect(18, 14, 3, 1, bg)
+	elif id == "thr_m" or id == "thr_p":
+		cv.poly([Vector2(16, 8), Vector2(23, 19), Vector2(9, 19)], acc)
+		cv.poly([Vector2(16, 11), Vector2(20.5, 18), Vector2(11.5, 18)], bg)
+		cv.rect(14, 15, 5, 1, acc)
+		if id == "thr_p":
+			cv.rect(16, 13, 1, 5, acc)
+
+
+# ---------------------------------------------------------------- floor event pickups
+
+func _ev_col(id: String) -> Color:
+	var m := {"distress": "ff6a5c", "reactor": "ffb347", "lab": "6dff9a", "crew": "7fd8ff", "drone": "c07cff", "supply": "ffc24f", "purge": "e8f4ff", "training": "ffd84f", "idol": "ff5d8a", "datacore": "4fd1c5", "medbay": "ff8a9a"}
+	return Color(String(m.get(id, "ffffff")))
+
+
+func _ev_picto(cv, id: String, col: Color) -> void:
+	var dk := col.darkened(0.6)
+	if id == "distress":
+		cv.poly([Vector2(16, 8), Vector2(21, 24), Vector2(11, 24)], Color("3a4262"))
+		cv.poly([Vector2(16, 12), Vector2(19, 22), Vector2(13, 22)], col.darkened(0.2))
+		cv.rect(13, 17, 6, 2, Color("f4e9d0"))
+		cv.disc(16, 7, 2.6, col)
+		cv.px(16, 6, Color.WHITE)
+		cv.line(8, 5, 6, 3, col)
+		cv.line(24, 5, 26, 3, col)
+		cv.line(7, 9, 4, 9, col)
+		cv.line(25, 9, 28, 9, col)
+	elif id == "reactor":
+		cv.rrect(9, 8, 14, 16, 3.0, Color("3a4262"))
+		cv.rect(11, 5, 10, 4, Color("56607f"))
+		cv.rrect(11, 11, 10, 10, 2.0, dk)
+		cv.disc(16, 16, 3.6, col)
+		cv.disc(16, 16, 1.6, Color("fff3a8"))
+		cv.rect(9, 22, 14, 1, col)
+		cv.px(11, 9, col)
+		cv.px(21, 9, col)
+	elif id == "lab":
+		cv.rrect(6, 8, 20, 16, 2.0, Color("3a4262"))
+		cv.rrect(9, 11, 14, 10, 1.5, dk)
+		cv.line(9, 11, 23, 21, col)
+		cv.line(23, 11, 9, 21, col)
+		cv.rect(14, 6, 4, 3, col)
+		cv.px(8, 9, col)
+		cv.px(24, 9, col)
+	elif id == "crew":
+		cv.rrect(9, 5, 14, 20, 5.0, Color("56607f"))
+		cv.rrect(11, 8, 10, 14, 3.0, dk)
+		cv.disc(16, 12, 2.6, Color("f4e9d0"))
+		cv.rect(14, 15, 4, 5, col)
+		cv.rect(11, 8, 10, 1, col)
+		cv.line(11, 22, 21, 22, col)
+	elif id == "drone":
+		cv.line(6, 7, 26, 7, Color("9aa3c7"))
+		cv.rect(15, 7, 2, 3, Color("56607f"))
+		cv.disc(16, 14, 6.0, Color("3a2a5a"))
+		cv.disc(16, 14, 4.5, col.darkened(0.2))
+		cv.disc(16, 14, 2.0, Color("fff3a8"))
+		cv.line(11, 19, 9, 24, Color("9aa3c7"))
+		cv.line(21, 19, 23, 24, Color("9aa3c7"))
+		cv.px(6, 6, col)
+		cv.px(26, 6, col)
+	elif id == "supply":
+		cv.ell(16, 9, 9.0, 6.0, col)
+		cv.ell(16, 11, 9.0, 3.0, col.darkened(0.3))
+		cv.line(8, 11, 12, 17, Color("f4e9d0"))
+		cv.line(24, 11, 20, 17, Color("f4e9d0"))
+		cv.line(16, 12, 16, 17, Color("f4e9d0"))
+		cv.rrect(10, 17, 12, 8, 1.5, Color("7a4a1e"))
+		cv.rect(10, 20, 12, 1, Color("3a2410"))
+		cv.rect(15, 17, 2, 8, col)
+	elif id == "purge":
+		cv.rrect(6, 10, 20, 14, 2.0, Color("3a4262"))
+		cv.rrect(8, 12, 16, 5, 1.0, Color("0a0f1e"))
+		cv.rect(9, 13, 8, 1, col)
+		cv.rect(9, 15, 5, 1, col)
+		cv.disc(16, 20, 2.6, Color("ff5d5d"))
+		cv.px(15, 19, Color("ffd0d0"))
+		cv.line(8, 8, 24, 8, col)
+		cv.line(8, 6, 24, 6, col.darkened(0.4))
+	elif id == "training":
+		cv.disc(16, 14, 10.0, Color("3a4262"))
+		cv.disc(16, 14, 8.0, col)
+		cv.disc(16, 14, 6.0, Color("1b2036"))
+		cv.disc(16, 14, 4.0, col)
+		cv.disc(16, 14, 1.8, Color("ff5d5d"))
+		cv.line(16, 2, 16, 26, Color(1, 1, 1, 0.5))
+		cv.line(4, 14, 28, 14, Color(1, 1, 1, 0.5))
+	elif id == "idol":
+		cv.poly([Vector2(11, 9), Vector2(9, 3), Vector2(14, 7)], Color("3a2a5a"))
+		cv.poly([Vector2(21, 9), Vector2(23, 3), Vector2(18, 7)], Color("3a2a5a"))
+		cv.rrect(10, 7, 12, 17, 4.0, Color("5a3a6a"))
+		cv.rect(13, 12, 2, 2, col)
+		cv.rect(18, 12, 2, 2, col)
+		cv.rect(14, 18, 5, 1, col)
+		cv.rect(12, 21, 8, 1, col.darkened(0.3))
+	elif id == "datacore":
+		cv.rrect(9, 5, 14, 20, 3.0, Color("2a3a4a"))
+		cv.rect(11, 8, 10, 2, col)
+		cv.rect(11, 12, 10, 2, col.darkened(0.3))
+		cv.rect(11, 16, 10, 2, col)
+		cv.rect(11, 20, 10, 2, col.darkened(0.3))
+		cv.px(19, 9, Color.WHITE)
+		cv.px(13, 17, Color.WHITE)
+		cv.rect(9, 5, 14, 1, Color("7fe8df"))
+	elif id == "medbay":
+		cv.disc(16, 14, 10.0, Color("e8eef8"))
+		cv.disc(16, 14, 8.5, Color("c9d3f0"))
+		cv.rect(13, 8, 6, 12, col.darkened(0.1))
+		cv.rect(10, 11, 12, 6, col.darkened(0.1))
+		cv.rect(14, 9, 1, 10, Color("ffd0d8"))
+
+
 # ---------------------------------------------------------------- icons
 
 func icon(name: String) -> ImageTexture:
@@ -2234,6 +2388,44 @@ func icon(name: String) -> ImageTexture:
 		cv.px(18, 15, glow)
 		cv.rect(14, 3, 4, 2, glow)
 		cv.rect(10, 22, 12, 1, Color("11162a"))
+		cv.outline(Color("0a0d1a"))
+	elif name.begins_with("ev_"):
+		# Floor event pickup template: small pedestal + a pictogram in the event colour.
+		var eid := name.substr(3)
+		var ecol := _ev_col(eid)
+		cv.rrect(6, 25, 20, 5, 2.0, Color("2a3050"))
+		cv.rect(7, 25, 18, 1, Color("5a6a9a"))
+		cv.rect(9, 27, 3, 1, ecol)
+		cv.rect(20, 27, 3, 1, ecol)
+		_ev_picto(cv, eid, ecol)
+		cv.shade(0.18)
+		cv.outline(Color("0a0d1a"))
+	elif name.begins_with("bs_"):
+		# Station Base terminal template: wall console + screen pictogram. "_off" = locked variant.
+		var off := name.ends_with("_off")
+		var bid := name.substr(3, name.length() - 3 - (4 if off else 0))
+		var acc := _bs_col(bid)
+		if off:
+			acc = Color("6b7189")
+		var bg := acc.darkened(0.72)
+		cv.rrect(4, 3, 24, 26, 3.0, Color("3a4262"))
+		cv.shade(0.2)
+		cv.rect(5, 4, 22, 1, Color("6a76a0"))
+		cv.rrect(7, 6, 18, 15, 2.0, Color("0a0f1e"))
+		cv.rrect(8, 7, 16, 13, 1.5, bg)
+		cv.rect(8, 7, 16, 1, acc.darkened(0.35))
+		cv.rect(8, 23, 3, 2, acc)
+		cv.rect(13, 23, 3, 2, Color("56607f"))
+		cv.rect(18, 23, 3, 2, Color("56607f"))
+		cv.rect(7, 26, 18, 2, Color("232a44"))
+		if off:
+			cv.rect(13, 9, 1, 5, acc)
+			cv.rect(18, 9, 1, 5, acc)
+			cv.rect(13, 9, 6, 1, acc)
+			cv.rrect(11, 13, 10, 7, 1.0, acc)
+			cv.px(16, 16, bg)
+		else:
+			_bs_picto(cv, bid, acc, bg)
 		cv.outline(Color("0a0d1a"))
 	elif name.begins_with("crate_"):
 		var slot := name.substr(6)
