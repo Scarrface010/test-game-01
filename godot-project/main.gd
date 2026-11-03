@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 91
+const BUILD := 92
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -481,6 +481,9 @@ func _ready() -> void:
 			lb_uid += "abcdefghijklmnopqrstuvwxyz0123456789"[ur.randi() % 36]
 		_save_meta()
 	_make_defs()
+	if bool(cfg.get_value("s", "shop_v2", false)):
+		for k in NR_PACKS:
+			ups[k] = int(cfg.get_value("ups", k, 0))
 	_make_gear()
 	_make_skills()
 	if OS.get_cmdline_user_args().size() > 0:
@@ -3810,8 +3813,6 @@ func _fx_draw_top() -> void:
 	# damage and low air vignettes
 	var hurt := clampf(1.0 - (t - p_hit_t0) / 0.5, 0.0, 1.0)
 	var low := 0.0
-	if mode == "adv" and state == PLAY and oxy < oxy_max * 0.25:
-		_frost_draw(band, clampf(1.0 - oxy / maxf(0.01, oxy_max * 0.25), 0.15, 1.0))
 	if hurt > 0.0 or low > 0.0:
 		for i in 7:
 			var fade := 1.0 - i / 7.0
@@ -5512,7 +5513,7 @@ func _draw_overlay(acc: Color) -> void:
 		for i in (0 if mode == "adv" else class_defs.size()):
 			draw_circle(Vector2(360 + (i - (class_defs.size() - 1) * 0.5) * 30.0, 978), 8.0 if i == cls_page else 5.0, cc if i == cls_page else Color(1, 1, 1, 0.3))
 		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else _lock_btn(cid), cc if copen else Color("ffc93c"), 28)
-		_txt("Shop, Workshop, Mastery and Threat are in your Station Base", Vector2(0, 1040), 18, Color(1, 1, 1, 0.5))
+		_txt("Shop, Workshop, Mastery and Threat are in your Station Base", Vector2(0, 1106), 18, Color("ffd84f"))
 		var armed := t - reset_armed < 4.0
 		_button(btn_wipe, "TAP AGAIN: ERASE ALL PROGRESS" if armed else "RESET ALL PROGRESS", Color("ff5d5d") if armed else Color(1, 1, 1, 0.4), 20)
 	elif state == SHOP and mini_pick:
@@ -5671,7 +5672,7 @@ func _mon_seen(c: Vector2i) -> bool:
 		return true
 	if not adv_vis.has(c):
 		return false
-	return _world_rule() != "outage" or maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 2
+	return _world_rule() != "outage" or maxi(absi(c.x - pos.x), absi(c.y - pos.y)) <= 3
 
 
 func adv_oxy_max() -> float:
@@ -5992,7 +5993,7 @@ const WORLD_RULE_TEXT := {
 	"hull": "Hull breach: air drains 3x faster. Every 30 steps the hull tears open nearby and the vacuum drags you 2 tiles toward it. Standing on a breach costs 5 air.",
 	"supply": "Supply drops: every 40 steps a crate of coins or air lands nearby.",
 	"spore": "Spore bursts: every 30 steps you are briefly poisoned.",
-	"outage": "Power outage: you see 2 tiles less, and enemies stay hidden until within 2 tiles. Every 25 steps a 3-step blackout leaves you seeing only adjacent tiles while Hunters move every turn.",
+	"outage": "Power outage: you see 2 tiles less, and enemies stay hidden until within 3 tiles. Every 25 steps a 3-step blackout leaves you seeing only adjacent tiles while Hunters move every turn.",
 	"glare": "Crystal storm: you see 1 tile less. Tiles crack as you walk; stepping on a cracked tile costs 3 health. Every 20 steps crystals shatter, hurting you unless you stand next to a wall. Kills give +25% XP.",
 }
 var guide_seen: Dictionary = {}
@@ -12095,6 +12096,8 @@ func _adv_draw() -> void:
 	# frame: cover everything outside the map window, then HUD
 	draw_rect(Rect2(0, 0, 720, 318), th["bg"])
 	draw_rect(Rect2(0, MAPB, 720, 250), Color(th["bg"].r, th["bg"].g, th["bg"].b, 0.3))
+	if mode == "adv" and state == PLAY and oxy < oxy_max * 0.25:
+		_frost_draw(Rect2(0, 318, 720, 1280.0 - 318.0), clampf(1.0 - oxy / maxf(0.01, oxy_max * 0.25), 0.15, 1.0))
 	draw_line(Vector2(0, 318), Vector2(720, 318), Color(acc.r, acc.g, acc.b, 0.5), 2.0)
 	for s in stars:
 		if float(s[1]) < 318.0 or float(s[1]) > MAPB:
@@ -16085,6 +16088,12 @@ func _ex_guide_lines() -> Array:
 	L.append(["p", "Dark patches on the floor are shadows: enemy sight reaches 1 tile less while you stand in one. Brownout floors have more of them. O2 stations and merchants light up the tiles around them.", W])
 	L.append(["g", "Sleep Dart, Smoke Bomb, Noise Maker, Cloak Patch and Shadow Cloak are stealth tools. A cloak hides you from sight and sound until it runs out or you attack.", W])
 	L.append(["g", "Clear a floor without being spotted or hit for GHOST. The Ghost contract asks for several in one run.", W])
+	L.append(["h", "CRITTERS", Y])
+	L.append(["p", "Small creatures roam the floors and the Station Base. They never attack you. Walk into one to squash it. They all run from awake hunters, ragers and drones.", W])
+	L.append(["g", "Cleaner Bot: sweeps up spikes and hazards as it rolls. Squash it for a coin or a scrap.", B])
+	L.append(["g", "Rat: runs away from you and squeaks, which wakes sleepers within 2 tiles. Squashing it gives a coin, but it squeals and wakes sleepers within 2 tiles. A cloak keeps it silent.", Color("ffb0a0")])
+	L.append(["g", "Moth: drawn to O2 stations and merchants. Squash it for a dust cloud that hides you for 3 steps.", Color("e8e0d0")])
+	L.append(["g", "Wisp: drifts toward vaults. Pop it for +6 air.", Color("b6ff3c")])
 	L.append(["h", "THE DEEP STATION", Y])
 	L.append(["p", "From floor 14 every floor has a Deep Anomaly. From floor 20 the Abyss adds a harsh anomaly on top. Past floor 20 bosses are ASCENDED: +50% health, an extra core and a bonus high-tier gear drop.", W])
 	L.append(["p", "Gear: tier 6 can drop from floor 19 and tier 7 from floor 26. Tier 6 and 7 weapons roll one extra trait and armour one extra mod.", W])
@@ -18583,6 +18592,14 @@ func _amb_squash(m: Dictionary) -> void:
 		_fx_burst(p, Color("9be36b") if k == "moth" else Color("c0392b"), 8, 2.0, 0.4, 4.0)
 		_pop(c, "SQUISH", Color("ffb0a0"))
 		_sfx("spike")
+		if not in_base:
+			coins += coin_val()
+			_pop(c, "+%d COIN" % coin_val(), Color("ffd84f"))
+			if cloak_steps <= 0:
+				_pop(c, "SQUEAL", Color("ffb0a0"))
+				for o in mon_idle:
+					if String(mon_idle[o]["s"]) == "sleep" and _cheb(o, c) <= 2:
+						mon_idle[o]["hear"] = 1
 
 
 func _amb_dead_draw(m: Dictionary, q2: Vector2, a2: float, acc: Color) -> void:
