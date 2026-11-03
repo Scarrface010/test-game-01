@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 84
+const BUILD := 85
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -17748,15 +17748,15 @@ func _ev_draw(ctr: Vector2, kind: String, bob: float) -> void:
 
 # id, label, unlock step, colour, glyph, terminal cell
 const BS_ROOMS := [
-	["start", "START", 0, Color("6dff9a"), ">", Vector2i(8, 2)],
-	["shop", "OUTFITTER", 0, Color("ffc93c"), "$", Vector2i(1, 6)],
-	["settings", "SETTINGS", 0, Color("c9d3f0"), "*", Vector2i(15, 6)],
-	["puzzle", "PUZZLE", 0, Color("9fb3d9"), "#", Vector2i(1, 9)],
-	["mastery", "MASTERY", 4, Color("ffd84f"), "M", Vector2i(15, 9)],
-	["workshop", "WORKSHOP", 6, Color("ff4fd8"), "W", Vector2i(1, 12)],
-	["codex", "CODEX", 7, Color("c9a2ff"), "C", Vector2i(15, 12)],
-	["thr_m", "THREAT -", 8, Color("ff6a5c"), "-", Vector2i(5, 2)],
-	["thr_p", "THREAT +", 8, Color("ff6a5c"), "+", Vector2i(11, 2)],
+	["start", "START", 0, Color("6dff9a"), ">", Vector2i(7, 1)],
+	["shop", "OUTFITTER", 0, Color("ffc93c"), "$", Vector2i(6, 12)],
+	["settings", "SETTINGS", 0, Color("c9d3f0"), "*", Vector2i(9, 12)],
+	["puzzle", "PUZZLE", 0, Color("9fb3d9"), "#", Vector2i(6, 10)],
+	["mastery", "MASTERY", 4, Color("ffd84f"), "M", Vector2i(9, 10)],
+	["workshop", "WORKSHOP", 6, Color("ff4fd8"), "W", Vector2i(6, 8)],
+	["codex", "CODEX", 7, Color("c9a2ff"), "C", Vector2i(9, 8)],
+	["thr_m", "THREAT -", 8, Color("ff6a5c"), "-", Vector2i(6, 6)],
+	["thr_p", "THREAT +", 8, Color("ff6a5c"), "+", Vector2i(9, 6)],
 ]
 
 
@@ -17799,27 +17799,20 @@ func _adv_gen_base() -> void:
 	adv_rooms.clear()
 	for dd in [mons, elite, items, spikes, haz, tur, corpses, coin_at, walls, portals, kinds, thief_held, vaults, stations, meds, merchants, mon_hp, affix, mstat, hull_holes, cracked]:
 		dd.clear()
-	var hall := Rect2i(3, 4, 11, 11)
-	adv_rooms.append(hall)
-	for x in range(hall.position.x, hall.end.x):
-		for y in range(hall.position.y, hall.end.y):
+	var cor := Rect2i(7, 2, 2, 13)
+	adv_rooms.append(cor)
+	for x in range(cor.position.x, cor.end.x):
+		for y in range(cor.position.y, cor.end.y):
 			adv_open[_ai(Vector2i(x, y))] = 1
 	for d in BS_ROOMS:
-		if not ul(int(d[2])):
-			continue
 		var c: Vector2i = d[5]
 		items[c] = "bs_" + String(d[0])
 		adv_open[_ai(c)] = 1
-		# short corridor from the hall wall to the terminal
-		if c.y <= 3:
-			adv_open[_ai(Vector2i(c.x, 3))] = 1
-		elif c.x < 3:
-			adv_open[_ai(Vector2i(2, c.y))] = 1
-		else:
-			adv_open[_ai(Vector2i(14, c.y))] = 1
-	start = Vector2i(8, 13)
+	items[Vector2i(8, 1)] = "bs_start"
+	adv_open[_ai(Vector2i(8, 1))] = 1
+	start = Vector2i(7, 14)
 	pos = start
-	stairs = Vector2i(8, 0)   # closed wall cell: the run starts from the START terminal
+	stairs = Vector2i(8, 0)   # closed wall cell: the run starts from the START door
 	boss_floor = false
 	boss_cell = Vector2i(-1, -1)
 	adv_req = 999
@@ -17839,6 +17832,11 @@ func _bs_open(kind: String) -> void:
 	swipe_on = false
 	var id := kind.substr(3)
 	var d := _bs_def(id)
+	if d.size() > 0 and not ul(int(d[2])):
+		var un: Array = UL_STEPS[int(d[2])]
+		msg = "LOCKED: %s unlocks after run %d. %s" % [String(d[1]), int(d[2]), String(un[1])]
+		_sfx("blocked")
+		return
 	if d.size() > 0 and int(d[2]) > 0:
 		_ul_tap(int(d[2]))
 	match id:
@@ -17889,6 +17887,9 @@ func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
 	if d.is_empty():
 		return
 	var col: Color = d[3]
+	var locked := not ul(int(d[2]))
+	if locked:
+		col = Color(0.55, 0.58, 0.68)
 	var k := 0.5 + 0.5 * sin(t * 3.0)
 	var p := ctr + Vector2(0, bob * 0.5)
 	if String(d[0]) == "start":
@@ -17905,6 +17906,8 @@ func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
 	if String(d[0]).begins_with("thr_"):
 		lbl += " (%d)" % clampi(int(hz_sel.get(cls, 0)), 0, int(hz_max.get(cls, 0)))
 	_ctext(lbl, ctr + Vector2(0, AC * 0.62), int(AC * 0.17), col)
-	if _bs_new(int(d[2])):
+	if locked:
+		_ctext("LOCKED", ctr + Vector2(0, -AC * 0.5), int(AC * 0.17), Color("ffb02e"))
+	elif _bs_new(int(d[2])):
 		_ctext("NEW!", ctr + Vector2(0, -AC * 0.55 + sin(t * 5.0) * 3.0), int(AC * 0.2), Color("ff5d5d"))
 
