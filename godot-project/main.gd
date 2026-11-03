@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 90
+const BUILD := 91
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -360,7 +360,7 @@ const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "flo
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -664,6 +664,8 @@ func _make_defs() -> void:
 		{"id": "smagnet", "name": "Salvage Magnet", "desc": "Elites and bosses always drop 2 extra scrap", "max": 1, "adv": true},
 		{"id": "uplink", "name": "Drone Uplink", "desc": "Your drone's zaps apply your melee weapon's elemental traits", "max": 1, "adv": true},
 		{"id": "anchor", "name": "Phase Anchor", "desc": "Warping to your beacon gives you a random tool (once per floor)", "max": 1, "adv": true},
+		{"id": "lullaby", "name": "Lullaby", "desc": "Each unseen kill has a 25% chance to put the nearest awake enemy to sleep", "max": 1, "adv": true},
+		{"id": "amark", "name": "Assassin's Mark", "desc": "After a sneak attack the target can't strike back, wake its partner or raise the alarm for 3 steps", "max": 1, "adv": true},
 		{"id": "ammofab", "name": "Ammo Fabricator", "desc": "Every 8 steps without shooting restores 1 ammo", "max": 1, "adv": true},
 		{"id": "scrubber", "name": "Oxygen Scrubber", "desc": "Kills while under half air restore +3 air", "max": 1, "adv": true},
 		{"id": "gcoin", "name": "Gambler's Coin", "desc": "Each floor rolls a random buff for that floor: +10% crit, +10% dodge, or +1 coin value", "max": 1, "adv": true},
@@ -711,6 +713,10 @@ func _make_defs() -> void:
 		"rewind": {"name": "Rewind Device", "desc": "Return to where you stood 8 steps ago and recover the health and air lost since", "col": Color("c07cff"), "adv": true},
 		"beacon": {"name": "Warp Beacon", "desc": "Use to drop a beacon, use again to warp back to it", "col": Color("a68cff"), "adv": true, "sk": true},
 		"ammopack": {"name": "Ammo Pack", "desc": "Refills half your max ammo", "col": Color("ffc24f"), "adv": true},
+		"sleepdart": {"name": "Sleep Dart", "desc": "Puts an enemy within 4 tiles that hasn't seen you to sleep for 10 steps", "col": Color("c9a2ff"), "adv": true},
+		"smoke": {"name": "Smoke Bomb", "desc": "A smoke cloud around you for 5 steps: enemies can't see you inside it and lose track of you", "col": Color("b8c0d0"), "adv": true},
+		"noise": {"name": "Noise Maker", "desc": "Throw it up to 6 tiles: enemies within 4 tiles of it turn to look, and hunters chase it for 4 steps", "col": Color("ffb347"), "adv": true},
+		"patch": {"name": "Cloak Patch", "desc": "Invisible and silent for 4 steps, or until you attack", "col": Color("8f9bd8"), "adv": true},
 	}
 	class_defs = [
 		{"id": "scout", "name": "Scout", "desc": "The dark waits +1 step per ring. Starts with a Time Crystal.", "col": Color("4fd1ff"), "lvl": 0, "per": 1, "kit": ["crystal"]},
@@ -3415,7 +3421,8 @@ func _fx_ring(p: Vector2, col: Color, r1: float, life := 0.45, w := 4.0, delay :
 
 
 func _fx_hit(c: Vector2i, crit: bool, lunge := true) -> void:
-	_idle_noise(c, 3)
+	if mode == "adv":
+		_idle_noise(c, 3)
 	var cf := Vector2(c)
 	var dv := Vector2(c - pos).normalized() if c != pos else Vector2(0, -1)
 	if lunge:
@@ -6947,6 +6954,7 @@ func _adv_level_up(n: int, pick := false) -> void:
 
 
 func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
+	floor_spotted = true
 	if mirror_n > 0:
 		mirror_n -= 1
 		_pop(pos, "REFLECT", Color("c8f1ff"))
@@ -7224,6 +7232,7 @@ const TRAIT_DEFS := {
 	"regen": {"n": "Regenerator", "d": "Heal 1 health every 5 steps (2 when below half health)", "t": ["defense"]},
 	"vampedge": {"n": "Vampire Edge", "d": "Crits make enemies bleed, and your bleeds heal you for 25% of their damage", "t": ["blood"]},
 	"echostep": {"n": "Echo Step", "d": "Every 6th step costs no air", "t": ["streak"]},
+	"assassin": {"n": "Assassin", "d": "Sneak attacks deal +50% damage", "t": ["raw"]},
 }
 
 # Gear mods for helmet / armour / boots / trinket (stored in the same "@" list as weapon traits).
@@ -7302,6 +7311,10 @@ const MOD_DEFS := {
 	"earthshake": {"n": "Earthshakers", "d": "Kills stun every enemy within 2 tiles for 1 step", "slot": "boots", "s": {}, "hi": true},
 	"gravity": {"n": "Gravity Soles", "d": "Hazard tiles heal you instead of hurting you while you are below half health", "slot": "boots", "s": {}, "hi": true},
 	"heartstation": {"n": "Heart of the Station", "d": "+25% max health, air and shield, but it can't be sold", "slot": "trinket", "s": {}, "hi": true},
+	"hushvisor": {"n": "Hush Visor", "d": "Enemies take 1 extra step to notice you", "slot": "helmet", "s": {}},
+	"quietweave": {"n": "Quiet Weave", "d": "Awake enemies don't hear you when you're next to them", "slot": "armour", "s": {}},
+	"softsoles": {"n": "Soft Soles", "d": "Sleeping enemies never hear you walk past", "slot": "boots", "s": {}},
+	"shadowcharm": {"n": "Shadow Charm", "d": "Sneak attacks deal +30% damage", "slot": "trinket", "s": {}},
 }
 var sw_used := false
 var chg_n := 0
@@ -8016,6 +8029,14 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 			mul += 1.0
 	var gz := false
 	tgt_crit = 10.0 if (gm("tvisor") and (_stunned(c) or _rooted(c))) else 0.0
+	if _st_unaware(c):
+		st_hit_c = c
+		st_quiet = true
+		var slp := _idle_sleep(c)
+		mul += (1.0 if slp else 0.5) + sk("st_sneak") / 100.0 + (0.3 if gm("shadowcharm") else 0.0) + (0.5 if tl.has("assassin") else 0.0)
+		if slp:
+			tgt_crit += 1000.0
+		_pop(c, "SNEAK", Color("c07cff"))
 	if gm("bfocus"):
 		var bn := 0
 		for bm in mons:
@@ -8489,13 +8510,13 @@ const SK_BR := [
 		["Bounty Hunter", "Every kill drops +%s coin(s)", "kcoin", [1, 2]],
 		["Alchemy", "XP potions give %s%% more XP", "pot", [25, 50]],
 		["Lucky Day", "%s%% chance for a kill to give double XP", "lucky", [8, 16]]]],
-	["TACTICS", Color("c07cff"), [
-		["Evasion Matrix", "+%s%% dodge chance", "dodge", [5, 10]],
-		["Opening Strike", "+%s%% damage to enemies at full health", "opener", [40, 80]],
-		["Momentum", "After a kill your next %s step(s) cost no air", "momentum", [3, 6]],
-		["Utility Belt", "+%s tool slot(s)", "slots", [1, 2]],
-		["Quartermaster", "Every new floor starts with %s free random tool(s)", "quarter", [1, 2]],
-		["Phoenix", "Once per run, a killing blow leaves you at %s%% health instead", "phoenix", [30, 60]]]],
+	["SHADOW", Color("c07cff"), [
+		["Backstab", "Sneak attacks deal +%s%% more damage", "st_sneak", [25, 50]],
+		["Soft Step", "Enemies need %s extra step(s) to notice you", "st_slow", [1, 2]],
+		["Low Profile", "Enemy sight reaches %s tile(s) less", "st_cone", [1, 2]],
+		["Silent Kill", "Unseen kills give %s%% more XP", "st_xp", [25, 50]],
+		["Shadow Mend", "Unseen kills restore %s air", "st_air", [5, 10]],
+		["Vanish", "Unseen kills cloak you for %s steps", "st_vanish", [2, 4]]]],
 	["OXYGEN", Color("7fd8ff"), [
 		["Deep Lungs", "+%s max air", "air", [12, 24]],
 		["Easy Breathing", "%s%% less air used per step", "airsave", [6, 12]],
@@ -9598,6 +9619,7 @@ func _adv_begin() -> void:
 	station_uses = 0
 	scan_steps = 0
 	decoy_steps = 0
+	_st_floor_reset()
 	rw_hist.clear()
 	oxy_max = adv_oxy_max()
 	oxy = oxy_max + (10.0 if gm("deepres") else 0.0)
@@ -9819,6 +9841,9 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 	if randf() * 100.0 < sk("lucky"):
 		mult += 1.0
 		_pop(nc, "LUCKY!", Color("ffd84f"))
+	var unseen := _st_on_kill(nc)
+	if unseen:
+		mult += 0.5 + sk("st_xp") / 100.0
 	var xg := int(round((3 + lv) * mult))
 	_tr_on_kill(nc, mon_hp_max(nc))
 	_remove_mon(nc)
@@ -9918,6 +9943,13 @@ func _adv_fight(nc: Vector2i) -> int:
 	if not missed and String(affix.get(nc, "")) == "spiny":
 		if not _adv_env_hurt(1 + floor_n / 4, "Spiny! You lose %d health", "You were skewered by a spiny enemy"):
 			return 0
+	if st_hit_c == nc:
+		_st_after_hit(nc)
+		msg += "  (caught off guard)"
+		return 2
+	if amark.has(nc):
+		msg += "  (marked: it can't strike back)"
+		return 2
 	if _stunned(nc):
 		msg += "  (stunned: it can't strike back)"
 		return 2
@@ -10353,6 +10385,7 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 		decoy_steps -= 1
 	if oil_steps > 0:
 		oil_steps -= 1
+	_st_tick()
 	_adv_update_vis()
 	if spike_dmg > 0 and not _adv_spike_hurt(spike_dmg):
 		return
@@ -10500,6 +10533,7 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 
 func _cloak_break() -> void:
 	if cloak_steps > 0 and mode == "adv":
+		st_was_cloaked = true
 		cloak_steps = 0
 		_pop(pos, "REVEALED", Color("9aa3c7"))
 
@@ -10510,7 +10544,10 @@ func _adv_hunters() -> void:
 	var dec := decoy_steps > 0
 	if dec:
 		tgt = decoy_c
-	elif cloak_steps > 0:
+	elif noise_steps > 0:
+		tgt = noise_c
+		dec = true
+	elif _hidden():
 		return
 	var hs: Array[Vector2i] = []
 	for c in kinds:
@@ -10521,7 +10558,7 @@ func _adv_hunters() -> void:
 	var dist := _adv_bfs(tgt, 9)
 	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 	for c in hs:
-		if not mons.has(c) or not dist.has(c) or _stunned(c) or _turned(c) or mon_idle.has(c):
+		if not mons.has(c) or not dist.has(c) or _stunned(c) or _turned(c) or mon_idle.has(c) or amark.has(c):
 			continue
 		var bd: int = dist[c]
 		if bd == 1:
@@ -10699,19 +10736,22 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		if not missed:
 			_nr_after_hit(c)
 	_sfx("shoot")
+	var snk := st_hit_c == c
+	if snk:
+		_st_after_hit(c)
 	_nr_shot(c, dmg)
 	if act_rico and dmg > 0:
 		act_rico = false
 		_act_ricochet(c, dmg)
 		for rb in _rico_extra():
 			_act_ricochet(c, dmg, true)
-	if mons.has(c) and not tur.has(c) and not is_boss:
+	if mons.has(c) and not tur.has(c) and not is_boss and not amark.has(c):
 		var kd := String(kinds.get(c, ""))
 		if kd == "" or kd == "sleeper" or kd == "feeder":
 			kinds[c] = "rager"
 			msg += "  It charges you at full speed!"
 			_sfx("aggro")
-	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c) and not _turned(c):
+	if mons.has(c) and absi(c.x - pos.x) + absi(c.y - pos.y) == 1 and not tur.has(c) and not _turned(c) and not snk and not amark.has(c):
 		mon_lunge[c] = [t + 0.12, Vector2(pos - c).normalized()]
 		if not _adv_hurt(mon_atk(c), nm, c):
 			return
@@ -10729,6 +10769,7 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		decoy_steps -= 1
 	if oil_steps > 0:
 		oil_steps -= 1
+	_st_tick()
 	_adv_update_vis()
 	if poison_n > 0:
 		poison_n -= 1
@@ -10776,11 +10817,11 @@ func _shooter_score(n: Vector2i) -> int:
 
 
 func _adv_shooters() -> void:
-	if cloak_steps > 0 or decoy_steps > 0:
+	if _hidden() or decoy_steps > 0:
 		return
 	var ss: Array[Vector2i] = []
 	for c in kinds:
-		if String(kinds[c]) == "shooter" and mons.has(c) and not mon_idle.has(c):
+		if String(kinds[c]) == "shooter" and mons.has(c) and not mon_idle.has(c) and not amark.has(c):
 			ss.append(c)
 	if ss.is_empty():
 		return
@@ -10835,7 +10876,7 @@ func _adv_turrets() -> void:
 			if _tur_ready(c, adv_steps):
 				_tur_friendly(c)
 			continue
-		if cloak_steps > 0 or not _tur_ready(c, adv_steps):
+		if _hidden() or not _tur_ready(c, adv_steps):
 			continue
 		if not _tur_lane(c).has(pos):
 			continue
@@ -10997,6 +11038,10 @@ func _adv_aim_valid(id: String, c: Vector2i) -> bool:
 		return dd <= 6 and _aopen(c) and not mons.has(c) and not vaults.has(c) and c != pos
 	if id == "grapple":
 		return _grapple_ok(c)
+	if id == "sleepdart":
+		return dd <= 4 and mons.has(c) and adv_vis.has(c) and _st_unaware(c) and not _idle_sleep(c) and _idle_ok(c) and not elite.has(c)
+	if id == "noise":
+		return dd <= 6 and _aopen(c) and not mons.has(c) and c != pos
 	return false
 
 
@@ -11182,8 +11227,28 @@ func _adv_use_slot(i: int) -> void:
 		cloak_steps = 16
 		walk.clear()
 		_fx_burst(vis_pos, Color("9aa3c7"), 16, 2.6, 0.7, 6.0)
-		msg = "Shadow Cloak: monsters cannot see you for 16 steps, or until you attack"
+		msg = "Shadow Cloak: monsters can't see or hear you for 16 steps, or until you attack"
 		_sfx("shield")
+	elif id == "patch":
+		if cloak_steps >= 4:
+			msg = "A cloak is already active"
+			_sfx("blocked")
+			return
+		cloak_steps = 4
+		walk.clear()
+		_fx_burst(vis_pos, Color("8f9bd8"), 12, 2.2, 0.6, 5.0)
+		msg = "Cloak Patch: invisible and silent for 4 steps, or until you attack"
+		_sfx("shield")
+	elif id == "smoke":
+		smoke_c = pos
+		smoke_steps = 5
+		for sc in mons.keys():
+			if mon_idle.has(sc) and _cheb(sc, pos) <= 3:
+				mon_idle[sc]["sus"] = 0
+		_fx_burst(vis_pos, Color("b8c0d0"), 30, 3.0, 1.0, 9.0)
+		_fx_ring(vis_pos, Color("b8c0d0"), 2.4, 0.6, 6.0)
+		msg = "Smoke Bomb: enemies can't see you inside the smoke for 5 steps"
+		_sfx("shieldbreak")
 	elif id == "magnet":
 		var n := 0
 		for c in coin_at.keys():
@@ -11379,6 +11444,29 @@ func _adv_aim_apply(c: Vector2i) -> void:
 		return
 	_tool_spend(aim)
 	aim = -1
+	if id == "sleepdart":
+		_fx_bolt(vis_pos, Vector2(c), Color("c9a2ff"))
+		mon_idle[c] = {"s": "sleep", "ph": 0, "sus": 0, "zz": 10}
+		amark.erase(c)
+		_pop(c, "ZZZ", Color("c9a2ff"))
+		msg = "Sleep Dart: %s is asleep for 10 steps" % _adv_mname(c)
+		_sfx("lamp")
+		return
+	if id == "noise":
+		noise_c = c
+		noise_steps = 4
+		for nc2 in mon_idle.keys():
+			if _cheb(nc2, c) <= 4 and mons.has(nc2) and String(mon_idle[nc2]["s"]) != "sleep":
+				var dl: Vector2i = c - nc2
+				mon_idle[nc2]["s"] = "look"
+				mon_idle[nc2]["fd"] = (3 if dl.x > 0 else 2) if absi(dl.x) > absi(dl.y) else (0 if dl.y >= 0 else 1)
+				mon_idle[nc2]["sus"] = 0
+				_pop(nc2, "?", Color("ffb347"))
+		_fx_ring(Vector2(c), Color("ffb347"), 1.6, 0.6, 5.0)
+		_fx_ring(Vector2(c), Color("ffb347"), 2.6, 0.8, 3.0, 0.2)
+		msg = "Noise Maker: heads turn towards the noise"
+		_sfx("elite")
+		return
 	if id == "decoy":
 		decoy_c = c
 		decoy_steps = 8
@@ -15573,7 +15661,7 @@ func _ex_mx_mult() -> float:
 
 func _ct_new() -> Dictionary:
 	var s := int((cx.get("st", {}) as Dictionary).get("contracts", 0))
-	var kinds := ["kills", "elites", "floor", "bosses", "coins", "cls", "threat"]
+	var kinds := ["kills", "elites", "floor", "bosses", "coins", "cls", "threat", "ghost"]
 	var k := ""
 	for tries in 12:
 		k = String(kinds[randi() % kinds.size()])
@@ -15605,6 +15693,8 @@ func _ct_new() -> Dictionary:
 		"threat":
 			c["n"] = mini(HZ.size(), 1 + s / 2)
 			c["r"] = int(c["r"]) + 1
+		"ghost":
+			c["n"] = mini(6, 1 + s / 4)
 	return c
 
 
@@ -15630,6 +15720,8 @@ func _ct_text(c: Dictionary) -> String:
 			return "Clear floor %d as the %s" % [n, _cls_name(String(c.get("cl", "scout")))]
 		"threat":
 			return "Clear floor 5 at Threat %d or higher" % n
+		"ghost":
+			return ("Clear a floor without being spotted" if n == 1 else "Clear %d floors without being spotted in one run" % n)
 	return "?"
 
 
@@ -15650,6 +15742,8 @@ func _ct_met(c: Dictionary, cleared: int) -> bool:
 			return cls == String(c.get("cl", "")) and cleared >= n
 		"threat":
 			return hz_run >= n and cleared >= 5
+		"ghost":
+			return run_ghost >= n
 	return false
 
 
@@ -15801,6 +15895,7 @@ func _ex_init_run() -> void:
 	run_bosses = 0
 	run_cores = 0
 	run_cts = 0
+	run_ghost = 0
 	pw_refund = 0
 	hz_run = 0
 	an_key = -1
@@ -15854,6 +15949,10 @@ func _ex_hit_mul(c: Vector2i) -> float:
 
 
 func _ex_floor_clear() -> void:
+	if not floor_spotted and not in_base:
+		run_ghost += 1
+		_pop(pos, "GHOST", Color("c07cff"))
+		msg += "   Ghost: you cleared the floor unseen!"
 	if floor_n >= 5 and hz_run >= int(hz_max.get(cls, 0)) and hz_run < HZ.size():
 		hz_max[cls] = hz_run + 1
 		_pop(pos, "THREAT %d UNLOCKED" % (hz_run + 1), Color("ff6a5c"))
@@ -15980,6 +16079,12 @@ func _ex_guide_lines() -> Array:
 		L.append(["g", "%s: %s per rank, %d ranks, from %d coins%s" % [String(d[1]), String(d[2]) % _nfmt(float(d[4])), int(d[5]), int(d[6]), cc], W])
 	L.append(["s", "Contracts", B])
 	L.append(["p", "Three contracts are always open on the CONTRACTS board in the Station Base. They check when you clear a floor and when a run ends; finishing one pays cores and coins right away and a harder one replaces it.", W])
+	L.append(["h", "STEALTH", Y])
+	L.append(["p", "Sleeping, chatting and watching enemies haven't seen you. A '?' over one means it is getting suspicious: step out of its sight or it will spot you ('!'). Watchers see in a cone in front of them, chatting pairs only look at each other, and sleepers wake if you stand next to them for 2 steps.", W])
+	L.append(["p", "Sneak attacks on enemies that haven't seen you deal +50% damage (double and a sure crit on sleepers), and they can't strike back. Killing one before it sees you is an unseen kill: +50% XP and no noise. A sneak attack that doesn't kill wakes the target and its chat partner.", W])
+	L.append(["p", "Dark patches on the floor are shadows: enemy sight reaches 1 tile less while you stand in one. Brownout floors have more of them. O2 stations and merchants light up the tiles around them.", W])
+	L.append(["g", "Sleep Dart, Smoke Bomb, Noise Maker, Cloak Patch and Shadow Cloak are stealth tools. A cloak hides you from sight and sound until it runs out or you attack.", W])
+	L.append(["g", "Clear a floor without being spotted or hit for GHOST. The Ghost contract asks for several in one run.", W])
 	L.append(["h", "THE DEEP STATION", Y])
 	L.append(["p", "From floor 14 every floor has a Deep Anomaly. From floor 20 the Abyss adds a harsh anomaly on top. Past floor 20 bosses are ASCENDED: +50% health, an extra core and a bonus high-tier gear drop.", W])
 	L.append(["p", "Gear: tier 6 can drop from floor 19 and tier 7 from floor 26. Tier 6 and 7 weapons roll one extra trait and armour one extra mod.", W])
@@ -18094,10 +18199,23 @@ func _amb_pick(m: Dictionary) -> void:
 		var nc: Vector2i = c + d
 		if _amb_free(nc) and nc != pos and not mons.has(nc):
 			opts.append(d)
+	if String(m["k"]) == "bot" and (spikes.has(c) or haz.has(c)) and amb_rng.randf() < 0.4:
+		spikes.erase(c)
+		haz.erase(c)
+		_pop(c, "CLEANED", Color("c0cbdc"))
+		_fx_burst(Vector2(c), Color("ead4aa"), 8, 2.0, 0.4, 4.0)
 	if opts.is_empty():
 		m["w"] = 1.0
 		return
 	var nd: Vector2i = keep if (opts.has(keep) and amb_rng.randf() < 0.65) else opts[amb_rng.randi() % opts.size()]
+	var gv := _crit_goal(m, c)
+	if gv != Vector2.ZERO and amb_rng.randf() < (0.95 if m.get("scared", false) else 0.7):
+		var bsc := -9.0
+		for od in opts:
+			var sc := Vector2(od).dot(gv)
+			if sc > bsc:
+				bsc = sc
+				nd = od
 	m["d"] = nd
 	m["to"] = Vector2(c + nd)
 	match String(m["k"]):
@@ -18109,6 +18227,8 @@ func _amb_pick(m: Dictionary) -> void:
 			m["w"] = amb_rng.randf_range(0.0, 0.3)
 		_:
 			m["w"] = amb_rng.randf_range(0.4, 1.8)
+	if m.get("scared", false):
+		m["w"] = 0.02
 
 
 func _amb_update(dt: float) -> void:
@@ -18140,7 +18260,7 @@ func _amb_update(dt: float) -> void:
 			if float(m["w"]) <= 0.0:
 				_amb_pick(m)
 		else:
-			m["p"] = p.move_toward(to, dt * float(m["sp"]))
+			m["p"] = p.move_toward(to, dt * float(m["sp"]) * (2.2 if m.get("scared", false) else 1.0))
 
 
 func _amb_world_draw(ti: int) -> void:
@@ -18148,6 +18268,7 @@ func _amb_world_draw(ti: int) -> void:
 		return
 	var acc: Color = cur_theme()["accent"]
 	var k4 := ti % 4
+	_st_world_draw()
 	for dd in amb_dec:
 		var c: Vector2i = dd[0]
 		if not _aseen(c) or items.has(c) or mons.has(c):
@@ -18321,21 +18442,26 @@ func _idle_dir(c: Vector2i) -> int:
 		return 0 if dy >= 0 else 1
 	if s == "sleep":
 		return 0
+	if d.has("fd"):
+		return int(d["fd"])
 	return (adv_steps / 3 + int(d["ph"])) % 4
 
 
-func _idle_wake(c: Vector2i) -> void:
+func _idle_wake(c: Vector2i, chain := true) -> void:
 	if not mon_idle.has(c):
 		return
 	var d: Dictionary = mon_idle[c]
 	mon_idle.erase(c)
 	if mons.has(c):
 		_pop(c, "!", Color("ffd84f"))
-	if String(d["s"]) == "talk":
+		floor_spotted = true
+	if chain and String(d["s"]) == "talk":
 		_idle_wake(d["p"])
 
 
 func _idle_noise(c: Vector2i, r: int) -> void:
+	if cloak_steps > 0 or st_quiet:
+		return
 	for o in mon_idle.keys():
 		if _cheb(o, c) <= r:
 			_idle_wake(o)
@@ -18355,22 +18481,27 @@ func _idle_notice() -> void:
 	if mon_idle.is_empty() or mode != "adv":
 		return
 	var woke: Array = []
-	var dv4 := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0)]
+	var hid := _hidden()
+	var need := 2 + int(sk("st_slow")) + (1 if gm("hushvisor") else 0)
 	for c in mon_idle.keys():
 		if not mons.has(c):
 			mon_idle.erase(c)
 			continue
+		var md: Dictionary = mon_idle[c]
+		var s := String(md["s"])
 		var d := _cheb(c, pos)
-		if d <= 1:
-			woke.append(c)
-			continue
-		if String(mon_idle[c]["s"]) != "look" or cloak_steps > 0 or d > 3:
-			continue
-		var fd: Vector2i = dv4[_idle_dir(c)]
-		var to: Vector2i = pos - c
-		var fw := to.x * fd.x + to.y * fd.y
-		var lat := absi(to.x * fd.y - to.y * fd.x)
-		if fw >= 1 and lat <= fw and _idle_los(c, pos):
+		var gain := 0
+		if not hid:
+			if _st_sees(c):
+				gain = 2 if d <= 1 else 1
+			elif d <= 1 and not (gm("softsoles") if s == "sleep" else gm("quietweave")):
+				gain = 1
+		gain += int(md.get("hear", 0))
+		md.erase("hear")
+		var sus := int(md.get("sus", 0))
+		sus = sus + gain if gain > 0 else maxi(0, sus - 1)
+		md["sus"] = sus
+		if sus >= need or (gain >= 2 and sus >= 2):
 			woke.append(c)
 	for c in woke:
 		_idle_wake(c)
@@ -18400,9 +18531,18 @@ func _idle_draw(c: Vector2i, ctr: Vector2) -> void:
 		var dv4 := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0)]
 		var fd := Vector2(dv4[_idle_dir(c)])
 		var side := Vector2(-fd.y, fd.x)
-		var p1 := ctr + fd * AC * 3.4 + side * AC * 3.4
-		var p2 := ctr + fd * AC * 3.4 - side * AC * 3.4
-		draw_colored_polygon(PackedVector2Array([ctr + fd * AC * 0.4, p1, p2]), Color(1, 0.9, 0.4, 0.06))
+		var rl := float(_cone_r()) + 0.4
+		var p1 := ctr + fd * AC * rl + side * AC * rl
+		var p2 := ctr + fd * AC * rl - side * AC * rl
+		draw_colored_polygon(PackedVector2Array([ctr + fd * AC * 0.4, p1, p2]), Color(1, 0.9, 0.4, 0.06 + 0.06 * float(mini(1, int(d.get("sus", 0))))))
+	if s == "talk":
+		var dv5 := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0)]
+		var fd2 := Vector2(dv5[_idle_dir(c)])
+		var rl2 := float(_cone_r()) + 0.4
+		draw_colored_polygon(PackedVector2Array([ctr + fd2 * AC * 0.4 + Vector2(-fd2.y, fd2.x) * AC * 0.35, ctr + fd2 * AC * rl2 + Vector2(-fd2.y, fd2.x) * AC * 1.4, ctr + fd2 * AC * rl2 - Vector2(-fd2.y, fd2.x) * AC * 1.4, ctr + fd2 * AC * 0.4 - Vector2(-fd2.y, fd2.x) * AC * 0.35]), Color(1, 0.9, 0.4, 0.05))
+	if int(d.get("sus", 0)) > 0:
+		var qb := 1.0 + 0.12 * sin(t * 9.0)
+		_ctext("?", ctr + Vector2(-AC * 0.22, -AC * 0.62), int(AC * 0.34 * qb), Color("ffd84f"))
 
 
 func _amb_squash(m: Dictionary) -> void:
@@ -18414,12 +18554,31 @@ func _amb_squash(m: Dictionary) -> void:
 	var k := String(m["k"])
 	if k == "bot":
 		_fx_burst(p, Color("ffd84f"), 12, 3.0, 0.5, 4.0)
-		_pop(c, "CRUNCH", Color("c9d3f0"))
 		_sfx("shieldbreak")
+		if in_base:
+			_pop(c, "CRUNCH", Color("c9d3f0"))
+		elif amb_rng.randf() < 0.5:
+			coins += coin_val()
+			_pop(c, "+%d COIN" % coin_val(), Color("ffd84f"))
+			_sfx("coin")
+		else:
+			scrap += 1
+			_pop(c, "+1 SCRAP", Color("c9a36b"))
 	elif k == "wisp":
 		_fx_burst(p, cur_theme()["accent"], 14, 2.5, 0.6, 4.0)
-		_pop(c, "POP", cur_theme()["accent"])
 		_sfx("ui")
+		if in_base:
+			_pop(c, "POP", cur_theme()["accent"])
+		else:
+			oxy = minf(oxy_max, oxy + 6.0)
+			_pop(c, "+6 AIR", Color("7fd8ff"))
+	elif k == "moth":
+		_fx_burst(p, Color("e8e0d0"), 22, 2.4, 0.9, 6.0)
+		_pop(c, "DUST", Color("e8e0d0"))
+		_sfx("spike")
+		if not in_base:
+			smoke_c = c
+			smoke_steps = maxi(smoke_steps, 3)
 	else:
 		_fx_burst(p, Color("9be36b") if k == "moth" else Color("c0392b"), 8, 2.0, 0.4, 4.0)
 		_pop(c, "SQUISH", Color("ffb0a0"))
@@ -18715,3 +18874,256 @@ func _o2_muffle(dt: float) -> void:
 		lp_idx = AudioServer.get_bus_effect_count(0) - 1
 	AudioServer.set_bus_effect_enabled(0, lp_idx, muf > 0.01)
 	lp_fx.cutoff_hz = lerpf(12000.0, 650.0, muf)
+
+# ===== B91: stealth (sneak attacks, suspicion, shadows, stealth tools) and critter behaviours =====
+var floor_spotted := false
+var run_ghost := 0
+var smoke_c := Vector2i(-1, -1)
+var smoke_steps := 0
+var noise_c := Vector2i(-1, -1)
+var noise_steps := 0
+var amark: Dictionary = {}       # Assassin's Mark: cell -> steps left
+var st_hit_c := Vector2i(-1, -1) # target of the sneak attack being resolved
+var st_quiet := false            # the current hit makes no noise
+var st_was_cloaked := false      # a cloak broke on this action
+var st_shadow: Dictionary = {}
+var st_sh_key := ""
+
+
+func _hidden() -> bool:
+	return cloak_steps > 0 or (smoke_steps > 0 and _cheb(pos, smoke_c) <= 2)
+
+
+func _st_build_shadow() -> void:
+	st_sh_key = amb_key
+	st_shadow.clear()
+	if in_base or arena or adv_open.size() != AW * AH:
+		return
+	var pct := 36 if amb_ev == "brownout" else 22
+	var lights: Array = stations.keys() + merchants.keys()
+	for y in AH:
+		for x in AW:
+			var c := Vector2i(x, y)
+			if not _aopen(c):
+				continue
+			if absi(hash(Vector3i(x / 3, y / 3, floor_n * 977 + adv_seed))) % 100 >= pct or absi(hash(c * 7 + Vector2i(adv_seed, floor_n))) % 100 >= 85:
+				continue
+			var lit := false
+			for l in lights:
+				if _cheb(l, c) <= 2:
+					lit = true
+					break
+			if not lit:
+				st_shadow[c] = true
+
+
+func _st_shadow(c: Vector2i) -> bool:
+	if mode != "adv":
+		return false
+	if st_sh_key != amb_key:
+		_st_build_shadow()
+	return st_shadow.has(c)
+
+
+func _cone_r() -> int:
+	return maxi(1, 3 - (1 if _st_shadow(pos) else 0) - int(sk("st_cone")))
+
+
+func _st_sees(c: Vector2i) -> bool:
+	var md: Dictionary = mon_idle[c]
+	var s := String(md["s"])
+	if s == "sleep":
+		return false
+	if smoke_steps > 0 and _cheb(c, smoke_c) <= 2:
+		return false
+	var dv4 := [Vector2i(0, 1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(1, 0)]
+	var fd: Vector2i = dv4[_idle_dir(c)]
+	var to: Vector2i = pos - c
+	var fw := to.x * fd.x + to.y * fd.y
+	var lat := absi(to.x * fd.y - to.y * fd.x)
+	if fw < 1 or fw > _cone_r():
+		return false
+	if s == "talk":
+		if lat > 1:
+			return false
+	elif lat > fw:
+		return false
+	return _idle_los(c, pos)
+
+
+# an enemy that hasn't seen you: idle (asleep, chatting, watching) or you are cloaked
+func _st_unaware(c: Vector2i) -> bool:
+	if mode != "adv" or not mons.has(c) or (boss_floor and c == boss_cell):
+		return false
+	return mon_idle.has(c) or cloak_steps > 0 or st_was_cloaked
+
+
+# a sneak attack that didn't kill: the target wakes (and its chat partner), unless Assassin's Mark silences it
+func _st_after_hit(c: Vector2i) -> void:
+	st_hit_c = Vector2i(-1, -1)
+	st_quiet = false
+	if not mons.has(c):
+		return
+	if relic_n("amark") > 0:
+		mon_idle.erase(c)
+		amark[c] = 3
+		_pop(c, "MARKED", Color("c07cff"))
+	else:
+		_idle_wake(c)
+
+
+# called from _adv_kill before the monster is removed; true for an unseen kill
+func _st_on_kill(nc: Vector2i) -> bool:
+	if mode != "adv":
+		return false
+	var un := st_hit_c == nc or mon_idle.has(nc) or cloak_steps > 0 or st_was_cloaked or amark.has(nc)
+	st_hit_c = Vector2i(-1, -1)
+	st_quiet = false
+	amark.erase(nc)
+	if mon_idle.has(nc):
+		var md: Dictionary = mon_idle[nc]
+		if String(md["s"]) == "talk":
+			var pc: Vector2i = md["p"]
+			if mon_idle.has(pc):
+				var dl: Vector2i = nc - pc
+				mon_idle[pc]["s"] = "look"
+				mon_idle[pc]["fd"] = (3 if dl.x > 0 else 2) if absi(dl.x) > absi(dl.y) else (0 if dl.y >= 0 else 1)
+				_pop(pc, "?", Color("ffd84f"))
+		mon_idle.erase(nc)
+	if not un or (boss_floor and nc == boss_cell):
+		return false
+	_pop(nc, "SILENT", Color("c07cff"))
+	if sk("st_air") > 0.0:
+		oxy = minf(oxy_max, oxy + sk("st_air"))
+	if sk("st_vanish") > 0.0:
+		cloak_steps = maxi(cloak_steps, int(sk("st_vanish")))
+	if relic_n("lullaby") > 0 and randf() < 0.25:
+		var best := Vector2i(-1, -1)
+		var bd := 99
+		for m in mons:
+			if m == nc or mon_idle.has(m) or not _idle_ok(m) or not adv_vis.has(m):
+				continue
+			var d := _cheb(m, nc)
+			if d < bd and d <= 6:
+				bd = d
+				best = m
+		if best.x >= 0:
+			mon_idle[best] = {"s": "sleep", "ph": 0, "sus": 0, "zz": 8}
+			amark.erase(best)
+			_pop(best, "ZZZ", Color("c9a2ff"))
+	return true
+
+
+func _st_floor_reset() -> void:
+	floor_spotted = false
+	smoke_steps = 0
+	noise_steps = 0
+	amark.clear()
+	st_hit_c = Vector2i(-1, -1)
+	st_quiet = false
+	st_was_cloaked = false
+
+
+# once per turn (step or shot)
+func _st_tick() -> void:
+	if mode != "adv":
+		return
+	st_was_cloaked = false
+	st_quiet = false
+	st_hit_c = Vector2i(-1, -1)
+	if smoke_steps > 0:
+		smoke_steps -= 1
+	if noise_steps > 0:
+		noise_steps -= 1
+		if noise_steps == 0:
+			for c in mon_idle:
+				(mon_idle[c] as Dictionary).erase("fd")
+	for c in amark.keys():
+		amark[c] = int(amark[c]) - 1
+		if int(amark[c]) <= 0 or not mons.has(c):
+			amark.erase(c)
+	for c in mon_idle.keys():
+		var md: Dictionary = mon_idle[c]
+		if md.has("zz"):
+			md["zz"] = int(md["zz"]) - 1
+			if int(md["zz"]) <= 0:
+				md.erase("zz")
+				md["s"] = "look"
+				md["ph"] = randi() % 4
+				md["sus"] = 0
+				_pop(c, "?", Color("ffd84f"))
+	if cloak_steps > 0:
+		return
+	for m in amb_crit:
+		if m.get("dead", false) or String(m["k"]) != "rat":
+			continue
+		var mp: Vector2 = m["p"]
+		var rc := Vector2i(roundi(mp.x), roundi(mp.y))
+		if _cheb(rc, pos) > 2 or adv_steps - int(m.get("sq", -99)) < 4:
+			continue
+		m["sq"] = adv_steps
+		_pop(rc, "SQUEAK", Color("ffb0a0"))
+		_sfx("ui", 1.8)
+		for o in mon_idle:
+			if String(mon_idle[o]["s"]) == "sleep" and _cheb(o, rc) <= 2:
+				mon_idle[o]["hear"] = 1
+
+
+# critter goals: everything flees awake hunters, rats flee you, moths seek light, wisps drift to vaults
+func _crit_goal(m: Dictionary, c: Vector2i) -> Vector2:
+	var k := String(m["k"])
+	var flee := Vector2.ZERO
+	for hc in kinds:
+		var kd := String(kinds[hc])
+		if (kd == "hunter" or kd == "rager" or kd == "drone") and mons.has(hc) and not mon_idle.has(hc) and _cheb(hc, c) <= 3:
+			flee += Vector2(c - hc).normalized()
+	if k == "rat" and cloak_steps <= 0 and _cheb(c, pos) <= 2:
+		flee += Vector2(c - pos).normalized() * 1.5
+	m["scared"] = flee != Vector2.ZERO
+	if flee != Vector2.ZERO:
+		return flee.normalized()
+	var tgts: Array = []
+	var rng := 0
+	if k == "moth":
+		tgts = stations.keys() + merchants.keys()
+		rng = 7
+	elif k == "wisp":
+		tgts = vaults.keys()
+		rng = 12
+	var best := Vector2i(-1, -1)
+	var bd := 999
+	for g in tgts:
+		var d := _cheb(g, c)
+		if d < bd and d <= rng:
+			bd = d
+			best = g
+	if best.x < 0 or bd <= 1:
+		return Vector2.ZERO
+	return Vector2(best - c).normalized()
+
+
+func _st_world_draw() -> void:
+	if mode != "adv":
+		return
+	if st_sh_key != amb_key:
+		_st_build_shadow()
+	for c in st_shadow:
+		if not _aseen(c):
+			continue
+		var a := 1.0 - _fog_a(c, 0.55)
+		if a < 0.05:
+			continue
+		draw_rect(Rect2(_actr(c) - Vector2(AC * 0.5, AC * 0.5), Vector2(AC, AC)), Color(0.02, 0.03, 0.09, 0.34 * a))
+	if smoke_steps > 0 and _aseen(smoke_c):
+		var sc := _actr(smoke_c)
+		var sa := clampf(float(smoke_steps) / 2.0, 0.3, 1.0)
+		for i in 9:
+			var an := float(i) * TAU / 9.0 + t * 0.3
+			var rr := AC * (1.2 + 0.5 * sin(t * 0.8 + float(i)))
+			draw_circle(sc + Vector2(cos(an), sin(an)) * rr, AC * (0.9 + 0.15 * sin(t + float(i) * 2.0)), Color(0.72, 0.76, 0.84, 0.16 * sa))
+		draw_circle(sc, AC * 1.3, Color(0.75, 0.78, 0.86, 0.2 * sa))
+	if noise_steps > 0 and _aseen(noise_c):
+		var nq := _actr(noise_c)
+		var u := fmod(t * 1.4, 1.0)
+		draw_arc(nq, AC * (0.3 + 1.2 * u), 0, TAU, 24, Color(1, 0.7, 0.3, 0.6 * (1.0 - u)), 3.0)
+		draw_circle(nq, AC * 0.12, Color("ffb347"))
