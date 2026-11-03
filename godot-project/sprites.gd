@@ -1088,7 +1088,7 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	sheet.convert(Image.FORMAT_RGBA8)
 	var base: Image = sheet.get_region(Rect2i(col * HW, 0, HW, HH))
 	var layers: Array = []
-	for slot in ["armour", "boots", "helmet"]:
+	for slot in ["boots", "armour", "helmet"]:   # armour draws over the boots
 		var gid := String(eq.get(slot, ""))
 		# every class body is warped to the scout's proportions (norm/normalize.py), so one gear sheet fits all
 		if gid == "" or not ResourceLoader.exists(CHAR_GEAR % [gid, GEAR_FIT]):
