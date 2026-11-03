@@ -9,7 +9,7 @@ const START_LEVEL := 2
 const GX := 40
 const GY := 330
 const GW := 640.0
-enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO, MASTERY, CODEX, WORKSHOP }
+enum { PLAY, DEAD, CLEAR, RELIC, SHOP, CLASS, FORK, MARKET, MODE, INV, TRADE, TUTORIAL, LEADER, SKILLS, SAVES, SETTINGS, INTRO, MASTERY, CODEX, WORKSHOP, CONTRACTS }
 const GEAR_SLOTS := ["weapon", "ranged", "helmet", "armour", "boots", "trinket"]
 
 const BAG_MAX := 12
@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 86
+const BUILD := 87
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2993,6 +2993,9 @@ func _gui_input(event: InputEvent) -> void:
 	if state == CODEX:
 		_cx_input(p)
 		return
+	if state == CONTRACTS:
+		_ctb_input(p)
+		return
 	if state == WORKSHOP:
 		_ws_input(p)
 		return
@@ -3252,7 +3255,7 @@ func _process(dt: float) -> void:
 		bank_disp = float(bank)
 	else:
 		bank_disp = move_toward(bank_disp, float(bank), maxf(2.0, absf(bank_disp - bank) * dt * 5.0))
-	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS or state == MASTERY or state == CODEX or state == WORKSHOP:
+	if state == MODE or state == SAVES or state == LEADER or state == TUTORIAL or state == SHOP or state == CLASS or state == SETTINGS or state == MASTERY or state == CODEX or state == WORKSHOP or state == CONTRACTS:
 		modulate.a = clampf(0.3 + (t - state_t) * 6.0, 0.0, 1.0)
 	elif modulate.a < 1.0:
 		modulate.a = 1.0
@@ -4845,7 +4848,7 @@ func _draw() -> void:
 		if grid_r.has_point(Vector2(float(s[0]) + drift, float(s[1]))):
 			continue
 		draw_rect(Rect2(float(s[0]) + drift, float(s[1]), sz, sz), Color(acc.r, acc.g, acc.b, a))
-	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS or state == MASTERY or state == CODEX or state == WORKSHOP:
+	if state == MODE or state == TUTORIAL or state == LEADER or state == SAVES or state == SETTINGS or state == MASTERY or state == CODEX or state == WORKSHOP or state == CONTRACTS:
 		_draw_overlay(acc)
 		return
 	# HUD
@@ -5267,7 +5270,7 @@ func _draw_menu_hero(acc: Color) -> void:
 func _draw_overlay(acc: Color) -> void:
 	if state == MODE:
 		_draw_menu_bg(_menu_tint(acc))
-	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC, MASTERY, CODEX, WORKSHOP]:
+	elif state in [INV, SKILLS, TRADE, TUTORIAL, LEADER, SAVES, FORK, MARKET, CLASS, SHOP, RELIC, MASTERY, CODEX, WORKSHOP, CONTRACTS]:
 		_draw_menu_bg(_menu_tint(acc))
 	elif state != CLEAR:
 		draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.9))
@@ -5291,6 +5294,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_codex(acc)
 	elif state == WORKSHOP:
 		_draw_workshop(acc)
+	elif state == CONTRACTS:
+		_draw_contracts(acc)
 	elif state == MODE:
 		_txt("POCKET STATION", Vector2(0, 200), 60, acc)
 		_txt("Choose your mode", Vector2(0, 252), 28, Color(1, 1, 1, 0.7))
@@ -11899,6 +11904,9 @@ func _adv_draw() -> void:
 				draw_rect(r, Color(0, 0, 0, ffa))
 	_adv_draw_lanes(ti)
 	_adv_draw_shoot_lanes()
+	for bl in bs_lbls:
+		_ctext(bl[0], bl[1], bl[2], bl[3])
+	bs_lbls.clear()
 	if decoy_steps > 0:
 		_use_icon("decoy", _actr(decoy_c), AC * 0.5)
 	if warp_bc.x >= 0 and mode == "adv":
@@ -15594,7 +15602,7 @@ func _ct_met(c: Dictionary, cleared: int) -> bool:
 
 
 func _ct_check(cleared: int) -> void:
-	if not _mx_on():
+	if not _mx_on() or not ul(6):
 		return
 	for i in range(ct.size() - 1, -1, -1):
 		var c: Dictionary = ct[i]
@@ -15611,7 +15619,7 @@ func _ct_check(cleared: int) -> void:
 
 
 func _ws_rect(i: int) -> Rect2:
-	return Rect2(40, 444 + i * 60, 640, 54)
+	return Rect2(40, 244 + i * 60, 640, 54)
 
 
 func _draw_workshop(acc: Color) -> void:
@@ -15619,15 +15627,7 @@ func _draw_workshop(acc: Color) -> void:
 	var st: Dictionary = cx.get("st", {})
 	_txt("WORKSHOP", Vector2(0, 118), 52, pk)
 	_txt("Bank: %d coins      Cores: %d" % [bank, cores], Vector2(0, 168), 26, Color("ffd84f"))
-	_txt("CONTRACTS  (done %d)" % int(st.get("contracts", 0)), Vector2(40, 214), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
-	for i in ct.size():
-		var c: Dictionary = ct[i]
-		var r := Rect2(40, 226 + i * 62, 640, 56)
-		_obox(r, Color(pk.r, pk.g, pk.b, 0.08))
-		_aline(r, Color(pk.r, pk.g, pk.b, 0.7), 2.0)
-		_txt(_ct_text(c), Vector2(56, r.position.y + 25), 19, Color.WHITE, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_txt("Reward: +%d cores, +%d coins" % [int(c["r"]), int(c["c"])], Vector2(56, r.position.y + 47), 14, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_txt("RESEARCH  (tap to buy, permanent for every class)", Vector2(40, 432), 18, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("RESEARCH  (tap to buy, permanent for every class)", Vector2(40, 226), 18, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	for i in WS_DEFS.size():
 		var d: Array = WS_DEFS[i]
 		var r2 := _ws_rect(i)
@@ -15646,6 +15646,29 @@ func _draw_workshop(acc: Color) -> void:
 		var ctx := "MAXED" if maxed else ("%d c" % cst.x + ("  + %d cores" % cst.y if cst.y > 0 else ""))
 		_txt(ctx, Vector2(r2.end.x - 214, r2.position.y + 34), 18, col, 200.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	_button(btn_ws_back, "BACK", acc, 28)
+
+func _draw_contracts(acc: Color) -> void:
+	var pk := Color("4fd1c5")
+	var st: Dictionary = cx.get("st", {})
+	_txt("CONTRACT BOARD", Vector2(0, 118), 52, pk)
+	_txt("Bank: %d coins      Cores: %d" % [bank, cores], Vector2(0, 168), 26, Color("ffd84f"))
+	_txt("ACTIVE CONTRACTS  (done %d)" % int(st.get("contracts", 0)), Vector2(40, 254), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	for i in ct.size():
+		var c: Dictionary = ct[i]
+		var r := Rect2(40, 272 + i * 96, 640, 84)
+		_obox(r, Color(pk.r, pk.g, pk.b, 0.08))
+		_aline(r, Color(pk.r, pk.g, pk.b, 0.7), 2.0)
+		_txt(_ct_text(c), Vector2(60, r.position.y + 36), 22, Color.WHITE, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Reward: +%d cores, +%d coins" % [int(c["r"]), int(c["c"])], Vector2(60, r.position.y + 66), 17, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_para("Contracts check when you clear a floor and when a run ends. Finishing one pays straight away and a harder one takes its place.", Vector2(60, 600), 20, Color(1, 1, 1, 0.6), 600.0)
+	_button(btn_ws_back, "BACK", acc, 28)
+
+
+func _ctb_input(p: Vector2) -> void:
+	if btn_ws_back.has_point(p):
+		state = PLAY if in_base else CLASS
+		_sfx("ui")
+
 
 
 func _ws_input(p: Vector2) -> void:
@@ -15899,12 +15922,12 @@ func _ex_guide_lines() -> Array:
 	for i in HZ.size():
 		L.append(["g", "%d  %s: %s" % [i + 1, String(HZ[i][0]), String(HZ[i][1])], Color("ff8a7a")])
 	L.append(["h", "BOSS CORES AND THE WORKSHOP", Y])
-	L.append(["p", "Bosses drop 1 core (+1 per 5 Threat, +1 past floor 20). Elites have a small chance to drop one. Contracts pay cores too. Spend coins and cores in the WORKSHOP (class select) on research that never runs out: every rank costs more than the last.", W])
+	L.append(["p", "Bosses drop 1 core (+1 per 5 Threat, +1 past floor 20). Elites have a small chance to drop one. Contracts pay cores too. Spend coins and cores in the WORKSHOP (Station Base) on research that never runs out: every rank costs more than the last.", W])
 	for d in WS_DEFS:
 		var cc := ("  +%d cores per rank level" % int(d[8])) if int(d[8]) > 0 else ""
 		L.append(["g", "%s: %s per rank, %d ranks, from %d coins%s" % [String(d[1]), String(d[2]) % _nfmt(float(d[4])), int(d[5]), int(d[6]), cc], W])
 	L.append(["s", "Contracts", B])
-	L.append(["p", "Three contracts are always open. They check when you clear a floor and when a run ends; finishing one pays cores and coins right away and a harder one replaces it.", W])
+	L.append(["p", "Three contracts are always open on the CONTRACTS board in the Station Base. They check when you clear a floor and when a run ends; finishing one pays cores and coins right away and a harder one replaces it.", W])
 	L.append(["h", "THE DEEP STATION", Y])
 	L.append(["p", "From floor 14 every floor has a Deep Anomaly. From floor 20 the Abyss adds a harsh anomaly on top. Past floor 20 bosses are ASCENDED: +50% health, an extra core and a bonus high-tier gear drop.", W])
 	L.append(["p", "Gear: tier 6 can drop from floor 19 and tier 7 from floor 26. Tier 6 and 7 weapons roll one extra trait and armour one extra mod.", W])
@@ -16905,7 +16928,7 @@ const UL_STEPS := [
 	["WEAPON TRAITS", "Weapons drop with random bonus traits."],
 	["CLASS MASTERY", "Runs level your class. Tap MASTERY on class select."],
 	["CURSED RELICS + ELITES", "Risky relics (you can skip) and tougher enemies."],
-	["WORKSHOP + CONTRACTS", "Spend coins and boss cores on research."],
+	["WORKSHOP + CONTRACTS", "Two new Station Base terminals: research with coins and cores, and a contract board."],
 	["CODEX", "Everything you have found, on the main menu."],
 	["THREAT LEVELS", "Raise the threat on class select for bigger rewards."],
 	["WEAPON FUSION", "On an O2 station, open the BAG and FUSE a spare weapon into yours."],
@@ -16950,7 +16973,7 @@ func _ul_load(cfg: ConfigFile) -> void:
 		r = int(st.get("deaths", 0))
 		if not mxp.is_empty() or cores > 0 or adv_best > 0:
 			r = maxi(r, UL_STEPS.size() - 1)
-		ul_tapped = 0x1FF if r >= UL_STEPS.size() - 1 else 0
+		ul_tapped = (1 << UL_STEPS.size()) - 1 if r >= UL_STEPS.size() - 1 else 0
 	else:
 		ul_tapped = int(cfg.get_value("ul", "tap", 0))
 	runs_done = r
@@ -17768,6 +17791,8 @@ func _ev_draw(ctr: Vector2, kind: String, bob: float) -> void:
 # ===== B85: Station Base hub (walk into rooms; START begins the run) =====
 
 # id, label, unlock step, colour, glyph, terminal cell
+var bs_lbls: Array = []
+
 const BS_ROOMS := [
 	["start", "START", 0, Color("6dff9a"), ">", Vector2i(7, 1)],
 	["shop", "OUTFITTER", 0, Color("ffc93c"), "$", Vector2i(6, 12)],
@@ -17777,6 +17802,7 @@ const BS_ROOMS := [
 	["codex", "CODEX", 7, Color("c9a2ff"), "C", Vector2i(9, 10)],
 	["thr_m", "THREAT -", 8, Color("ff6a5c"), "-", Vector2i(6, 6)],
 	["thr_p", "THREAT +", 8, Color("ff6a5c"), "+", Vector2i(9, 6)],
+	["contracts", "CONTRACTS", 6, Color("4fd1c5"), "!", Vector2i(9, 8)],
 ]
 
 
@@ -17880,8 +17906,11 @@ func _bs_open(kind: String) -> void:
 			mx_cls = cls
 			state = MASTERY
 			_sfx("ui")
-		"workshop":
+		"contracts":
 			_ct_fill()
+			state = CONTRACTS
+			_sfx("ui")
+		"workshop":
 			state = WORKSHOP
 			_sfx("ui")
 		"codex":
@@ -17918,7 +17947,7 @@ func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
 	var lbl := String(d[1])
 	if String(d[0]).begins_with("thr_"):
 		lbl += " (%d)" % clampi(int(hz_sel.get(cls, 0)), 0, int(hz_max.get(cls, 0)))
-	_ctext(lbl, ctr + Vector2(0, AC * 0.62), int(AC * 0.17), col)
+	bs_lbls.append([lbl, ctr + Vector2(0, AC * 0.62), int(AC * 0.17), col])
 	if locked:
 		_ctext("LOCKED", ctr + Vector2(0, -AC * 0.5), int(AC * 0.17), Color("ffb02e"))
 	elif _bs_new(int(d[2])):

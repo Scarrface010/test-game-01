@@ -2117,7 +2117,7 @@ func item(kind: String) -> ImageTexture:
 # ---------------------------------------------------------------- station base terminals
 
 func _bs_col(id: String) -> Color:
-	var m := {"shop": "ffc93c", "settings": "c9d3f0", "puzzle": "9fb3d9", "mastery": "ffd84f", "workshop": "ff4fd8", "codex": "c9a2ff", "thr_m": "ff6a5c", "thr_p": "ff6a5c"}
+	var m := {"shop": "ffc93c", "settings": "c9d3f0", "puzzle": "9fb3d9", "mastery": "ffd84f", "workshop": "ff4fd8", "codex": "c9a2ff", "thr_m": "ff6a5c", "thr_p": "ff6a5c", "contracts": "4fd1c5"}
 	return Color(String(m.get(id, "6dff9a")))
 
 
@@ -2162,6 +2162,16 @@ func _bs_picto(cv, id: String, acc: Color, bg: Color) -> void:
 		cv.rect(14, 15, 5, 1, acc)
 		if id == "thr_p":
 			cv.rect(16, 13, 1, 5, acc)
+	elif id == "contracts":
+		cv.rect(10, 8, 12, 13, acc.darkened(0.45))
+		cv.rect(11, 9, 10, 11, Color("e8f4ff"))
+		cv.rect(13, 7, 6, 3, acc)
+		cv.rect(15, 6, 2, 1, acc)
+		cv.rect(13, 12, 6, 1, Color("56607f"))
+		cv.rect(13, 15, 4, 1, Color("56607f"))
+		cv.line(17, 17, 18, 18, acc.darkened(0.2))
+		cv.line(18, 18, 21, 14, acc.darkened(0.2))
+		cv.line(18, 17, 21, 13, acc.darkened(0.2))
 
 
 # ---------------------------------------------------------------- floor event pickups
