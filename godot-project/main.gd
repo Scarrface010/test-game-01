@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 89
+const BUILD := 90
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3223,11 +3223,6 @@ func _gui_input(event: InputEvent) -> void:
 		if btn_newrun.has_point(p):
 			state = CLASS
 			_sfx("ui")
-		elif btn_shop.has_point(p):
-			shop_return = DEAD
-			shop_page = 0
-			state = SHOP
-			_sfx("ui")
 		return
 	# playing
 	if mode == "adv":
@@ -5378,7 +5373,6 @@ func _draw_overlay(acc: Color) -> void:
 			ly += 42
 			li += 1
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
-		_button(btn_shop, "SHOP  (bank %d)" % int(bank_disp), Color("ffc93c"), 28)
 	elif state == CLEAR:
 		_draw_clear_pop(acc)
 	elif state == RELIC:
@@ -18197,7 +18191,11 @@ func _amb_world_draw(ti: int) -> void:
 		if a2 < 0.3:
 			continue
 		var ph2: float = m["ph"]
-		var dv := Vector2(m["d"])
+		var dv0 := Vector2(m["d"])
+		var dv: Vector2 = Vector2(m.get("sd", dv0)).slerp(dv0, clampf(get_process_delta_time() * 9.0, 0.0, 1.0))
+		if dv.length() < 0.5:
+			dv = dv0
+		m["sd"] = dv
 		var q2 := _wp(p)
 		var moving := p.distance_to(m["to"]) > 0.001
 		if m.get("dead", false):
@@ -18207,41 +18205,83 @@ func _amb_world_draw(ti: int) -> void:
 			continue
 		match String(m["k"]):
 			"bot":
-				draw_circle(q2 + Vector2(0, AC * 0.1), AC * 0.17, Color(0, 0, 0, 0.3 * a2))
+				var ol := Color("181425", a2)
+				var bq := q2 + Vector2(0, AC * 0.1)
+				draw_circle(bq + Vector2(0, AC * 0.06), AC * 0.18, Color(0, 0, 0, 0.3 * a2))
 				var spin := t * (14.0 if moving else 4.0)
-				for bi in 2:
-					var bc := q2 + Vector2(0, AC * 0.08)
-					draw_line(bc, bc + Vector2.from_angle(spin + float(bi) * PI) * AC * 0.2, Color(0.8, 0.75, 0.5, a2 * 0.8), 2.0)
-				draw_circle(q2, AC * 0.16, Color(0.6, 0.66, 0.78, a2))
-				draw_circle(q2 + Vector2(0, -AC * 0.02), AC * 0.12, Color(0.4, 0.45, 0.58, a2))
+				for bs in [-1.0, 1.0]:
+					var bc: Vector2 = bq + Vector2(-dv.y, dv.x) * bs * AC * 0.13 + dv * AC * 0.08
+					for bi in 3:
+						draw_line(bc, bc + Vector2.from_angle(spin * bs + float(bi) * TAU / 3.0) * AC * 0.09, Color("ead4aa", a2 * 0.9), 2.0)
+				draw_circle(bq, AC * 0.185, ol)
+				draw_circle(bq, AC * 0.165, Color("5a6988", a2))
+				draw_circle(bq + Vector2(0, -AC * 0.015), AC * 0.15, Color("8b9bb4", a2))
+				draw_circle(bq + Vector2(0, -AC * 0.035), AC * 0.12, Color("c0cbdc", a2))
+				draw_circle(bq + Vector2(-AC * 0.05, -AC * 0.08), AC * 0.03, Color(1, 1, 1, 0.6 * a2))
 				var on := fmod(t + ph2, 1.2) < 0.6
-				draw_circle(q2 + Vector2(0, -AC * 0.04), AC * 0.035, Color(0.3, 1.0, 0.55, a2) if on else Color(0.1, 0.35, 0.2, a2))
+				var lp := bq + dv * AC * 0.07 + Vector2(0, -AC * 0.05)
+				draw_circle(lp, AC * 0.042, ol)
+				draw_circle(lp, AC * 0.03, Color("63c74d", a2) if on else Color("265c42", a2))
 			"moth":
 				var hv := q2 + Vector2(sin(t * 1.9 + ph2) * AC * 0.18, -AC * 0.22 + sin(t * 3.7 + ph2) * AC * 0.08)
-				var fw := absf(sin(t * 22.0 + ph2))
-				var mc := Color(1.0, 0.75, 0.9, a2) if int(ph2 * 10.0) % 2 == 0 else Color(0.75, 1.0, 0.8, a2)
-				draw_circle(hv, AC * 0.14, Color(mc.r, mc.g, mc.b, 0.1 * a2))
-				draw_circle(hv + Vector2(-AC * 0.05 * fw, 0), AC * (0.03 + 0.03 * fw), mc)
-				draw_circle(hv + Vector2(AC * 0.05 * fw, 0), AC * (0.03 + 0.03 * fw), mc)
-				draw_circle(hv, AC * 0.018, Color(0.2, 0.15, 0.1, a2))
+				var fw := 0.35 + 0.65 * absf(sin(t * 22.0 + ph2))
+				var ax := Vector2(-dv.y, dv.x)
+				var ol2 := Color("181425", a2)
+				draw_circle(hv, AC * 0.16, Color(1, 1, 1, 0.08 * a2))
+				for ws in [-1.0, 1.0]:
+					var wc: Vector2 = hv + ax * ws * AC * 0.07 * fw
+					var wr := AC * (0.03 + 0.045 * fw)
+					draw_circle(wc, wr + 1.5, ol2)
+					draw_circle(wc, wr, Color("ffffff", a2))
+					draw_circle(wc + dv * AC * 0.02, wr * 0.55, Color("c0cbdc", a2))
+					draw_circle(wc - dv * AC * 0.01, wr * 0.28, Color("3e2731", a2))
+				draw_line(hv - dv * AC * 0.05, hv + dv * AC * 0.05, ol2, 5.0)
+				draw_line(hv - dv * AC * 0.04, hv + dv * AC * 0.04, Color("ead4aa", a2), 3.0)
 			"rat":
 				var rb := q2 + Vector2(0, AC * 0.12)
 				var wig := sin(t * 30.0) * AC * 0.01 if moving else 0.0
 				var side := Vector2(-dv.y, dv.x)
-				draw_circle(rb + Vector2(0, AC * 0.04), AC * 0.09, Color(0, 0, 0, 0.3 * a2))
-				draw_line(rb - dv * AC * 0.08, rb - dv * AC * 0.22 + side * AC * 0.05 * sin(t * 9.0 + ph2), Color(0.75, 0.55, 0.5, a2), 2.0)
-				draw_circle(rb + Vector2(0, wig), AC * 0.08, Color(0.45, 0.36, 0.3, a2))
-				draw_circle(rb + dv * AC * 0.08 + Vector2(0, wig), AC * 0.055, Color(0.5, 0.4, 0.33, a2))
-				draw_circle(rb + dv * AC * 0.12 + Vector2(0, -AC * 0.01), AC * 0.015, Color(0, 0, 0, a2))
+				var ol3 := Color("181425", a2)
+				var rw := Vector2(0, wig)
+				draw_circle(rb + Vector2(0, AC * 0.05), AC * 0.1, Color(0, 0, 0, 0.3 * a2))
+				var tl := rb - dv * AC * 0.24 + side * AC * 0.05 * sin(t * 9.0 + ph2)
+				draw_line(rb - dv * AC * 0.08, tl, ol3, 4.0)
+				draw_line(rb - dv * AC * 0.08, tl, Color("b86f50", a2), 2.0)
+				draw_circle(rb + rw, AC * 0.095, ol3)
+				draw_circle(rb + rw, AC * 0.08, Color("3a4466", a2))
+				draw_circle(rb + rw + Vector2(0, -AC * 0.015), AC * 0.065, Color("5a6988", a2))
+				var hd := rb + dv * AC * 0.09 + rw
+				for es in [-1.0, 1.0]:
+					var ep: Vector2 = hd - dv * AC * 0.02 + side * es * AC * 0.045 + Vector2(0, -AC * 0.02)
+					draw_circle(ep, AC * 0.03, ol3)
+					draw_circle(ep, AC * 0.02, Color("e4a6c0", a2))
+				draw_circle(hd, AC * 0.065, ol3)
+				draw_circle(hd, AC * 0.052, Color("5a6988", a2))
+				draw_circle(hd + dv * AC * 0.05, AC * 0.017, Color("e4a6c0", a2))
+				draw_circle(hd + dv * AC * 0.02 + side * AC * 0.025 + Vector2(0, -AC * 0.015), AC * 0.012, Color(0, 0, 0, a2))
 			_:
 				var wq := q2 + Vector2(0, -AC * 0.2 + sin(t * 2.3 + ph2) * AC * 0.1)
 				var g2 := 0.6 + 0.4 * sin(t * 4.0 + ph2)
-				draw_circle(wq, AC * 0.22, Color(acc.r, acc.g, acc.b, 0.08 * a2 * g2))
+				var cy := Color("2ce8f5")
+				draw_circle(wq, AC * 0.22, Color(cy.r, cy.g, cy.b, 0.1 * a2 * g2))
 				for tj in 3:
 					var tp := wq - dv * AC * 0.08 * float(tj + 1) + Vector2(0, AC * 0.03 * float(tj + 1))
-					draw_circle(tp, AC * (0.04 - 0.01 * float(tj)), Color(acc.r, acc.g, acc.b, a2 * (0.3 - 0.08 * float(tj))))
-				draw_circle(wq, AC * 0.1, Color(acc.r, acc.g, acc.b, 0.35 * a2))
-				draw_circle(wq, AC * 0.05, Color(1, 1, 1, 0.9 * a2 * g2))
+					draw_circle(tp, AC * (0.035 - 0.008 * float(tj)), Color(cy.r, cy.g, cy.b, a2 * (0.35 - 0.1 * float(tj))))
+				var r0 := AC * 0.11
+				var ang := dv.angle() * 0.15 + sin(t * 1.3 + ph2) * 0.15
+				var dm := PackedVector2Array()
+				for di in 4:
+					dm.append(wq + Vector2.from_angle(ang + float(di) * PI * 0.5 - PI * 0.5) * r0)
+				var dmo := PackedVector2Array()
+				for v in dm:
+					dmo.append(wq + (v - wq) * 1.2)
+				draw_colored_polygon(dmo, Color("181425", a2))
+				draw_colored_polygon(dm, Color("0099db", a2))
+				var dmi := PackedVector2Array()
+				for v in dm:
+					dmi.append(wq + (v - wq) * 0.7 + Vector2(0, -AC * 0.015))
+				draw_colored_polygon(dmi, Color("2ce8f5", a2))
+				draw_circle(wq + Vector2(-AC * 0.02, -AC * 0.03), AC * 0.022, Color(1, 1, 1, 0.9 * a2 * g2))
 	_amb_ev_draw()
 
 
@@ -18394,8 +18434,9 @@ func _amb_dead_draw(m: Dictionary, q2: Vector2, a2: float, acc: Color) -> void:
 	if dtx != null:
 		var dfl := -1.0 if (m["d"] as Vector2i).x < 0 else 1.0
 		var pop := 1.0 + 0.35 * clampf(1.0 - age / 0.15, 0.0, 1.0)
-		draw_circle(q2 + Vector2(0, AC * 0.2), AC * 0.14, Color(0, 0, 0, 0.22 * a2))
-		_crit_blit(dtx, q2 + Vector2(0, AC * 0.24), AC * 0.46 / pop, dfl * pop, Color(1, 1, 1, a2))
+		var ds: float = {"bot": 0.36, "rat": 0.36}.get(k, 0.3) * AC
+		draw_circle(q2 + Vector2(0, AC * 0.12), AC * 0.14, Color(0, 0, 0, 0.22 * a2))
+		_crit_blit(dtx, q2 + Vector2(0, AC * 0.08 + ds * 0.5), ds / pop, dfl * pop, Color(1, 1, 1, a2))
 		if k == "bot" and fmod(t + ph2, 2.3) < 0.12:
 			var sp3 := q2 + Vector2(0, AC * 0.02)
 			draw_line(sp3, sp3 + Vector2(AC * 0.08, -AC * 0.1), Color(1, 0.9, 0.4, a2), 2.0)
@@ -18547,7 +18588,7 @@ func _bs_tex(n: String) -> Texture2D:
 
 func _spr_fl(tx: Texture2D, ctr: Vector2, size: float, flip: bool, mod: Color) -> void:
 	var w := -size if flip else size
-	draw_texture_rect(tx, Rect2(ctr.x - w * 0.5, ctr.y - size * 0.5, w, size), false, mod)
+	draw_texture_rect(tx, Rect2(ctr.x - size * 0.5, ctr.y - size * 0.5, w, size), false, mod)
 
 
 func _bs_term(d: Array, ctr: Vector2, locked: bool, bt: float, col: Color) -> bool:
@@ -18583,16 +18624,20 @@ func _crit_tex(k: String) -> Texture2D:
 
 func _crit_blit(tx: Texture2D, foot: Vector2, s: float, sx: float, c: Color) -> void:
 	var w := s * sx
-	draw_texture_rect(tx, Rect2(foot.x - w * 0.5, foot.y - s, w, s), false, c)
+	draw_texture_rect(tx, Rect2(foot.x - absf(w) * 0.5, foot.y - s, w, s), false, c)
 
 
 func _crit_draw(m: Dictionary, q2: Vector2, a2: float, acc: Color, moving: bool, dv: Vector2) -> bool:
 	var k := String(m["k"])
 	var tx := _crit_tex(k)
-	if tx == null:
+	if tx == null or true:   # live critters use the code-drawn versions (smooth rotation)
 		return false
 	var ph: float = m["ph"]
-	var fl := -1.0 if dv.x < 0.0 else 1.0
+	var fx0 := float(m.get("fx", 1.0))
+	var tgt := -1.0 if dv.x < 0.0 else (1.0 if dv.x > 0.0 else (1.0 if fx0 >= 0.0 else -1.0))
+	var fx := move_toward(fx0, tgt, get_process_delta_time() * 7.0)
+	m["fx"] = fx
+	var fl := fx if absf(fx) > 0.12 else (0.12 if fx >= 0.0 else -0.12)
 	var c := Color(1, 1, 1, a2)
 	match k:
 		"rat":
@@ -18602,17 +18647,23 @@ func _crit_draw(m: Dictionary, q2: Vector2, a2: float, acc: Color, moving: bool,
 		"bot":
 			var bob := sin(t * (16.0 if moving else 3.0) + ph) * AC * 0.012
 			draw_circle(q2 + Vector2(0, AC * 0.2), AC * 0.16, Color(0, 0, 0, 0.3 * a2))
+			var spin := t * (14.0 if moving else 4.0) + ph
+			for bs in [-1.0, 1.0]:
+				var bc := q2 + Vector2(bs * AC * 0.15 * absf(fl), AC * 0.19)
+				for bi in 3:
+					var bv := Vector2.from_angle(spin * bs + float(bi) * TAU / 3.0) * AC * 0.09
+					draw_line(bc, bc + Vector2(bv.x, bv.y * 0.5), Color(0.8, 0.75, 0.5, a2 * 0.85), 2.0)
 			_crit_blit(tx, q2 + Vector2(0, AC * 0.22 + bob), AC * 0.5, fl, c)
 		"moth":
 			var hv := q2 + Vector2(sin(t * 1.9 + ph) * AC * 0.18, -AC * 0.22 + sin(t * 3.7 + ph) * AC * 0.08)
 			var fw := 0.55 + 0.45 * absf(sin(t * 22.0 + ph))
 			draw_circle(hv, AC * 0.16, Color(1, 0.8, 0.95, 0.1 * a2))
-			_crit_blit(tx, hv + Vector2(0, AC * 0.18), AC * 0.4, fw, c)
+			_crit_blit(tx, hv + Vector2(0, AC * 0.18), AC * 0.4, fw * fl, c)
 		_:
 			var wq := q2 + Vector2(0, -AC * 0.2 + sin(t * 2.3 + ph) * AC * 0.1)
 			var g2 := 0.6 + 0.4 * sin(t * 4.0 + ph)
 			draw_circle(wq, AC * 0.24, Color(acc.r, acc.g, acc.b, 0.1 * a2 * g2))
-			_crit_blit(tx, wq + Vector2(0, AC * 0.2), AC * 0.4, 1.0, Color(1, 1, 1, a2 * (0.8 + 0.2 * g2)))
+			_crit_blit(tx, wq + Vector2(0, AC * 0.2), AC * 0.4, fl, Color(1, 1, 1, a2 * (0.8 + 0.2 * g2)))
 	return true
 
 
