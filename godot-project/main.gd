@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 93
+const BUILD := 94
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -15443,7 +15443,7 @@ const AN_HARSH := ["rad", "frenzy", "fog", "decay"]
 
 
 func _cls_art(cid: String) -> String:
-	return String({"engineer": "brute", "medic": "mystic", "hacker": "scout", "salvager": "gambler"}.get(cid, cid))
+	return cid
 
 
 func _gart(b: String) -> String:
