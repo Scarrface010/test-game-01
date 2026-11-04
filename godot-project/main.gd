@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 94
+const BUILD := 95
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -9111,6 +9111,37 @@ func _make_gear() -> void:
 		{"id": "mirrorvest", "slot": "armour", "name": "Mirror Vest", "tier": 3, "price": 60, "stats": {"armor": 2, "rangedef": 2}},
 		{"id": "crystaltreads", "slot": "boots", "name": "Crystal Treads", "tier": 3, "price": 58, "stats": {"airsave": 24, "dodge": 5}},
 		{"id": "hazboots", "slot": "boots", "name": "Hazard Boots", "tier": 2, "price": 34, "stats": {"hazres": 50, "armor": 1}},
+		# b98 new scout gear (art/chars/gear/<id>_scout.png)
+		{"id": "minerlamp", "slot": "helmet", "name": "Miner Lamp", "tier": 1, "price": 13, "stats": {"sight": 2}},
+		{"id": "beacon", "slot": "helmet", "name": "Beacon Helm", "tier": 1, "price": 14, "stats": {"sight": 1, "air": 10}},
+		{"id": "medhelm", "slot": "helmet", "name": "Medic Helm", "tier": 2, "price": 32, "stats": {"hp": 6, "killheal": 1}},
+		{"id": "drillcap", "slot": "helmet", "name": "Drill Cap", "tier": 2, "price": 34, "stats": {"armor": 1, "atk": 1}},
+		{"id": "smugglerhood", "slot": "helmet", "name": "Smuggler Hood", "tier": 2, "price": 33, "stats": {"coin": 1, "dodge": 5}},
+		{"id": "frosthelm", "slot": "helmet", "name": "Frost Helm", "tier": 3, "price": 56, "stats": {"armor": 2, "hazres": 25}},
+		{"id": "divehelm", "slot": "helmet", "name": "Dive Helm", "tier": 3, "price": 58, "stats": {"air": 30, "armor": 1}},
+		{"id": "bughelm", "slot": "helmet", "name": "Bug Helm", "tier": 3, "price": 55, "stats": {"sight": 2, "crit": 8}},
+		{"id": "nebulahelm", "slot": "helmet", "name": "Nebula Helm", "tier": 4, "price": 90, "stats": {"sight": 2, "xp": 25, "dodge": 8}},
+		{"id": "kingcrown", "slot": "helmet", "name": "King's Helm", "tier": 4, "price": 92, "stats": {"armor": 3, "coin": 2, "xp": 20}},
+		{"id": "minerrig", "slot": "armour", "name": "Miner Rig", "tier": 1, "price": 16, "stats": {"armor": 1, "air": 10}},
+		{"id": "cargoharness", "slot": "armour", "name": "Cargo Harness", "tier": 1, "price": 15, "stats": {"coin": 1, "hp": 4}},
+		{"id": "flakvest", "slot": "armour", "name": "Flak Vest", "tier": 2, "price": 35, "stats": {"armor": 2, "rangedef": 1}},
+		{"id": "medcoat", "slot": "armour", "name": "Medic Coat", "tier": 2, "price": 34, "stats": {"hp": 10, "killheal": 1}},
+		{"id": "chainmail", "slot": "armour", "name": "Chain Shirt", "tier": 2, "price": 36, "stats": {"armor": 2, "hp": 4}},
+		{"id": "frostplate", "slot": "armour", "name": "Frost Plate", "tier": 3, "price": 62, "stats": {"armor": 3, "hazres": 25, "hp": 6}},
+		{"id": "solarweave", "slot": "armour", "name": "Solar Weave", "tier": 3, "price": 60, "stats": {"shield": 8, "hp": 8}},
+		{"id": "bugshell", "slot": "armour", "name": "Bug Shell", "tier": 3, "price": 58, "stats": {"armor": 2, "dodge": 8, "thorns": 2}},
+		{"id": "voidcarapace", "slot": "armour", "name": "Void Carapace", "tier": 4, "price": 94, "stats": {"armor": 4, "dodge": 8, "thorns": 3}},
+		{"id": "royalplate", "slot": "armour", "name": "Royal Plate", "tier": 4, "price": 96, "stats": {"armor": 5, "hp": 12, "coin": 2}},
+		{"id": "minerboots", "slot": "boots", "name": "Miner Boots", "tier": 1, "price": 15, "stats": {"armor": 1, "airsave": 4}},
+		{"id": "medboots", "slot": "boots", "name": "Medic Boots", "tier": 2, "price": 33, "stats": {"airsave": 10, "hp": 4}},
+		{"id": "springers", "slot": "boots", "name": "Spring Boots", "tier": 2, "price": 35, "stats": {"dodge": 8, "airsave": 8}},
+		{"id": "smugglerboots", "slot": "boots", "name": "Smuggler Boots", "tier": 2, "price": 34, "stats": {"dodge": 6, "coin": 1}},
+		{"id": "diveboots", "slot": "boots", "name": "Dive Boots", "tier": 2, "price": 34, "stats": {"armor": 1, "hazres": 30}},
+		{"id": "frostboots", "slot": "boots", "name": "Frost Boots", "tier": 3, "price": 57, "stats": {"airsave": 18, "hazres": 25}},
+		{"id": "solarboots", "slot": "boots", "name": "Solar Boots", "tier": 3, "price": 58, "stats": {"airsave": 20, "shield": 4}},
+		{"id": "bugboots", "slot": "boots", "name": "Bug Boots", "tier": 3, "price": 56, "stats": {"dodge": 10, "airsave": 12}},
+		{"id": "voidstriders", "slot": "boots", "name": "Void Striders", "tier": 4, "price": 90, "stats": {"airsave": 28, "dodge": 12}},
+		{"id": "royalboots", "slot": "boots", "name": "Royal Boots", "tier": 4, "price": 92, "stats": {"airsave": 26, "armor": 2, "coin": 1}},
 		{"id": "ammorecycler", "slot": "trinket", "name": "Ammo Recycler", "tier": 3, "price": 58, "stats": {"noammo": 15}},
 		{"id": "scopemod", "slot": "trinket", "name": "Scope Module", "tier": 3, "price": 56, "stats": {"rangeb": 1, "crit": 8}},
 		{"id": "critoptics", "slot": "trinket", "name": "Crit Optics", "tier": 2, "price": 34, "stats": {"crit": 15, "sight": 1}},

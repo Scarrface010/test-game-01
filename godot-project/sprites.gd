@@ -1075,6 +1075,8 @@ const CHAR_HI := "res://art/chars/%s.png"
 const CHAR_GEAR := "res://art/chars/gear/%s_%s.png"
 const CharBands := preload("res://char_bands.gd")
 const GEAR_FIT := "scout"   # the body all gear is drawn for
+const HELM_HIDE := [[0, 81], [0, 69], [0, 72]]   # head rows hidden under any helmet (front, back, side)
+const W_FRONT := "res://art/gear_hi/wf_%s.png"   # gun seen down the barrel, used when facing the viewer
 # weapon hand: art/chars/hands/<cls>.png is the class's fist, redrawn over the weapon (char_hands.py)
 const CHAR_HAND := "res://art/chars/hands/%s.png"
 const CharHands := preload("res://char_hands.gd")
@@ -1093,9 +1095,9 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 		# every class body is warped to the scout's proportions (norm/normalize.py), so one gear sheet fits all
 		if gid == "" or not ResourceLoader.exists(CHAR_GEAR % [gid, GEAR_FIT]):
 			continue
-		var bd: Dictionary = CharBands.B.get(gid, {})
-		if bd.has(GEAR_FIT):
-			var r: Array = bd[GEAR_FIT][col]
+		# b98 gear is piece-only: armour/boots draw over the body; helmets hide the head band
+		if slot == "helmet":
+			var r: Array = HELM_HIDE[col]
 			base.fill_rect(Rect2i(0, int(r[0]), HW, maxi(0, int(r[1]) - int(r[0]))), Color(0, 0, 0, 0))
 		var g: Image = (load(CHAR_GEAR % [gid, GEAR_FIT]) as Texture2D).get_image()
 		g.convert(Image.FORMAT_RGBA8)
@@ -1105,7 +1107,10 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	_hip_trinket(base, eq, col)
 	var wid := String(eq.get("weapon", ""))
 	var hi_wpn: Image = null
-	if USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
+	if USE_HI_WPN and wid != "" and dir == 0 and ResourceLoader.exists(W_FRONT % wid):
+		hi_wpn = (load(W_FRONT % wid) as Texture2D).get_image()
+		hi_wpn.convert(Image.FORMAT_RGBA8)
+	elif USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
 		hi_wpn = (load(HI_WPN % [wid, dir]) as Texture2D).get_image()
 		hi_wpn.convert(Image.FORMAT_RGBA8)
 	var wa := _art(eq, "weapon")
@@ -1636,6 +1641,19 @@ func gear_icon(id: String, slot: String) -> ImageTexture:
 			var ktx := ImageTexture.create_from_image(ksrc.get_image())
 			cache[key] = ktx
 			return ktx
+	if slot != "weapon" and slot != "trinket" and ResourceLoader.exists(CHAR_GEAR % [id, GEAR_FIT]):
+		# b98: icon = the piece itself (front cell of its scout gear sheet), squared
+		var gs: Image = (load(CHAR_GEAR % [id, GEAR_FIT]) as Texture2D).get_image()
+		gs.convert(Image.FORMAT_RGBA8)
+		var gc: Image = gs.get_region(Rect2i(0, 0, HW, HH))
+		var gu := gc.get_used_rect()
+		if gu.size.x > 0 and gu.size.y > 0:
+			var gside := maxi(gu.size.x, gu.size.y) + 4
+			var gq := Image.create(gside, gside, false, Image.FORMAT_RGBA8)
+			gq.blit_rect(gc, gu, Vector2i((gside - gu.size.x) / 2, (gside - gu.size.y) / 2))
+			var gt := ImageTexture.create_from_image(gq)
+			cache[key] = gt
+			return gt
 	if slot != "weapon" and slot != "trinket" and G64.SPEC.has(id):
 		var gi := _gear_icon64(id, slot)
 		cache[key] = gi
