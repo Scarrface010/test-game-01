@@ -1110,6 +1110,14 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	if USE_HI_WPN and wid != "" and dir == 0 and ResourceLoader.exists(W_FRONT % wid):
 		hi_wpn = (load(W_FRONT % wid) as Texture2D).get_image()
 		hi_wpn.convert(Image.FORMAT_RGBA8)
+		# barrel-view gun drawn smaller, scaled about the front hand point
+		var fs := 0.8
+		var sm := hi_wpn.duplicate() as Image
+		sm.resize(int(WPS * fs), int(WPS * fs), Image.INTERPOLATE_BILINEAR)
+		var hp := Vector2(HAND_GEN[0]) + Vector2((WPS - HW) / 2, (WPS - HH) / 2)   # hand in weapon-layer coords
+		var o := Vector2i(hp * (1.0 - fs))
+		hi_wpn = Image.create(WPS, WPS, false, Image.FORMAT_RGBA8)
+		hi_wpn.blend_rect(sm, Rect2i(0, 0, sm.get_width(), sm.get_height()), o)
 	elif USE_HI_WPN and wid != "" and ResourceLoader.exists(HI_WPN % [wid, dir]):
 		hi_wpn = (load(HI_WPN % [wid, dir]) as Texture2D).get_image()
 		hi_wpn.convert(Image.FORMAT_RGBA8)
