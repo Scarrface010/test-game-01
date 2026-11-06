@@ -267,7 +267,7 @@ var inv_scroll := 0.0
 var inv_filter := 0
 var inv_sort := 0
 var inv_scroll_max := 0.0
-var mods_open := false
+var mods_open := true
 var chr_off := 0.0    # extra height of the modifiers strip in the gear tab
 var tut_back := MODE
 var tutorial := false
@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 101
+const BUILD := 102
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -672,7 +672,7 @@ func _make_defs() -> void:
 		{"id": "ammofab", "name": "Ammo Fabricator", "desc": "Every 8 steps without shooting restores 1 ammo", "max": 1, "adv": true},
 		{"id": "scrubber", "name": "Oxygen Scrubber", "desc": "Kills while under half air restore +3 air", "max": 1, "adv": true},
 		{"id": "gcoin", "name": "Gambler's Coin", "desc": "Each floor rolls a random buff for that floor: +10% crit, +10% dodge, or +1 coin value", "max": 1, "adv": true},
-		{"id": "bbattery", "name": "Blood Battery", "desc": "+50% damage, but every attack costs 1% of your max health", "max": 1, "curse": true, "adv": true},
+		{"id": "bbattery", "name": "Blood Battery", "desc": "+30% damage, but every attack costs 1% of your max health", "max": 1, "curse": true, "adv": true},
 		{"id": "uwarp", "name": "Unstable Warp", "desc": "Beacon warps don't use up the beacon, but every warp roots you: press move 5 times to break free", "max": 1, "curse": true, "adv": true},
 		{"id": "ocell", "name": "Overcharged Cell", "desc": "Your class power recharges twice as fast, but your max shield is cut to 25%", "max": 1, "curse": true, "adv": true},
 		{"id": "ember", "name": "Ember Lantern", "desc": "Lanterns hold the dark back 12 steps, but spikes cost 2 more", "max": 1, "curse": true},
@@ -1885,7 +1885,7 @@ func _draw_fade() -> void:
 func _draw_floor_msg(acc: Color) -> void:
 	_streak_draw()
 	var u := t - floor_msg_t
-	if (boss_floor or arena) and mode == "adv" and not in_base:
+	if arena and mode == "adv" and not in_base:
 		_boss_card(u, acc)
 		return
 	if u < 0.0 or u > 2.4 or state != PLAY:
@@ -2084,7 +2084,7 @@ func _act_desc(cid: String) -> String:
 	if mode == "adv":
 		return {
 			"scout": "Deep Breath: +10 air and your next 8 steps cost no air. Recharges in 40 steps.",
-			"brute": "Iron Stance: blocks the next 2 hits. Recharges in 30 steps.",
+			"brute": "Iron Stance: blocks 75% of the next 2 hits. Recharges in 30 steps.",
 			"mystic": "Hex Mark: your next hit deals double damage. Recharges in 35 steps.",
 			"gambler": "Reshuffle: rerolls all your tools. Recharges in 50 steps.",
 			"gunslinger": "Ricochet: your next shot deals double damage and bounces to a second enemy within 3 tiles for the same damage. Recharges in 25 steps.",
@@ -6875,7 +6875,7 @@ func mon_hp_max(c: Vector2i) -> int:
 	if boss_floor and c == boss_cell:
 		h = int(h * 1.6)
 	if mode == "adv":
-		h = int(h * (1.0 + minf(0.6, 0.03 * float(threat()))) * (1.0 + 0.12 * float(floor_n - 1)))
+		h = int(h * (1.0 + minf(0.6, 0.03 * float(threat()))) * (1.0 + 0.09 * float(floor_n - 1)))
 		if String(affix.get(c, "")) == "brute":
 			h *= 2
 		h = int(float(h) * _hz_hp(c))
@@ -7004,11 +7004,11 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 	_buzz(35)
 	if act_stance > 0:
 		act_stance -= 1
-		_pop(pos, "BLOCKED", Color("7db2ff"))
-		msg += "   Iron Stance blocks %s!" % who
+		_pop(pos, "BLOCKED 75%", Color("7db2ff"))
+		msg += "   Iron Stance blocks most of %s's hit!" % who
 		_mx_blocked(src)
 		_sfx("shield")
-		return true
+		a = maxi(1, int(round(float(a) * 0.25)))
 	if sk("msupp") > 0.0 and _mk(src):
 		a = maxi(1, int(round(float(a) * (1.0 - sk("msupp") / 100.0))))
 	a = _ck_hurt(a, src)
@@ -7156,6 +7156,7 @@ var affix: Dictionary = {}    # Vector2i -> affix id on a monster
 var mstat: Dictionary = {}    # Vector2i -> {"burn": [steps, dmg], "psn": [stacks, steps], "stun": steps, "chill": true}
 var kb_pend := Vector2i(-1, -1)
 var tgt_crit := 0.0
+var sneak_slp := false
 var cw_ready := false
 var abl_used := false
 var ld_used := false
@@ -7188,9 +7189,9 @@ const TRAIT_DEFS := {
 	"bloodlust": {"n": "Bloodlust", "d": "Kills heal 10% of your max health", "t": ["blood", "kill"]},
 	"execute": {"n": "Executioner", "d": "Enemies under 20% health die instantly (not bosses)", "t": ["execute"]},
 	"brutal": {"n": "Brutal", "d": "+25% damage", "t": ["raw"]},
-	"ambush": {"n": "Ambush", "d": "Double damage against enemies at full health", "t": ["raw"]},
+	"ambush": {"n": "Ambush", "d": "+50% damage against enemies at full health", "t": ["raw"]},
 	"sharp": {"n": "Keen Edge", "d": "+12% crit chance", "t": ["crit"]},
-	"deadly": {"n": "Deadly Crits", "d": "Crits deal triple damage instead of double", "t": ["crit"]},
+	"deadly": {"n": "Deadly Crits", "d": "Crits deal 2.5x damage instead of double", "t": ["crit"]},
 	"rampage": {"n": "Rampage", "d": "+3% damage per hit in a row without being hurt (max +15%)", "t": ["streak"]},
 	"rhythm": {"n": "Rhythm", "d": "Every 4th hit deals double damage", "t": ["streak"]},
 	"marked": {"n": "Marked", "d": "Each hit on the same enemy deals +1 more (max +4)", "t": ["streak"]},
@@ -7214,9 +7215,9 @@ const TRAIT_DEFS := {
 	"icicle": {"n": "Icicle", "d": "Hitting a frozen enemy splashes 50% damage to the enemies beside it", "t": ["cryo"]},
 	"rot": {"n": "Rot", "d": "Poisoned enemies take +15% damage from all sources", "t": ["toxic"]},
 	"contagion": {"n": "Contagion", "d": "Hitting a poisoned enemy spreads a poison stack to a neighbour", "t": ["toxic"]},
-	"stormcaller": {"n": "Storm Caller", "d": "When an enemy carries 3 different elements, lightning hits it for 5x your damage (once per enemy)", "t": ["shock"]},
+	"stormcaller": {"n": "Storm Caller", "d": "When an enemy carries 3 different elements, lightning hits it for 3x your damage (once per enemy)", "t": ["shock"]},
 	"heavy": {"n": "Heavy Hitter", "d": "+40% damage, but every hit costs 1 extra air", "t": ["raw"]},
-	"firstblood": {"n": "First Blood", "d": "The first hit on each floor deals triple damage", "t": ["raw"]},
+	"firstblood": {"n": "First Blood", "d": "The first hit on each floor deals double damage", "t": ["raw"]},
 	"underdog": {"n": "Underdog", "d": "+30% damage while 3 or more enemies are in view", "t": ["raw"]},
 	"crush": {"n": "Crush", "d": "+50% damage to rooted enemies or enemies with their back to a wall", "t": ["raw"]},
 	"gambler": {"n": "Gambler's Edge", "d": "20% chance to deal double damage, 10% chance to deal none", "t": ["raw"]},
@@ -7914,11 +7915,27 @@ func _roll_traits(rng: RandomNumberGenerator, tier: int, ranged: bool) -> String
 	return "@" + ",".join(picked)
 
 
+const CRIT_CAP := 60.0
+
+
 func crit_chance() -> float:
+	if sneak_slp:
+		return 1000.0
+	return minf(CRIT_CAP, _crit_raw())
+
+
+func _crit_raw() -> float:
 	return gear("crit") + sk("crit") + ((sk("rcrit") + _set_stat("rcrit")) if shooting else 0.0) + 4.0 * float(pk.get("crit", 0)) + (12.0 if has_tr("sharp") else 0.0) + 5.0 * relic_n("luckychip") + (10.0 if gcoin_buff() == 0 else 0.0) + tgt_crit + nr_l_crit
 
 
+const DODGE_CAP := 50.0
+
+
 func dodge_chance() -> float:
+	return minf(DODGE_CAP, _dodge_raw())
+
+
+func _dodge_raw() -> float:
 	return gear("dodge") + sk("dodge") + (10.0 if has_tr("duelist") else 0.0) + (10.0 if gcoin_buff() == 1 else 0.0) + (10.0 if gm("reflex") and p_moved else 0.0) + nr_l_dodge
 
 
@@ -8019,7 +8036,7 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		if tl.has("brutal"):
 			mul += 0.25
 		if tl.has("ambush") and mon_hp_now(c) >= mon_hp_max(c):
-			mul += 1.0
+			mul += 0.5
 		if tl.has("shatter") and _stunned(c):
 			mul += 0.5 + (0.5 if relic_n("frost") > 0 else 0.0)
 		if tl.has("rampage"):
@@ -8029,14 +8046,16 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		if tl.has("rhythm") and (tr_hits + 1) % 4 == 0:
 			mul += 1.0
 	var gz := false
+	sneak_slp = false
 	tgt_crit = 10.0 if (gm("tvisor") and (_stunned(c) or _rooted(c))) else 0.0
 	if _st_unaware(c):
 		st_hit_c = c
 		st_quiet = true
 		var slp := _idle_sleep(c)
-		mul += (1.0 if slp else 0.5) + sk("st_sneak") / 100.0 + (0.3 if gm("shadowcharm") else 0.0) + (0.5 if tl.has("assassin") else 0.0)
+		# halved in b102 (was 1.0/0.5 base, and full crit mult on sleepers)
+		mul += 0.5 * ((1.0 if slp else 0.5) + sk("st_sneak") / 100.0 + (0.3 if gm("shadowcharm") else 0.0) + (0.5 if tl.has("assassin") else 0.0))
 		if slp:
-			tgt_crit += 1000.0
+			sneak_slp = true
 		_pop(c, "SNEAK", Color("c07cff"))
 	if gm("bfocus"):
 		var bn := 0
@@ -8053,7 +8072,7 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 		if tl.has("heavy"):
 			mul += 0.4
 		if tl.has("firstblood") and tr_hits == 0:
-			mul += 2.0
+			mul += 1.0
 		if tl.has("underdog"):
 			var vn := 0
 			for vm in mons:
@@ -8097,7 +8116,7 @@ func _tr_hit_mod(c: Vector2i, dmg: int) -> int:
 	if set_on("cosmic", 2):
 		mul += 0.15
 	if relic_n("bbattery") > 0:
-		mul += 0.5
+		mul += 0.3
 	if sk("mark") > 0.0 and _st_ok(c):
 		if _mk(c):
 			mul += sk("mark") / 100.0
@@ -8353,8 +8372,8 @@ func _tr_new_hit(c: Vector2i, dealt: int, crit: bool, ranged: bool, left: int, e
 		kb_pend = c
 	if tl.has("stormcaller") and _st_ok(c) and not bool(_st_get(c).get("sc", false)) and _elems(c).size() >= 3:
 		mstat[c]["sc"] = true
-		left -= dealt * 5
-		_pop(c, "STORM x5", Color("ffe14f"))
+		left -= dealt * 3
+		_pop(c, "STORM x3", Color("ffe14f"))
 	return left
 
 
@@ -8496,7 +8515,7 @@ const SK_BR := [
 		["Siphon Core", "Heal %s on every hit", "leech", [1, 2]],
 		["Finisher", "+%s%% damage to enemies under half health", "finish", [25, 50]],
 		["Berserker", "+%s%% damage while under half health", "berserk", [15, 25]],
-		["Overdrive", "Crits deal %s%% more damage", "critmult", [50, 100]]]],
+		["Overdrive", "Crits deal %s%% more damage", "critmult", [25, 50]]]],
 	["RANGED", Color("6dff9a"), [
 		["Marksman", "+%s damage with ranged weapons", "rdmg", [2, 3]],
 		["Deep Quiver", "+%s max ammo", "ammomax", [4, 8]],
@@ -8746,7 +8765,7 @@ func sk_text(id: String, rank: int) -> String:
 
 
 func crit_mult() -> float:
-	return (3.0 if has_tr("deadly") else 2.0) + sk("critmult") / 100.0
+	return (2.5 if has_tr("deadly") else 2.0) + sk("critmult") / 100.0
 
 
 func _phoenix() -> bool:
@@ -9565,6 +9584,8 @@ func _adv_init_run() -> void:
 			equip[String(gear_defs[gb(kid)]["slot"])] = kid
 		else:
 			bag.append(kid)
+	if not equip.has("weapon"):
+		equip["weapon"] = "wrench"
 	_nr_init_run()
 	_mx_init_run()
 
@@ -9942,7 +9963,8 @@ func _adv_fight(nc: Vector2i) -> int:
 	chg_n = 0
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
-		dmg = int(round(float(dmg) * crit_mult()))
+		dmg = int(round(float(dmg) * ((1.0 + (crit_mult() - 1.0) * 0.5) if sneak_slp else crit_mult())))
+	sneak_slp = false
 	var missed := String(affix.get(nc, "")) == "evasive" and randf() < 0.2
 	if missed:
 		dmg = 0
@@ -10255,14 +10277,14 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 			msg = tmsg
 			snd = "big"
 		elif kind == "pot":
-			var pxp := maxi(2, int(round(xp_need() * 0.2 * pot_g() * (1.0 + sk("pot") / 100.0))))
+			var pxp := maxi(2, int(round(xp_need() * 0.12 * pot_g() * (1.0 + sk("pot") / 100.0))))
 			adv_pts += 2
 			msg = "%s! +%d XP" % [th["pot"], pxp]
 			_pop(nc, "+%d XP" % pxp, Color("ffd84f"))
 			_adv_gain_xp(pxp)
 			snd = "pot"
 		elif kind == "big":
-			var bxp := maxi(3, int(round(xp_need() * 0.25 * big_g() * (1.0 + sk("pot") / 100.0))))
+			var bxp := maxi(3, int(round(xp_need() * 0.15 * big_g() * (1.0 + sk("pot") / 100.0))))
 			adv_pts += 4
 			msg = "Overcharged %s! +%d XP" % [th["pot"], bxp]
 			_pop(nc, "+%d XP" % bxp, Color("4fd1ff"))
@@ -10739,7 +10761,8 @@ func _adv_shoot_do(c: Vector2i) -> void:
 		dmg *= 2
 	var crit := randf() * 100.0 < crit_chance()
 	if crit:
-		dmg = int(round(float(dmg) * crit_mult()))
+		dmg = int(round(float(dmg) * ((1.0 + (crit_mult() - 1.0) * 0.5) if sneak_slp else crit_mult())))
+	sneak_slp = false
 	var missed := String(affix.get(c, "")) == "evasive" and randf() < 0.2
 	if missed:
 		dmg = 0
@@ -12502,6 +12525,9 @@ func _draw_char_tab(acc: Color) -> void:
 	var tt := ""
 	for tsrc in srcs:
 		var pre := "" if prev != "" else "[%s] " % String(gear_defs[gb(tsrc)]["slot"]).to_upper()
+		if prev == "":
+			var gst := _gear_desc(gear_defs[gb(tsrc)], tsrc)
+			tt += "%s%s: %s\n" % [pre, gname(tsrc), gst if gst != "" else "no stats"]
 		for tid3 in gtr(tsrc):
 			tt += "%s%s: %s\n" % [pre, TRAIT_DEFS[tid3]["n"], TRAIT_DEFS[tid3]["d"]]
 		for mid3 in gmods(tsrc):
@@ -13965,14 +13991,14 @@ const CK := {
 				["Death Wish", "+%s%% damage while you have no shield", "c_dwish", [10, 20]]],
 			"subs": {
 				"1": {"n": "WARLORD", "d": "+8% crit.", "s": {"crit": 8}, "k": ["Warcry", "Kills cut your power's recharge by %s steps", "killcd", [3]]},
-				"2": {"n": "BLOODRAGER", "d": "Kills heal 4% of max health.", "s": {"kheal": 4}, "k": ["Rampage", "Kills give +%s%% damage for 3 steps (stacks)", "c_rampage", [20]]}}},
+				"2": {"n": "BLOODRAGER", "d": "Kills heal 4% of max health.", "s": {"kheal": 4}, "k": ["Rampage", "Kills give +%s%% damage for 3 steps (stacks up to 3)", "c_rampage", [20]]}}},
 	},
 	"mystic": {
 		"core": [
 			["Ward Weave", "Hexed hits give %s shield", "c_hexsh", [4, 8]],
 			["Focus", "+%s%% XP", "xp", [10, 20]],
 			["Echo Hex", "%s%% chance a hexed hit doesn't use up your Hex", "c_echohex", [15, 30]],
-			["Deep Hex", "Hex Mark deals +%s%% more damage", "hexmult", [50, 100]],
+			["Deep Hex", "Hex Mark deals +%s%% more damage", "hexmult", [25, 50]],
 			["Mana Shield", "Using your class power gives %s shield", "pwsh", [4, 8]],
 			["Hex Lock", "A hexed hit stuns the target for %s step(s)", "hexstun", [1, 2]]],
 		"a": {"n": "ELEMENTALIST", "d": "Burns last +1 step and found weapons roll elements 25% more often.", "s": {"kindle": 1, "attune": 25},
@@ -13996,7 +14022,7 @@ const CK := {
 	},
 	"gambler": {
 		"core": [
-			["Double or Nothing", "%s%% chance a hit deals triple damage, but a 10%% chance it deals half", "c_ddown", [10, 20]],
+			["Double or Nothing", "%s%% chance a hit deals double damage, but a 10%% chance it deals half", "c_ddown", [10, 20]],
 			["Pickpocket", "Hits have a %s%% chance to steal a coin", "c_pick", [15, 30]],
 			["Loaded Dice", "Every %sth kill gives you a random tool", "c_dice", [8, 5]],
 			["House Edge", "Reshuffle also gives %s coins", "rscoin", [3, 6]],
@@ -14033,7 +14059,7 @@ const CK := {
 			"nodes": [
 				["Called Shot", "Shots at enemies 4 or more tiles away stun them for %s step(s)", "c_called", [1, 2]],
 				["Hollow Points", "Shots make enemies bleed for %s steps", "c_hollow", [2, 4]],
-				["Focus Fire", "Each shot in a row at the same enemy deals +%s%% more damage (up to 5)", "c_focus", [10, 20]],
+				["Focus Fire", "Each shot in a row at the same enemy deals +%s%% more damage (up to 5)", "c_focus", [5, 10]],
 				["Kill Shot", "Shots finish off enemies left under %s%% health (not bosses)", "c_kshot", [10, 15]]],
 			"subs": {
 				"1": {"n": "SNIPER", "d": "+2 ranged damage.", "s": {"rdmg": 2}, "k": ["Headshot", "Shots deal +%s%% damage to enemies 3 or more tiles away", "fardmg", [50]]},
@@ -14413,7 +14439,7 @@ func _mx_scout_breath() -> void:
 func _mx_brute_stance() -> void:
 	var p := _pw()
 	act_stance = 2 + (1 if p >= 1 else 0) + int(sk("stancen"))
-	msg = "Iron Stance: blocks the next %d hits" % act_stance
+	msg = "Iron Stance: blocks 75%% of the next %d hits" % act_stance
 	if sk("stancesh") > 0.0:
 		sh = mini(sh_cap(), sh + int(sk("stancesh")))
 	if p >= 3:
@@ -14577,7 +14603,7 @@ func _mx_death() -> void:
 func _mx_bank_bonus(delta: int) -> int:
 	if not _mx_on() or delta <= 0:
 		return 0
-	return delta * (mx_level(cls) + mini(25, mx_stars(cls)) + 15 * hz_run + 2 * _ws("w_bank")) / 100
+	return delta * (mx_level(cls) + mini(25, mx_stars(cls)) + 15 * hz_run + 2 * mini(25, _ws("w_bank"))) / 100
 
 
 func _mx_death_line(b: int) -> String:
@@ -15445,12 +15471,12 @@ const WS_DEFS := [
 	["w_hull", "Hull Plating", "+%s max health", "hp", 1, 40, 40, 1.12, 0],
 	["w_o2", "O2 Reserves", "+%s max air", "air", 2, 40, 40, 1.12, 0],
 	["w_train", "Field Training", "+%s%% XP", "xp", 3, 20, 60, 1.15, 0],
-	["w_bank", "Salvage Rights", "+%s%% coins banked", "", 2, 50, 80, 1.12, 0],
-	["w_crit", "Targeting AI", "+%s%% crit chance", "crit", 1, 15, 70, 1.15, 0],
+	["w_bank", "Salvage Rights", "+%s%% coins banked", "", 2, 25, 80, 1.12, 0],
+	["w_crit", "Targeting AI", "+%s%% crit chance", "crit", 1, 10, 70, 1.15, 0],
 	["w_dodge", "Evasion Drills", "+%s%% dodge chance", "dodge", 1, 10, 90, 1.18, 0],
 	["w_deal", "Insider Deals", "Shops charge %s%% less", "haggle", 2, 10, 100, 1.2, 0],
 	["w_mast", "Mastery Accelerator", "+%s%% mastery XP", "", 10, 10, 150, 1.25, 1],
-	["w_atk", "Weapon Lab", "+%s attack", "atk", 1, 5, 200, 1.5, 2],
+	["w_atk", "Weapon Lab", "+%s attack", "atk", 1, 3, 200, 1.5, 2],
 	["w_arm", "Armour Lab", "+%s armour", "armor", 1, 3, 250, 1.6, 3],
 	["w_sp", "Neural Link", "+%s starting skill points", "", 1, 5, 300, 1.5, 3],
 	["w_slot", "Pocket Dimension", "+%s tool slots", "slots", 1, 2, 500, 2.0, 8],
@@ -15670,7 +15696,7 @@ func _ws_stats() -> Dictionary:
 	for d in WS_DEFS:
 		var st := String(d[3])
 		if st != "" and _ws(String(d[0])) > 0:
-			out[st] = float(out.get(st, 0.0)) + float(d[4]) * float(_ws(String(d[0])))
+			out[st] = float(out.get(st, 0.0)) + float(d[4]) * float(mini(_ws(String(d[0])), int(d[5])))
 	return out
 
 
@@ -16385,6 +16411,14 @@ func _roll_base(rid: String, rng: RandomNumberGenerator) -> String:
 	while out.size() < n and keys.size() > 0:
 		var k2 := String(keys.pop_back())
 		out[k2] = _rv(pool, k2, rng)
+	# b102: higher tiers hit harder, and gear found deeper rolls stronger attack/armour
+	var tr_n := int(gd["tier"])
+	var fmul := 1.0 + 0.05 * float(maxi(0, floor_n - 1))
+	if out.has("atk") and ["weapon", "ranged", "trinket"].has(String(gd["slot"])):
+		var tmul := 2.0 if tr_n >= 5 else (1.5 if tr_n >= 3 else 1.0)
+		out["atk"] = maxi(1, int(round(float(out["atk"]) * tmul * fmul)))
+	if out.has("armor"):
+		out["armor"] = maxi(1, int(round(float(out["armor"]) * fmul)))
 	var parts: PackedStringArray = []
 	for k3 in out:
 		parts.append("%s=%d" % [k3, int(out[k3])])
@@ -16507,8 +16541,8 @@ func _ck_hit_mul(c: Vector2i) -> float:
 	if sk("c_ddown") > 0.0:
 		var r := randf() * 100.0
 		if r < sk("c_ddown"):
-			m += 2.0
-			_pop(c, "TRIPLE!", Color("ffd84f"))
+			m += 1.0
+			_pop(c, "DOUBLE!", Color("ffd84f"))
 		elif r < sk("c_ddown") + 10.0:
 			m -= 0.5
 			_pop(c, "HALF", Color("9aa3c7"))
@@ -16672,7 +16706,7 @@ func _ck_kill(nc: Vector2i, is_boss: bool) -> void:
 	if sk("c_rampage") > 0.0:
 		if adv_steps > int(ck_st.get("rpt", -1)):
 			ck_st["rp"] = 0
-		ck_st["rp"] = int(ck_st.get("rp", 0)) + 1
+		ck_st["rp"] = mini(3, int(ck_st.get("rp", 0)) + 1)
 		ck_st["rpt"] = adv_steps + 3
 	if sk("c_harvest") > 0.0 and mstat.has(nc) and mstat[nc].has("cu"):
 		_ck_cut(int(sk("c_harvest")))
