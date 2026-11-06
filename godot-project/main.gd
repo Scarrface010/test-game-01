@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 104
+const BUILD := 105
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2986,9 +2986,39 @@ func _gui_input(event: InputEvent) -> void:
 			joy_v = jd
 		return
 	var tap_pos := Vector2(-1, -1)
+	if _lst_state() and event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN or event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			if event.pressed:
+				lst_off = clampi(lst_off + (1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1), 0, _lst_max())
+			return
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				if _lst_area().has_point(event.position):
+					lst_on = true
+					lst_press = event.position
+					lst_moved = false
+					lst_acc = 0.0
+					return
+			elif lst_on:
+				lst_on = false
+				if lst_moved:
+					return
+				tap_pos = lst_press
+	if lst_on and event is InputEventMouseMotion:
+		if not lst_moved and event.position.distance_to(lst_press) > 14.0:
+			lst_moved = true
+		if lst_moved:
+			lst_acc -= event.relative.y
+			while absf(lst_acc) >= 80.0:
+				var lstp := 1 if lst_acc > 0.0 else -1
+				lst_off = clampi(lst_off + lstp, 0, _lst_max())
+				lst_acc -= 80.0 * lstp
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if state == CLASS:
-			if event.pressed:
+			if wd_open:
+				cswipe_start = Vector2(-1, -1)
+			elif event.pressed:
 				cswipe_start = event.position if Rect2(100, 262, 520, 690).has_point(event.position) else Vector2(-1, -1)
 			elif cswipe_start.x >= 0.0:
 				var cd2: Vector2 = event.position - cswipe_start
@@ -3083,6 +3113,14 @@ func _gui_input(event: InputEvent) -> void:
 		_trade_input(p)
 		return
 	if state == CLASS:
+		if wd_open:
+			_wd_input(p)
+			return
+		if btn_wd.has_point(p):
+			wd_open = true
+			wd_prev = ""
+			_sfx("ui")
+			return
 		if btn_modeback.has_point(p):
 			state = MODE
 			test_pending = false
@@ -3209,19 +3247,12 @@ func _gui_input(event: InputEvent) -> void:
 			if _shop_tab_rect(ti).has_point(p):
 				shop_tab = ti
 				shop_page = 0
+				lst_off = 0
 				_sfx("ui")
 				return
-		if btn_prev.has_point(p):
-			shop_page = (shop_page + _shop_pages() - 1) % _shop_pages()
-			_sfx("ui")
-			return
-		if btn_next.has_point(p):
-			shop_page = (shop_page + 1) % _shop_pages()
-			_sfx("ui")
-			return
 		var slist := _shop_list()
 		for i in 6:
-			var idx := shop_page * 6 + i
+			var idx := lst_off + i
 			if idx >= slist.size():
 				break
 			if _shop_rect(i).has_point(p):
@@ -3592,6 +3623,7 @@ func _draw_player(prc: Vector2, sz: float) -> void:
 		lean = clampf(Vector2(pos).x - vis_pos.x, -1.0, 1.0) * 0.1
 	var sx := 1.0 + (1.0 - sy) * 0.8
 	var feet := -(sy - 1.0) * sz * 0.5
+	_trail_tick(prc, sz)
 	var tex := _player_tex(fr)
 	var at := prc + Vector2(0, -hop + feet)
 	_spr_ex(tex, at, sz, Color(0.7, 0.8, 1.0, 0.45 + 0.1 * sin(t * 4.0)) if cloak_steps > 0 else Color.WHITE, 1.0, wob + lean, sx, sy)
@@ -4901,7 +4933,7 @@ func _draw() -> void:
 	_hud_panels(acc, 84.0)
 	_txt("FLOOR %d    BEST %d%s" % [floor_n, best, _mod_label()], Vector2(0, 112), 24, Color(1, 1, 1, 0.6))
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 22, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var sx := 40.0
 	if shield:
 		_spr(_item_tex("shield"), Vector2(sx + 14, 266), 28)
@@ -5191,7 +5223,7 @@ func _draw_menu_space() -> bool:
 		draw_line(hd - Vector2(70, 43) * (1.0 - k * 0.5), hd, Color(1, 1, 1, 0.8 * (1.0 - k)), 3.0)
 		draw_circle(hd, 3.0, Color(1, 1, 0.9, 1.0 - k))
 	# planets and moons drift and wrap around the screen
-	for pl in MENU_PLANETS:
+	for pl in (MENU_PLANETS if state != SKILLS else []):
 		var tx := _menu_tex(pl[0])
 		if tx == null:
 			continue
@@ -5513,6 +5545,9 @@ func _draw_overlay(acc: Color) -> void:
 		for i in (0 if mode == "adv" else class_defs.size()):
 			draw_circle(Vector2(360 + (i - (class_defs.size() - 1) * 0.5) * 30.0, 978), 8.0 if i == cls_page else 5.0, cc if i == cls_page else Color(1, 1, 1, 0.3))
 		_button(btn_cpick, ("PLAY AS " + String(cd["name"]).to_upper()) if copen else _lock_btn(cid), cc if copen else Color("ffc93c"), 28)
+		_button(btn_wd, "WARDROBE", Color("a35cff"), 20)
+		if wd_open:
+			_draw_wardrobe()
 
 	elif state == SHOP and mini_pick:
 		_txt("PUZZLE RUN", Vector2(0, 230), T_TITLE, Color("9fb3d9"))
@@ -5527,38 +5562,8 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_back, "BACK", acc, 26)
 	elif state == SHOP:
 		_txt("SHOP", Vector2(0, 230), T_TITLE, C_GOLD)
-		_txt("BANK  %d coins        PAGE %d / %d" % [bank, shop_page + 1, _shop_pages()], Vector2(0, 280), T_BODY, C_GOLD)
-		for ti in SHOP_TABS.size():
-			var tr2 := _shop_tab_rect(ti)
-			var tc2 := Color("ffc93c") if ti == shop_tab else Color(1, 1, 1, 0.5)
-			_abox(tr2, Color(tc2.r, tc2.g, tc2.b, 0.16 if ti == shop_tab else 0.06))
-			_aline(tr2, tc2, 2.0)
-			_ctext(String(SHOP_TABS[ti]), tr2.get_center(), 18, tc2)
-		var slist := _shop_list()
-		if slist.is_empty():
-			_txt("Nothing here yet", Vector2(0, 560), T_HEAD, C_DIM)
-		for i in 6:
-			var idx := shop_page * 6 + i
-			if idx >= slist.size():
-				break
-			var d2: Dictionary = shop_defs[int(slist[idx])]
-			var rr2 := _shop_rect(i)
-			var lv: int = up(String(d2["id"]))
-			var costs: Array = d2["costs"]
-			var maxed := lv >= costs.size()
-			var can2 := (not maxed) and bank >= int(costs[lv])
-			var col2 := Color("6dff9a") if can2 else Color(1, 1, 1, 0.45)
-			_obox(rr2, Color(col2.r, col2.g, col2.b, 0.1))
-			_aline(rr2, col2, 2.0)
-			var nm2 := _aname(String(d2["id"]), String(d2["name"]))
-			if costs.size() > 1:
-				nm2 += "  (%d/%d)" % [lv, costs.size()]
-			_txt(nm2, Vector2(rr2.position.x + 20, rr2.position.y + 38), 26, Color.WHITE, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
-			_para_fit(_atext(String(d2["id"]), String(d2["desc"])), Vector2(rr2.position.x + 20, rr2.position.y + 66), T_SMALL, C_DIM, 440.0, 2)
-			var ptxt := ("OWNED" if costs.size() == 1 else "MAXED") if maxed else "%d coins" % int(costs[lv])
-			_txt(ptxt, Vector2(rr2.end.x - 170, rr2.position.y + 62), 26, col2, 150.0, HORIZONTAL_ALIGNMENT_RIGHT)
-		_button(btn_prev, "< PREV", acc, 24)
-		_button(btn_next, "NEXT >", acc, 24)
+		_cur_line(284.0)
+		_draw_shop_list(acc)
 		_button(btn_back, "BACK", acc, 26)
 		if mini_msg != "":
 			draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.6))
@@ -12133,6 +12138,7 @@ func _adv_draw() -> void:
 		_para_fit(String(evd["d"]), Vector2(evr.position.x + 10, evr.position.y + 38), 14, Color(1, 1, 1, 0.85), evr.size.x - 20.0, 2)
 	# HUD
 	_button(btn_inv, "MENU", acc)
+	_cur_badges()
 	if ul(2):
 		_button(btn_skill, "SKILLS", Color("ffd84f") if skill_pts > 0 else acc, 19)
 		_ul_dot(btn_skill, 2)
@@ -12143,7 +12149,7 @@ func _adv_draw() -> void:
 	_wbox_draw()
 	_sk_banner()
 	_txt("LV %d" % level, Vector2(40, 205), 72, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_txt("COINS %d   BANK %d" % [coins, bank], Vector2(40, 238), 24, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("BANK %d" % bank, Vector2(40, 238), 22, Color("ffc93c"), 330.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var xpf := clampf(float(xp) / float(xp_need()), 0.0, 1.0)
 	draw_rect(Rect2(40, 252, 200, 10), Color(1, 1, 1, 0.14))
 	draw_rect(Rect2(40, 252, 200.0 * xpf, 10), Color("ffd84f"))
@@ -15552,11 +15558,11 @@ func _ex_mx_mult() -> float:
 	return 1.0 + 0.1 * float(hz_run) + 0.1 * float(_ws("w_mast"))
 
 
-func _ct_new() -> Dictionary:
+func _ct_new(pri := false) -> Dictionary:
 	var s := int((cx.get("st", {}) as Dictionary).get("contracts", 0))
-	var kinds := ["kills", "elites", "floor", "bosses", "coins", "cls", "threat", "ghost"]
+	var kinds := ["kills", "elites", "floor", "bosses", "coins", "cls", "threat", "ghost", "level", "relics", "scrap", "skills", "tier"]
 	var k := ""
-	for tries in 12:
+	for tries in 16:
 		k = String(kinds[randi() % kinds.size()])
 		var dup := false
 		for o in ct:
@@ -15588,12 +15594,33 @@ func _ct_new() -> Dictionary:
 			c["r"] = int(c["r"]) + 1
 		"ghost":
 			c["n"] = mini(6, 1 + s / 4)
+		"level":
+			c["n"] = mini(70, 12 + s)
+		"relics":
+			c["n"] = mini(14, 4 + s / 3)
+		"scrap":
+			c["n"] = mini(200, 20 + 5 * s)
+		"skills":
+			c["n"] = mini(20, 3 + s / 3)
+		"tier":
+			c["n"] = mini(7, 3 + s / 6)
+	if pri:
+		c["p"] = true
+		if k != "tier" and k != "threat":
+			c["n"] = int(ceil(float(c["n"]) * 1.5))
+		c["r"] = int(c["r"]) * 3
+		c["c"] = int(c["c"]) * 2
 	return c
 
 
 func _ct_fill() -> void:
-	while ct.size() < 3:
-		ct.append(_ct_new())
+	var has_p := false
+	for o in ct:
+		if bool(o.get("p", false)):
+			has_p = true
+	while ct.size() < CT_SLOTS:
+		ct.append(_ct_new(not has_p))
+		has_p = true
 
 
 func _ct_text(c: Dictionary) -> String:
@@ -15614,7 +15641,17 @@ func _ct_text(c: Dictionary) -> String:
 		"threat":
 			return "Clear floor 5 at Threat %d or higher" % n
 		"ghost":
-			return ("Clear a floor without being spotted" if n == 1 else "Clear %d floors without being spotted in one run" % n)
+			return ("Clear a floor without being spotted" if n == 1 else "Clear %d floors unseen in one run" % n)
+		"level":
+			return "Reach level %d in one run" % n
+		"relics":
+			return "Hold %d relics at once" % n
+		"scrap":
+			return "Hold %d scrap at once" % n
+		"skills":
+			return "Spend %d skill points in one run" % n
+		"tier":
+			return "Wear a tier %d item" % n
 	return "?"
 
 
@@ -15637,6 +15674,22 @@ func _ct_met(c: Dictionary, cleared: int) -> bool:
 			return hz_run >= n and cleared >= 5
 		"ghost":
 			return run_ghost >= n
+		"level":
+			return level >= n
+		"relics":
+			var rn := 0
+			for rid in relics:
+				rn += int(relics[rid])
+			return rn >= n
+		"scrap":
+			return scrap >= n
+		"skills":
+			return skill_spent() >= n
+		"tier":
+			for sl in equip:
+				var gid := String(equip[sl])
+				if gid != "" and gear_defs.has(gb(gid)) and int(gear_defs[gb(gid)]["tier"]) >= n:
+					return true
 	return false
 
 
@@ -15658,48 +15711,71 @@ func _ct_check(cleared: int) -> void:
 
 
 func _ws_rect(i: int) -> Rect2:
-	return Rect2(40, 244 + i * 60, 640, 54)
+	return Rect2(40, 244 + i * 108, 640, 98)
 
 
 func _draw_workshop(acc: Color) -> void:
 	var pk := Color("ff4fd8")
-	var st: Dictionary = cx.get("st", {})
 	_txt("WORKSHOP", Vector2(0, 118), T_TITLE, pk)
-	_txt("BANK  %d coins        CORES  %d" % [bank, cores], Vector2(0, 168), T_BODY, C_GOLD)
+	_cur_line(168.0)
 	_txt("RESEARCH  -  PERMANENT, ALL CLASSES", Vector2(40, 226), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
-	for i in WS_DEFS.size():
+	lst_off = clampi(lst_off, 0, maxi(0, WS_DEFS.size() - 8))
+	for vi in 8:
+		var i := lst_off + vi
+		if i >= WS_DEFS.size():
+			break
 		var d: Array = WS_DEFS[i]
-		var r2 := _ws_rect(i)
+		var r2 := _ws_rect(vi)
 		var rk := _ws(String(d[0]))
 		var mxr := int(d[5])
 		var cst := _ws_cost(i)
 		var maxed := rk >= mxr
 		var can := not maxed and bank >= cst.x and cores >= cst.y
-		var col := Color("6dff9a") if can else (Color("ffd84f") if maxed else Color(1, 1, 1, 0.45))
-		_obox(r2, Color(col.r, col.g, col.b, 0.07))
-		_aline(r2, col, 2.0)
-		_txt("%s   %d/%d" % [String(d[1]), rk, mxr], Vector2(r2.position.x + 14, r2.position.y + 24), T_BODY, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var col := C_GOOD if can else (C_GOLD if maxed else Color(1, 1, 1, 0.45))
+		_row_box(r2, col)
+		_row_icon(String(d[0]), r2)
+		_txt("%s  %d/%d" % [String(d[1]), rk, mxr], Vector2(r2.position.x + 100, r2.position.y + 38), 26, Color.WHITE, 360.0, HORIZONTAL_ALIGNMENT_LEFT)
 		var now := String(d[2]) % _nfmt(float(d[4]) * float(rk))
 		var per := String(d[2]) % _nfmt(float(d[4]))
-		_txt("NOW %s      EACH %s" % [now, per], Vector2(r2.position.x + 14, r2.position.y + 46), 15, C_DIM, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
-		var ctx := "MAXED" if maxed else ("%d c" % cst.x + ("  + %d cores" % cst.y if cst.y > 0 else ""))
-		_txt(ctx, Vector2(r2.end.x - 214, r2.position.y + 34), 18, col, 200.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		_txt("Now: " + now, Vector2(r2.position.x + 100, r2.position.y + 64), T_SMALL, Color(1, 1, 1, 0.75), 360.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Each rank: " + per, Vector2(r2.position.x + 100, r2.position.y + 86), T_SMALL, C_DIM, 360.0, HORIZONTAL_ALIGNMENT_LEFT)
+		if maxed:
+			_txt("MAXED", Vector2(r2.end.x - 170, r2.position.y + 58), 24, col, 156.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		else:
+			var cy := r2.position.y + (40.0 if cst.y > 0 else 58.0)
+			_txt("%d" % cst.x, Vector2(r2.end.x - 190, cy), 24, col, 140.0, HORIZONTAL_ALIGNMENT_RIGHT)
+			_sym("coin", Vector2(r2.end.x - 30, cy - 8), 12.0, C_GOLD)
+			if cst.y > 0:
+				_txt("%d" % cst.y, Vector2(r2.end.x - 190, cy + 34), 24, pk if cores >= cst.y else Color(1, 1, 1, 0.45), 140.0, HORIZONTAL_ALIGNMENT_RIGHT)
+				_sym("core", Vector2(r2.end.x - 30, cy + 26), 13.0, pk)
+	_lst_bar(244.0, 8, WS_DEFS.size(), 108.0)
 	_button(btn_ws_back, "BACK", acc, 28)
 
 func _draw_contracts(acc: Color) -> void:
 	var pk := Color("4fd1c5")
 	var st: Dictionary = cx.get("st", {})
+	_ct_fill()
 	_txt("CONTRACT BOARD", Vector2(0, 118), T_TITLE, pk)
-	_txt("BANK  %d coins        CORES  %d" % [bank, cores], Vector2(0, 168), T_BODY, C_GOLD)
-	_txt("ACTIVE CONTRACTS  -  %d DONE" % int(st.get("contracts", 0)), Vector2(40, 254), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_cur_line(168.0)
+	_txt("%d CONTRACTS DONE" % int(st.get("contracts", 0)), Vector2(0, 216), T_SMALL, C_DIM)
+	_txt("ACTIVE", Vector2(40, 270), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	for i in ct.size():
 		var c: Dictionary = ct[i]
-		var r := Rect2(40, 272 + i * 96, 640, 84)
-		_obox(r, Color(pk.r, pk.g, pk.b, 0.08))
-		_aline(r, Color(pk.r, pk.g, pk.b, 0.7), 2.0)
-		_txt(_ct_text(c), Vector2(60, r.position.y + 36), T_BODY, Color.WHITE, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_txt("+%d CORES     +%d COINS" % [int(c["r"]), int(c["c"])], Vector2(60, r.position.y + 66), T_SMALL, C_GOLD, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_para("Finished contracts pay out at once and a harder one replaces them.", Vector2(60, 600), T_SMALL, C_DIM, 600.0)
+		var pri := bool(c.get("p", false))
+		var r := _ct_rect(i)
+		var col := C_GOLD if pri else pk
+		_row_box(r, col, 0.12 if pri else 0.08)
+		_row_icon("ct_" + String(c["k"]), r)
+		if pri:
+			_txt("PRIORITY", Vector2(r.position.x + 100, r.position.y + 24), T_SMALL, C_GOLD, 200.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_para_fit(_ct_text(c), Vector2(r.position.x + 100, r.position.y + (50 if pri else 40)), T_BODY, Color.WHITE, 400.0, 2)
+		var ry := r.end.y - 18.0
+		_sym("core", Vector2(r.position.x + 112, ry - 7), 11.0, Color("ff4fd8"))
+		_txt("%d" % int(c["r"]), Vector2(r.position.x + 128, ry), T_BODY, Color("ff4fd8"), 80.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_sym("coin", Vector2(r.position.x + 202, ry - 7), 11.0, C_GOLD)
+		_txt("%d" % int(c["c"]), Vector2(r.position.x + 218, ry), T_BODY, C_GOLD, 100.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_button(_ct_swap_rect(i), "SWAP %d" % CT_SWAP, C_INFO if bank >= CT_SWAP else Color(1, 1, 1, 0.35), 16)
+	_para("Finish one and a harder one takes its place. Priority pays triple cores.", Vector2(60, 896), T_SMALL, C_DIM, 600.0)
 	_button(btn_ws_back, "BACK", acc, 28)
 
 
@@ -15707,6 +15783,19 @@ func _ctb_input(p: Vector2) -> void:
 	if btn_ws_back.has_point(p):
 		state = PLAY if in_base else CLASS
 		_sfx("ui")
+		return
+	for i in ct.size():
+		if _ct_swap_rect(i).has_point(p):
+			if bank < CT_SWAP:
+				_sfx("blocked")
+				return
+			bank -= CT_SWAP
+			var pri := bool(ct[i].get("p", false))
+			ct.remove_at(i)
+			ct.insert(i, _ct_new(pri))
+			_save_meta()
+			_sfx("coin")
+			return
 
 
 
@@ -15715,8 +15804,9 @@ func _ws_input(p: Vector2) -> void:
 		state = PLAY if in_base else CLASS
 		_sfx("ui")
 		return
-	for i in WS_DEFS.size():
-		if _ws_rect(i).has_point(p):
+	for vi in 8:
+		var i := lst_off + vi
+		if i < WS_DEFS.size() and _ws_rect(vi).has_point(p):
 			_ws_buy(i)
 			return
 
@@ -15872,10 +15962,19 @@ func _ex_save(cfg: ConfigFile) -> void:
 	cfg.set_value("mx", "ct", ct)
 	cfg.set_value("mx", "hzmax", hz_max)
 	cfg.set_value("mx", "hzsel", hz_sel)
+	cfg.set_value("cos", "tr_own", tr_own)
+	cfg.set_value("cos", "tr_eq", tr_eq)
 
 
 func _ex_load(cfg: ConfigFile) -> void:
 	cores = int(cfg.get_value("mx", "cores", 0))
+	var tro = cfg.get_value("cos", "tr_own", {"none": true})
+	if tro is Dictionary:
+		tr_own = tro
+	tr_own["none"] = true
+	tr_eq = String(cfg.get_value("cos", "tr_eq", "none"))
+	if not tr_own.has(tr_eq):
+		tr_eq = "none"
 	var a = cfg.get_value("mx", "ws", {})
 	if a is Dictionary:
 		ws = a
@@ -19362,3 +19461,446 @@ var btn_cdet := Rect2(250, 884, 220, 48)
 
 
 var cls_det := false
+
+
+var lst_off := 0          # first visible row in the scrollable shop / workshop lists
+
+
+var lst_on := false
+
+
+var lst_moved := false
+
+
+var lst_press := Vector2.ZERO
+
+
+var lst_acc := 0.0
+
+
+const SYM := {
+	"p_elem": ["flame", "ff8a3d"], "p_blood": ["drop", "ff4f5e"], "p_combo": ["bolt", "ffd84f"], "p_relic": ["gem", "c07cff"],
+	"p_fort": ["coin", "ffc93c"], "p_surv": ["shield", "5aa8ff"], "p_curse": ["skull", "ff5d8f"], "head": ["star", "ffd84f"],
+	"ash": ["flame", "ff5d3d"], "p_echo": ["echo", "7fd8ff"], "p_mom": ["arrows", "6dff9a"], "p_gamb": ["die", "f2f2f2"],
+	"p_para": ["eye", "b56dff"], "p_swarm": ["swarm", "9dff6a"],
+	"kit": ["crate", "c9a36b"], "toolbox": ["toolbox", "ff9a4f"], "suit": ["shield", "9fb3d9"], "tank": ["tank", "7fd8ff"],
+	"belt": ["bullets", "ffc24f"], "sp": ["nodes", "c07cff"], "vet": ["chevrons", "ffd84f"],
+	"w_hull": ["cross", "ff5d6a"], "w_o2": ["tank", "7fd8ff"], "w_train": ["chevrons", "6dff9a"], "w_bank": ["coin", "ffc93c"],
+	"w_crit": ["crosshair", "ff8a4f"], "w_dodge": ["arrows", "9aa3c7"], "w_deal": ["tag", "ffd84f"], "w_mast": ["star", "ff4fd8"],
+	"w_atk": ["sword", "ff8a4f"], "w_arm": ["shield", "c9d3f0"], "w_sp": ["nodes", "c07cff"], "w_slot": ["grid", "4fd1c5"],
+	"ct_kills": ["crosshair", "ff6a5c"], "ct_elites": ["skull", "c07cff"], "ct_floor": ["chevrons", "6dff9a"], "ct_bosses": ["core", "ff4fd8"],
+	"ct_coins": ["coin", "ffc93c"], "ct_cls": ["star", "7fd8ff"], "ct_threat": ["skull", "ff4f5e"], "ct_ghost": ["eye", "9aa3c7"],
+	"ct_level": ["chevrons", "ffd84f"], "ct_relics": ["gem", "c07cff"], "ct_scrap": ["scrap", "c9a36b"], "ct_skills": ["nodes", "c07cff"],
+	"ct_tier": ["shield", "ff4fd8"],
+}
+
+
+func _poly(c: Vector2, s: float, pts: Array, col: Color) -> void:
+	var pv := PackedVector2Array()
+	for q in pts:
+		pv.append(c + Vector2(q[0], q[1]) * s)
+	draw_colored_polygon(pv, col)
+
+
+func _sym(kind: String, c: Vector2, s: float, col: Color) -> void:
+	var dk := Color(col.r * 0.35, col.g * 0.35, col.b * 0.35)
+	var lt := col.lerp(Color.WHITE, 0.55)
+	match kind:
+		"flame", "drop":
+			draw_circle(c + Vector2(0, 0.28) * s, 0.62 * s, col)
+			_poly(c, s, [[-0.6, 0.12], [0.6, 0.12], [0, -0.95]], col)
+			if kind == "flame":
+				draw_circle(c + Vector2(0, 0.42) * s, 0.32 * s, Color("ffe14f"))
+				_poly(c, s, [[-0.3, 0.36], [0.3, 0.36], [0, -0.25]], Color("ffe14f"))
+			else:
+				draw_circle(c + Vector2(-0.22, 0.2) * s, 0.13 * s, lt)
+		"bolt":
+			_poly(c, s, [[0.2, -1.0], [-0.55, 0.12], [-0.05, 0.12], [-0.25, 1.0], [0.55, -0.18], [0.05, -0.18]], col)
+		"gem":
+			_poly(c, s, [[0, -0.9], [0.78, -0.25], [0, 0.95], [-0.78, -0.25]], col)
+			_poly(c, s, [[0, -0.9], [0.78, -0.25], [0, -0.1], [-0.78, -0.25]], lt)
+		"coin":
+			draw_circle(c, 0.82 * s, col)
+			draw_arc(c, 0.58 * s, 0.0, TAU, 24, dk, 0.12 * s)
+			draw_rect(Rect2(c - Vector2(0.1, 0.32) * s, Vector2(0.2, 0.64) * s), dk)
+		"shield":
+			_poly(c, s, [[-0.78, -0.82], [0.78, -0.82], [0.78, 0.05], [0, 0.95], [-0.78, 0.05]], col)
+			_poly(c, s, [[-0.5, -0.58], [0.5, -0.58], [0.5, 0.0], [0, 0.6], [-0.5, 0.0]], dk)
+			_poly(c, s, [[-0.5, -0.58], [0, -0.58], [0, 0.6], [-0.5, 0.0]], lt)
+		"skull":
+			draw_circle(c + Vector2(0, -0.18) * s, 0.72 * s, col)
+			draw_rect(Rect2(c + Vector2(-0.42, 0.22) * s, Vector2(0.84, 0.6) * s), col)
+			draw_circle(c + Vector2(-0.28, -0.15) * s, 0.2 * s, dk)
+			draw_circle(c + Vector2(0.28, -0.15) * s, 0.2 * s, dk)
+			for k in 3:
+				draw_rect(Rect2(c + Vector2(-0.3 + k * 0.22, 0.52) * s, Vector2(0.1, 0.3) * s), dk)
+		"star":
+			_star(c, 0.95 * s, col)
+		"echo":
+			draw_circle(c + Vector2(-0.55, 0) * s, 0.2 * s, col)
+			for k in 3:
+				draw_arc(c + Vector2(-0.55, 0) * s, (0.45 + 0.32 * k) * s, -0.9, 0.9, 12, col if k < 2 else lt, 0.14 * s)
+		"arrows":
+			for k in 2:
+				var ox := -0.45 + k * 0.6
+				draw_polyline(PackedVector2Array([c + Vector2(ox - 0.25, -0.6) * s, c + Vector2(ox + 0.3, 0) * s, c + Vector2(ox - 0.25, 0.6) * s]), col if k == 1 else lt, 0.22 * s)
+		"die":
+			draw_rect(Rect2(c - Vector2(0.75, 0.75) * s, Vector2(1.5, 1.5) * s), col)
+			for q in [[-0.4, -0.4], [0.4, -0.4], [0, 0], [-0.4, 0.4], [0.4, 0.4]]:
+				draw_circle(c + Vector2(q[0], q[1]) * s, 0.14 * s, Color("1a1d2b"))
+		"eye":
+			_poly(c, s, [[-0.95, 0], [-0.5, -0.5], [0, -0.62], [0.5, -0.5], [0.95, 0], [0.5, 0.5], [0, 0.62], [-0.5, 0.5]], col)
+			draw_circle(c, 0.36 * s, dk)
+			draw_circle(c + Vector2(-0.1, -0.1) * s, 0.12 * s, lt)
+		"swarm":
+			for q in [[-0.5, -0.4], [0.3, -0.6], [0.6, 0.1], [-0.1, 0.1], [-0.6, 0.5], [0.25, 0.6]]:
+				draw_circle(c + Vector2(q[0], q[1]) * s, 0.2 * s, col)
+		"crate":
+			draw_rect(Rect2(c - Vector2(0.8, 0.7) * s, Vector2(1.6, 1.4) * s), col)
+			draw_rect(Rect2(c - Vector2(0.8, 0.7) * s, Vector2(1.6, 1.4) * s), dk, false, 0.12 * s)
+			draw_line(c + Vector2(-0.8, -0.7) * s, c + Vector2(0.8, 0.7) * s, dk, 0.12 * s)
+			draw_line(c + Vector2(0.8, -0.7) * s, c + Vector2(-0.8, 0.7) * s, dk, 0.12 * s)
+		"toolbox":
+			draw_arc(c + Vector2(0, -0.35) * s, 0.35 * s, PI, TAU, 10, col, 0.16 * s)
+			draw_rect(Rect2(c + Vector2(-0.85, -0.35) * s, Vector2(1.7, 1.1) * s), col)
+			draw_rect(Rect2(c + Vector2(-0.85, 0.05) * s, Vector2(1.7, 0.14) * s), dk)
+		"tank":
+			draw_rect(Rect2(c + Vector2(-0.38, -0.6) * s, Vector2(0.76, 1.5) * s), col)
+			draw_circle(c + Vector2(0, -0.6) * s, 0.38 * s, col)
+			draw_rect(Rect2(c + Vector2(-0.14, -1.05) * s, Vector2(0.28, 0.25) * s), lt)
+			draw_rect(Rect2(c + Vector2(-0.38, 0.1) * s, Vector2(0.76, 0.14) * s), dk)
+		"bullets":
+			for k in 3:
+				var bx := -0.55 + k * 0.55
+				draw_rect(Rect2(c + Vector2(bx - 0.17, -0.2) * s, Vector2(0.34, 0.95) * s), col)
+				_poly(c, s, [[bx - 0.17, -0.2], [bx + 0.17, -0.2], [bx, -0.75]], lt)
+		"nodes":
+			var pa := c + Vector2(0, -0.6) * s
+			var pb := c + Vector2(-0.6, 0.5) * s
+			var pc := c + Vector2(0.6, 0.5) * s
+			draw_line(pa, pb, col, 0.14 * s)
+			draw_line(pa, pc, col, 0.14 * s)
+			for q in [pa, pb, pc]:
+				draw_circle(q, 0.28 * s, col)
+				draw_circle(q, 0.13 * s, lt)
+		"chevrons":
+			for k in 3:
+				var oy := -0.55 + k * 0.45
+				draw_polyline(PackedVector2Array([c + Vector2(-0.7, oy + 0.35) * s, c + Vector2(0, oy) * s, c + Vector2(0.7, oy + 0.35) * s]), col if k > 0 else lt, 0.2 * s)
+		"cross":
+			draw_rect(Rect2(c + Vector2(-0.25, -0.8) * s, Vector2(0.5, 1.6) * s), col)
+			draw_rect(Rect2(c + Vector2(-0.8, -0.25) * s, Vector2(1.6, 0.5) * s), col)
+		"crosshair":
+			draw_arc(c, 0.62 * s, 0.0, TAU, 24, col, 0.14 * s)
+			for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				draw_line(c + d * 0.35 * s, c + d * 0.95 * s, col, 0.14 * s)
+			draw_circle(c, 0.12 * s, lt)
+		"tag":
+			_poly(c, s, [[-0.85, -0.45], [0.35, -0.45], [0.85, 0], [0.35, 0.45], [-0.85, 0.45]], col)
+			draw_circle(c + Vector2(0.35, 0) * s, 0.13 * s, dk)
+		"sword":
+			draw_line(c + Vector2(-0.6, 0.6) * s, c + Vector2(0.75, -0.75) * s, lt, 0.22 * s)
+			draw_line(c + Vector2(-0.65, 0.15) * s, c + Vector2(-0.15, 0.65) * s, col, 0.2 * s)
+			draw_line(c + Vector2(-0.45, 0.45) * s, c + Vector2(-0.8, 0.8) * s, col, 0.2 * s)
+		"grid":
+			for q in [[-0.75, -0.75], [0.08, -0.75], [-0.75, 0.08], [0.08, 0.08]]:
+				draw_rect(Rect2(c + Vector2(q[0], q[1]) * s, Vector2(0.67, 0.67) * s), col)
+		"core":
+			var hx: Array = []
+			for k in 6:
+				var a := PI / 6.0 + k * PI / 3.0
+				hx.append([cos(a) * 0.9, sin(a) * 0.9])
+			_poly(c, s, hx, dk.lerp(col, 0.5))
+			draw_circle(c, 0.5 * s, col)
+			draw_circle(c, 0.24 * s, lt)
+		"scrap":
+			var nt: Array = []
+			for k in 6:
+				var a2 := k * PI / 3.0
+				nt.append([cos(a2) * 0.85, sin(a2) * 0.85])
+			_poly(c, s, nt, col)
+			draw_circle(c, 0.32 * s, Color("1a1d2b"))
+		_:
+			_poly(c, s, [[0, -0.8], [0.8, 0], [0, 0.8], [-0.8, 0]], col)
+
+
+func _row_icon(id: String, r: Rect2) -> void:
+	var tr := Rect2(r.position.x + 10, r.position.y + 10, r.size.y - 20, r.size.y - 20)
+	var col := Color(1, 1, 1, 0.7)
+	if id.begins_with("c_"):
+		var cid := id.substr(2)
+		for d in class_defs:
+			if String(d["id"]) == cid:
+				col = d["col"]
+		_abox(tr, Color(0.06, 0.07, 0.12, 1.0))
+		_aline(tr, Color(col.r, col.g, col.b, 0.8), 2.0)
+		_spr(spr_gen.player(col, _cls_art(cid), 0, 0, {}), tr.get_center() + Vector2(0, 2), tr.size.y * 1.25)
+		return
+	var sd: Array = SYM.get(id, ["diamond", "c9d3f0"])
+	col = Color(String(sd[1]))
+	_abox(tr, Color(0.06, 0.07, 0.12, 1.0))
+	_abox(tr, Color(col.r, col.g, col.b, 0.12))
+	_aline(tr, Color(col.r, col.g, col.b, 0.8), 2.0)
+	_sym(String(sd[0]), tr.get_center(), tr.size.y * 0.32, col)
+
+
+func _row_box(r: Rect2, col: Color, a := 0.08) -> void:
+	_abox(r, Color(0.015, 0.02, 0.045, 1.0))
+	_abox(r, Color(col.r, col.g, col.b, a))
+	_aline(r, col, 2.0)
+
+
+func _lst_state() -> bool:
+	return state == WORKSHOP or (state == SHOP and not mini_pick and mini_msg == "")
+
+
+func _lst_area() -> Rect2:
+	return Rect2(40, 244, 650, 864) if state == WORKSHOP else Rect2(40, 350, 650, 648)
+
+
+func _lst_max() -> int:
+	var n := WS_DEFS.size() if state == WORKSHOP else _shop_list().size()
+	return maxi(0, n - (8 if state == WORKSHOP else 6))
+
+
+func _lst_bar(top: float, rows: int, n: int, rh: float) -> void:
+	if n <= rows:
+		return
+	var vh := rows * rh - 10.0
+	var bh := vh * float(rows) / float(n)
+	var by := top + (vh - bh) * float(lst_off) / float(n - rows)
+	draw_rect(Rect2(684, top, 5, vh), Color(1, 1, 1, 0.08))
+	draw_rect(Rect2(684, by, 5, bh), Color(1, 1, 1, 0.45))
+
+
+func _draw_shop_list(_acc: Color) -> void:
+	for ti in SHOP_TABS.size():
+		var tr2 := _shop_tab_rect(ti)
+		var tc2 := C_GOLD if ti == shop_tab else Color(1, 1, 1, 0.5)
+		_abox(tr2, Color(0.015, 0.02, 0.045, 1.0))
+		_abox(tr2, Color(tc2.r, tc2.g, tc2.b, 0.16 if ti == shop_tab else 0.06))
+		_aline(tr2, tc2, 2.0)
+		_ctext(String(SHOP_TABS[ti]), tr2.get_center(), 18, tc2)
+	var slist := _shop_list()
+	lst_off = clampi(lst_off, 0, maxi(0, slist.size() - 6))
+	if slist.is_empty():
+		_txt("Nothing here yet", Vector2(0, 560), T_HEAD, C_DIM)
+	for i in 6:
+		var idx := lst_off + i
+		if idx >= slist.size():
+			break
+		var d2: Dictionary = shop_defs[int(slist[idx])]
+		var rr2 := _shop_rect(i)
+		var lv: int = up(String(d2["id"]))
+		var costs: Array = d2["costs"]
+		var maxed := lv >= costs.size()
+		var can2 := (not maxed) and bank >= int(costs[lv])
+		var col2 := C_GOOD if can2 else (C_GOLD if maxed else Color(1, 1, 1, 0.45))
+		_row_box(rr2, col2)
+		_row_icon(String(d2["id"]), rr2)
+		var nm2 := _aname(String(d2["id"]), String(d2["name"]))
+		if costs.size() > 1:
+			nm2 += "  %d/%d" % [lv, costs.size()]
+		_txt(nm2, Vector2(rr2.position.x + 100, rr2.position.y + 38), 26, Color.WHITE, 340.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_para_fit(_atext(String(d2["id"]), String(d2["desc"])), Vector2(rr2.position.x + 100, rr2.position.y + 64), T_SMALL, Color(1, 1, 1, 0.75), 350.0, 2)
+		if maxed:
+			_txt("OWNED" if costs.size() == 1 else "MAXED", Vector2(rr2.end.x - 170, rr2.position.y + 58), 24, col2, 156.0, HORIZONTAL_ALIGNMENT_RIGHT)
+		else:
+			_txt("%d" % int(costs[lv]), Vector2(rr2.end.x - 190, rr2.position.y + 58), 26, col2, 140.0, HORIZONTAL_ALIGNMENT_RIGHT)
+			_sym("coin", Vector2(rr2.end.x - 30, rr2.position.y + 49), 13.0, C_GOLD)
+	_lst_bar(350.0, 6, slist.size(), 108.0)
+
+
+func _cur_line(y: float) -> void:
+	var items := [["coin", "%d" % bank, C_GOLD], ["core", "%d" % cores, Color("ff4fd8")]]
+	var x := 360.0 - items.size() * 90.0
+	for it in items:
+		_sym(String(it[0]), Vector2(x + 30, y - 8), 14.0, it[2])
+		_txt(String(it[1]), Vector2(x + 52, y), T_BODY + 4, it[2], 120.0, HORIZONTAL_ALIGNMENT_LEFT)
+		x += 180.0
+
+
+const CT_SLOTS := 5
+
+
+const CT_SWAP := 25
+
+
+func _ct_rect(i: int) -> Rect2:
+	return Rect2(40, 286 + i * 118, 640, 108)
+
+
+func _ct_swap_rect(i: int) -> Rect2:
+	var r := _ct_rect(i)
+	return Rect2(r.end.x - 124, r.position.y + 54, 112, 44)
+
+
+func _cur_badges() -> void:
+	var items := [["coin", coins, C_GOLD], ["core", cores, Color("ff4fd8")], ["scrap", scrap, Color("c9a36b")]]
+	var x := 24.0
+	for it in items:
+		var br := Rect2(x, 22, 136, 50)
+		var bc: Color = it[2]
+		_panel(br, bc, 0.1, false)
+		_sym(String(it[0]), Vector2(br.position.x + 24, br.get_center().y), 13.0, bc)
+		_txt("%d" % int(it[1]), Vector2(br.position.x + 44, br.get_center().y + 8), 22, bc, 86.0, HORIZONTAL_ALIGNMENT_LEFT)
+		x += 144.0
+
+
+const TRAILS := [
+	{"id": "none", "name": "NO TRAIL", "cost": 0, "col": Color("8090a8")},
+	{"id": "sparks", "name": "SPARKS", "cost": 2, "col": Color("ffd23f")},
+	{"id": "frost", "name": "FROST", "cost": 2, "col": Color("9be7ff")},
+	{"id": "ember", "name": "EMBER", "cost": 3, "col": Color("ff7a3c")},
+	{"id": "pixel", "name": "PIXEL DUST", "cost": 3, "col": Color("7cff6b")},
+	{"id": "void", "name": "VOID", "cost": 4, "col": Color("a35cff")},
+]
+
+
+const TR_LIFE := 0.7
+
+
+var tr_own := {"none": true}
+
+
+var tr_eq := "none"
+
+
+var tr_pts: Array = []
+var wt_last := Vector2(-99, -99)
+
+
+var wd_open := false
+
+
+var wd_prev := ""
+
+
+var btn_wd := Rect2(540, 76, 160, 44)
+
+
+var btn_wd_close := Rect2(260, 1060, 200, 56)
+
+
+func _wd_row(i: int) -> Rect2:
+	return Rect2(90, 460 + i * 96, 540, 86)
+
+
+func _trail_tick(prc: Vector2, sz: float) -> void:
+	if tr_eq == "none":
+		return
+	if vis_pos.distance_to(wt_last) > 0.2:
+		wt_last = vis_pos
+		tr_pts.append([vis_pos, t, randi() % 1000])
+	while tr_pts.size() > 0 and (t - float(tr_pts[0][1]) > TR_LIFE or tr_pts.size() > 40):
+		tr_pts.pop_front()
+	var off := prc - _wp(vis_pos)
+	for q in tr_pts:
+		_trail_fx(tr_eq, _wp(q[0]) + off + Vector2(0, sz * 0.32), (t - float(q[1])) / TR_LIFE, int(q[2]), sz)
+
+
+func _trail_fx(kind: String, p: Vector2, a: float, sd: int, sz: float) -> void:
+	var k := clampf(1.0 - a, 0.0, 1.0)
+	var r := sz * 0.08
+	var j := Vector2(fmod(float(sd) * 0.37, 1.0) - 0.5, fmod(float(sd) * 0.61, 1.0) - 0.5) * sz * 0.3
+	match kind:
+		"sparks":
+			var q := p + j * (0.5 + a)
+			draw_line(q, q + Vector2(j.x, -absf(j.y) - sz * 0.05) * 0.4 * k, Color(1, 0.85, 0.3, k), 2.0)
+			draw_circle(q, r * 0.6 * k + 0.5, Color(1, 1, 0.8, k))
+		"frost":
+			var q := p + j * 0.6
+			var s := r * 1.3 * k + 0.5
+			var an := t * 2.0 + float(sd)
+			var pd := PackedVector2Array()
+			for vi in 4:
+				pd.append(q + Vector2(cos(an + vi * PI * 0.5), sin(an + vi * PI * 0.5)) * s * (1.0 if vi % 2 == 0 else 0.55))
+			draw_colored_polygon(pd, Color(0.65, 0.9, 1.0, 0.85 * k))
+		"ember":
+			var q := p + Vector2(j.x * 0.6, -a * sz * 0.5)
+			draw_circle(q, r * (1.0 - a * 0.5), Color(1.0, 0.55 - 0.3 * a, 0.15, 0.85 * k))
+		"pixel":
+			var q := p + j * 0.7
+			var s := r * 1.4 * k + 1.0
+			draw_rect(Rect2(q - Vector2(s, s) * 0.5, Vector2(s, s)), Color.from_hsv(fmod(float(sd) * 0.013 + t * 0.3, 1.0), 0.8, 1.0, k))
+		"void":
+			var q := p + j * 0.3
+			draw_circle(q, r * (1.0 + a * 1.6), Color(0.55, 0.25, 1.0, 0.35 * k))
+			draw_circle(q, r * 0.7 * (1.0 + a), Color(0.05, 0.0, 0.1, 0.8 * k))
+
+
+func _wd_path(tt: float) -> Vector2:
+	return Vector2(360 + cos(tt * 1.6) * 200.0, 360 + sin(tt * 3.2) * 40.0)
+
+
+func _draw_wardrobe() -> void:
+	draw_rect(Rect2(0, 0, 720, 1280), Color(0, 0, 0, 0.7))
+	var pr := Rect2(60, 180, 600, 960)
+	draw_rect(pr, Color(0.03, 0.04, 0.08, 1.0))
+	_aline(pr, Color("a35cff"), 3.0)
+	_ctext("WARDROBE  -  STEP TRAILS", Vector2(360, 220), 30, Color.WHITE)
+	_cur_line(240.0)
+	var box := Rect2(90, 280, 540, 160)
+	draw_rect(box, Color(0.07, 0.08, 0.14, 1.0))
+	var pk := wd_prev if wd_prev != "" else tr_eq
+	if pk != "none":
+		var n := int(t / 0.04)
+		for i in 18:
+			var ts := float(n - i) * 0.04
+			_trail_fx(pk, _wd_path(ts) + Vector2(0, 22), (t - ts) / TR_LIFE, (n - i) * 97 % 1000, 70.0)
+	var cd: Dictionary = class_defs[cls_page]
+	_spr(spr_gen.player(cd["col"], _cls_art(String(cd["id"])), 0, 0, {}), _wd_path(t), 70.0)
+	for i in TRAILS.size():
+		var tr: Dictionary = TRAILS[i]
+		var id := String(tr["id"])
+		var rr := _wd_row(i)
+		var col: Color = tr["col"]
+		var sel := id == pk
+		draw_rect(rr, Color(col.r, col.g, col.b, 0.22 if sel else 0.08))
+		_aline(rr, col if sel else Color(1, 1, 1, 0.15), 2.0)
+		draw_circle(rr.position + Vector2(44, 43), 18.0, col)
+		_txt(String(tr["name"]), Vector2(rr.position.x + 80, rr.position.y + 54), 26, Color.WHITE, 300.0, HORIZONTAL_ALIGNMENT_LEFT)
+		var st := ""
+		var sc := C_DIM
+		if id == tr_eq:
+			st = "EQUIPPED"
+			sc = C_GOLD
+		elif tr_own.has(id):
+			st = "TAP TO EQUIP" if sel else "OWNED"
+		else:
+			st = ("BUY  %d CORES" if sel else "%d CORES") % int(tr["cost"])
+			sc = Color("ffc93c") if cores >= int(tr["cost"]) else Color(1, 0.4, 0.4)
+		_txt(st, Vector2(rr.position.x + 300, rr.position.y + 54), 22, sc, 220.0, HORIZONTAL_ALIGNMENT_RIGHT)
+	_button(btn_wd_close, "CLOSE", Color("a35cff"), 26)
+
+
+func _wd_input(p: Vector2) -> void:
+	if btn_wd_close.has_point(p):
+		wd_open = false
+		wd_prev = ""
+		_sfx("ui")
+		return
+	for i in TRAILS.size():
+		if not _wd_row(i).has_point(p):
+			continue
+		var tr: Dictionary = TRAILS[i]
+		var id := String(tr["id"])
+		if wd_prev != id and id != tr_eq:
+			wd_prev = id
+			_sfx("ui")
+			return
+		if tr_own.has(id):
+			tr_eq = id
+			tr_pts.clear()
+			_sfx("ui")
+		elif cores >= int(tr["cost"]):
+			cores -= int(tr["cost"])
+			tr_own[id] = true
+			tr_eq = id
+			tr_pts.clear()
+			_sfx("big")
+		else:
+			_sfx("blocked")
+			return
+		_save_meta()
+		return
