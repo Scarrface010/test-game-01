@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 103
+const BUILD := 104
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1917,7 +1917,7 @@ func _draw_clear_pop(acc: Color) -> void:
 	_abox(r, Color(0.03, 0.04, 0.08, 0.95 * e))
 	_abox(r, Color(acc.r, acc.g, acc.b, 0.1 * e))
 	_aline(r, Color(acc.r, acc.g, acc.b, e), 3.0)
-	_txt(over_title, Vector2(r.position.x, r.position.y + 86), 52, Color(acc.r, acc.g, acc.b, e), r.size.x)
+	_txt(over_title, Vector2(r.position.x, r.position.y + 86), T_TITLE, Color(acc.r, acc.g, acc.b, e), r.size.x)
 	var ly := r.position.y + 150.0
 	for line in over_sub.split("\n"):
 		_txt(line, Vector2(r.position.x, ly), 24, Color(1, 1, 1, 0.85 * e), r.size.x)
@@ -8960,16 +8960,16 @@ func _draw_skills_ui(acc: Color) -> void:
 	draw_rect(Rect2(0, 0, vw.x, SK_MAP_TOP), Color("0a0c14"))
 	draw_rect(Rect2(0, SK_MAP_BOT, vw.x, vw.y - SK_MAP_BOT + 400.0), Color("0a0c14"))
 	draw_line(Vector2(0, SK_MAP_TOP), Vector2(vw.x, SK_MAP_TOP), Color(1, 1, 1, 0.15), 2.0)
-	_txt("CLASS TREE" if sk_view == 1 else "SKILL WEB", Vector2(0, 130), 52, acc)
+	_txt("CLASS TREE" if sk_view == 1 else "SKILL WEB", Vector2(0, 130), T_TITLE, acc)
 	var nxt := (level / 3 + 1) * 3
-	_txt("Points: %d      next at level %d      Coins: %d" % [skill_pts, nxt, coins], Vector2(0, 178), 26, Color("ffd84f") if skill_pts > 0 else Color(1, 1, 1, 0.7))
+	_txt("POINTS %d      NEXT AT LV %d      COINS %d" % [skill_pts, nxt, coins], Vector2(0, 178), T_BODY, Color("ffd84f") if skill_pts > 0 else Color(1, 1, 1, 0.7))
 	if sk_view == 0:
 		_button(btn_sk_ctr, "RECENTRE", acc, 18)
 	_button(btn_sk_view, "SKILL WEB" if sk_view == 1 else "CLASS TREE", acc, 18)
 	# detail panel
 	_obox(Rect2(30, 956, 660, 178), Color(1, 1, 1, 0.05))
 	if sk_sel == "":
-		_txt("Tap a node to inspect it. Diamonds at the ends are strongest.", Vector2(46, 1000), 20, Color(1, 1, 1, 0.6), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("Tap a node to inspect it. Diamonds at the ends are strongest.", Vector2(46, 1000), T_SMALL, C_DIM, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
 	else:
 		var sd: Dictionary = sk_defs[sk_sel]
 		var sc: Color = sd["col"]
@@ -14672,10 +14672,10 @@ func _draw_mastery(acc: Color) -> void:
 	var lv := mx_level(cid)
 	_button(btn_mx_l, "<", col, 40)
 	_button(btn_mx_r, ">", col, 40)
-	_txt(_cls_name(cid).to_upper() + " MASTERY", Vector2(0, 150), 44, col)
+	_txt(_cls_name(cid).to_upper() + " MASTERY", Vector2(0, 150), T_TITLE, col)
 	var pr := _mx_prog(cid)
 	var head := ("MASTER  -  %d stars" % mx_stars(cid)) if lv >= MX_MAX else ("Level %d / %d" % [lv, MX_MAX])
-	_txt("%s     %d / %d XP" % [head, pr.x, pr.y], Vector2(0, 198), 22, Color("ffd84f"))
+	_txt("%s     %d / %d XP" % [head, pr.x, pr.y], Vector2(0, 198), T_BODY, C_GOLD)
 	draw_rect(Rect2(60, 212, 600, 12), Color(1, 1, 1, 0.1))
 	draw_rect(Rect2(60, 212, 600.0 * clampf(float(pr.x) / float(maxi(1, pr.y)), 0.0, 1.0), 12), col)
 	var pct := lv + mini(25, mx_stars(cid))
@@ -14686,7 +14686,7 @@ func _draw_mastery(acc: Color) -> void:
 	if not CK.has(cid):
 		_button(btn_mx_back, "BACK", acc, 28)
 		return
-	_txt("SPECIALISATION  (Mastery 10)", Vector2(40, 314), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("SPECIALISATION  -  MASTERY 10", Vector2(40, 314), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	for i in 2:
 		var sp := "a" if i == 0 else "b"
 		var sd: Dictionary = CK[cid][sp]
@@ -14701,9 +14701,9 @@ func _draw_mastery(acc: Color) -> void:
 		var nn: PackedStringArray = []
 		for nd in sd["nodes"]:
 			nn.append(String(nd[0]))
-		_para_fit("Nodes: " + ", ".join(nn), Vector2(r.position.x + 14, r.position.y + 128), 14, Color(1, 1, 1, 0.6), r.size.x - 28, 2)
+		_para_fit("Nodes: " + ", ".join(nn), Vector2(r.position.x + 14, r.position.y + 128), T_SMALL, Color(1, 1, 1, 0.6), r.size.x - 28, 2)
 		_txt("ACTIVE" if on else ("TAP TO CHOOSE" if can else "LOCKED"), Vector2(r.position.x, r.end.y - 12), 18, sc if on else Color(1, 1, 1, 0.55), r.size.x)
-	_txt("SUB-SPECIALISATION  (Mastery 20)", Vector2(40, 550), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("SUB-SPECIALISATION  -  MASTERY 20", Vector2(40, 550), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var csp := String(mspec.get(cid, ""))
 	if lv < 10 or not CK[cid].has(csp):
 		_para("Pick a specialisation. At Mastery 20 it splits in two.", Vector2(40, 600), 18, Color(1, 1, 1, 0.5), 640.0)
@@ -14719,18 +14719,18 @@ func _draw_mastery(acc: Color) -> void:
 			_aline(r2, sc2 if (on2 or can2) else Color(1, 1, 1, 0.25), 3.0 if on2 else 2.0)
 			_txt(String(sbd["n"]), Vector2(r2.position.x, r2.position.y + 30), 22, sc2, r2.size.x)
 			var kn: Array = sbd["k"]
-			_para_fit(String(sbd["d"]) + "  Keystone " + String(kn[0]) + ": " + _ck_fmt(kn), Vector2(r2.position.x + 12, r2.position.y + 54), 14, Color.WHITE, r2.size.x - 24, 4)
+			_para_fit(String(sbd["d"]) + "  Keystone " + String(kn[0]) + ": " + _ck_fmt(kn), Vector2(r2.position.x + 12, r2.position.y + 54), T_SMALL, Color.WHITE, r2.size.x - 24, 4)
 			_txt("ACTIVE" if on2 else ("TAP TO CHOOSE" if can2 else "MASTERY 20"), Vector2(r2.position.x, r2.end.y - 8), 16, sc2 if on2 else Color(1, 1, 1, 0.55), r2.size.x)
 	_txt("POWER: " + String(ACTS[cid]["n"]).to_upper() if ACTS.has(cid) else "POWER", Vector2(40, 732), 20, col, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	var pl := _pw_lines(cid)
 	for i in 3:
 		var need: int = [5, 15, 25][i]
-		_txt("%s  (Mastery %d): %s" % [["I", "II", "III"][i], need, pl[i]], Vector2(40, 758 + 24 * i), 15, Color("ffd84f") if lv >= need else Color(1, 1, 1, 0.45), 640.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_txt("REWARDS", Vector2(40, 846), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("%s   M%d   %s" % [["I", "II", "III"][i], need, pl[i]], Vector2(40, 758 + 24 * i), T_SMALL, Color("ffd84f") if lv >= need else Color(1, 1, 1, 0.45), 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("REWARDS", Vector2(40, 846), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	for i in MX_MAX:
 		var colx := 40.0 + 330.0 * float(i / 15)
 		var ry := 870.0 + 20.0 * float(i % 15)
-		_txt("%d  %s" % [i + 1, _mx_rew_text(cid, i + 1)], Vector2(colx, ry), 14, Color("ffd84f") if lv >= i + 1 else Color(1, 1, 1, 0.45), 320.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("%d  %s" % [i + 1, _mx_rew_text(cid, i + 1)], Vector2(colx, ry), T_SMALL, Color("ffd84f") if lv >= i + 1 else Color(1, 1, 1, 0.45), 320.0, HORIZONTAL_ALIGNMENT_LEFT)
 	_button(btn_mx_back, "BACK", acc, 28)
 
 
@@ -14908,7 +14908,6 @@ func _draw_codex(acc: Color) -> void:
 	if cx_max > 0.0:
 		var fr := cx_scroll / cx_max
 		draw_rect(Rect2(706, CX_TOP + fr * (CX_BOT - CX_TOP - 60.0), 6, 60), Color(1, 1, 1, 0.3))
-	_txt("Tap a section to open it, drag to scroll" if cx_sec < 0 else "Drag to scroll", Vector2(0, CX_BOT + 14), 14, Color(1, 1, 1, 0.4))
 	_button(btn_cx_back, "SECTIONS" if cx_sec >= 0 else "BACK", acc, 28)
 
 
@@ -15666,8 +15665,8 @@ func _draw_workshop(acc: Color) -> void:
 	var pk := Color("ff4fd8")
 	var st: Dictionary = cx.get("st", {})
 	_txt("WORKSHOP", Vector2(0, 118), T_TITLE, pk)
-	_txt("Bank: %d coins      Cores: %d" % [bank, cores], Vector2(0, 168), 26, Color("ffd84f"))
-	_txt("RESEARCH  (permanent, all classes)", Vector2(40, 226), 18, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("BANK  %d coins        CORES  %d" % [bank, cores], Vector2(0, 168), T_BODY, C_GOLD)
+	_txt("RESEARCH  -  PERMANENT, ALL CLASSES", Vector2(40, 226), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	for i in WS_DEFS.size():
 		var d: Array = WS_DEFS[i]
 		var r2 := _ws_rect(i)
@@ -15679,10 +15678,10 @@ func _draw_workshop(acc: Color) -> void:
 		var col := Color("6dff9a") if can else (Color("ffd84f") if maxed else Color(1, 1, 1, 0.45))
 		_obox(r2, Color(col.r, col.g, col.b, 0.07))
 		_aline(r2, col, 2.0)
-		_txt("%s   %d/%d" % [String(d[1]), rk, mxr], Vector2(r2.position.x + 14, r2.position.y + 24), 19, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("%s   %d/%d" % [String(d[1]), rk, mxr], Vector2(r2.position.x + 14, r2.position.y + 24), T_BODY, Color.WHITE, 400.0, HORIZONTAL_ALIGNMENT_LEFT)
 		var now := String(d[2]) % _nfmt(float(d[4]) * float(rk))
 		var per := String(d[2]) % _nfmt(float(d[4]))
-		_txt("Now: %s    (each: %s)" % [now, per], Vector2(r2.position.x + 14, r2.position.y + 45), 13, Color(1, 1, 1, 0.65), 420.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("NOW %s      EACH %s" % [now, per], Vector2(r2.position.x + 14, r2.position.y + 46), 15, C_DIM, 420.0, HORIZONTAL_ALIGNMENT_LEFT)
 		var ctx := "MAXED" if maxed else ("%d c" % cst.x + ("  + %d cores" % cst.y if cst.y > 0 else ""))
 		_txt(ctx, Vector2(r2.end.x - 214, r2.position.y + 34), 18, col, 200.0, HORIZONTAL_ALIGNMENT_RIGHT)
 	_button(btn_ws_back, "BACK", acc, 28)
@@ -15691,16 +15690,16 @@ func _draw_contracts(acc: Color) -> void:
 	var pk := Color("4fd1c5")
 	var st: Dictionary = cx.get("st", {})
 	_txt("CONTRACT BOARD", Vector2(0, 118), T_TITLE, pk)
-	_txt("Bank: %d coins      Cores: %d" % [bank, cores], Vector2(0, 168), 26, Color("ffd84f"))
-	_txt("ACTIVE CONTRACTS  (done %d)" % int(st.get("contracts", 0)), Vector2(40, 254), 20, Color.WHITE, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_txt("BANK  %d coins        CORES  %d" % [bank, cores], Vector2(0, 168), T_BODY, C_GOLD)
+	_txt("ACTIVE CONTRACTS  -  %d DONE" % int(st.get("contracts", 0)), Vector2(40, 254), T_SMALL, C_GOLD, 640.0, HORIZONTAL_ALIGNMENT_LEFT)
 	for i in ct.size():
 		var c: Dictionary = ct[i]
 		var r := Rect2(40, 272 + i * 96, 640, 84)
 		_obox(r, Color(pk.r, pk.g, pk.b, 0.08))
 		_aline(r, Color(pk.r, pk.g, pk.b, 0.7), 2.0)
-		_txt(_ct_text(c), Vector2(60, r.position.y + 36), 22, Color.WHITE, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-		_txt("Reward: +%d cores, +%d coins" % [int(c["r"]), int(c["c"])], Vector2(60, r.position.y + 66), 17, Color("ffd84f"), 600.0, HORIZONTAL_ALIGNMENT_LEFT)
-	_para("Finished contracts pay out at once and a harder one replaces them.", Vector2(60, 600), 20, Color(1, 1, 1, 0.6), 600.0)
+		_txt(_ct_text(c), Vector2(60, r.position.y + 36), T_BODY, Color.WHITE, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+		_txt("+%d CORES     +%d COINS" % [int(c["r"]), int(c["c"])], Vector2(60, r.position.y + 66), T_SMALL, C_GOLD, 600.0, HORIZONTAL_ALIGNMENT_LEFT)
+	_para("Finished contracts pay out at once and a harder one replaces them.", Vector2(60, 600), T_SMALL, C_DIM, 600.0)
 	_button(btn_ws_back, "BACK", acc, 28)
 
 
