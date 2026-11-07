@@ -3,6 +3,7 @@ extends Node
 # then checks for a newer pack. Packs are only accepted if their RSA-SHA256 signature matches PUBLIC_KEY.
 const BASE_URL := "https://scarrface010.github.io/test-game-01/"
 const BASE_VERSION := 1
+const MIN_PACK := 107
 const PACK := "user://update.pck"
 const VER_FILE := "user://update_ver.txt"
 const PUBLIC_KEY := """-----BEGIN PUBLIC KEY-----
@@ -18,7 +19,14 @@ bwIDAQAB
 var status := "idle"
 
 func _ready() -> void:
-	var android := OS.has_feature("android")
+	# Play Store builds must never download or load code packs (Play policy).
+	var android := OS.has_feature("android") and not OS.has_feature("play")
+	if OS.has_feature("play"):
+		status = "play build"
+	# Packs older than MIN_PACK were built with Godot 4.4 and crash this 4.7 APK: discard them.
+	if FileAccess.file_exists(PACK) and _stored_ver() < MIN_PACK:
+		DirAccess.remove_absolute(PACK)
+		DirAccess.remove_absolute(VER_FILE)
 	if android and FileAccess.file_exists(PACK) and _stored_ver() > BASE_VERSION:
 		if ProjectSettings.load_resource_pack(PACK, true):
 			status = "loaded v%d" % _stored_ver()

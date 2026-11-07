@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 107
+const BUILD := 108
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -401,6 +401,19 @@ var btn_invmenu := Rect2(20, 76, 190, 56)
 var menu_armed := -10.0
 var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 1060, 400, 76)
+# Rewarded/interstitial ads (Play build only, see ads.gd)
+var btn_ad_revive := Rect2(160, 640, 400, 84)
+var btn_ad_giveup := Rect2(160, 750, 400, 64)
+var btn_ad_double := Rect2(160, 966, 400, 76)
+var btn_ad_core := Rect2(110, 890, 500, 64)
+var rv_ask := false
+var rv_why := ""
+var rv_used := false
+var rv_busy := false
+var ad_delta := 0
+var ad_doubled := false
+var ad_boss := false
+var ad_run_pending := false
 var btn_shop := Rect2(160, 1150, 400, 76)
 var btn_back := Rect2(250, 1010, 220, 64)
 var btn_shop2 := Rect2(480, 1100, 200, 76)
@@ -1719,6 +1732,65 @@ func _die(why: String) -> void:
 			msg += " (+1 level)"
 		_sfx("shield")
 		return
+	if not rv_used and not test_pending and _ads().rewarded_ready():
+		rv_ask = true
+		rv_why = why
+		walk.clear()
+		aim = -1
+		state = DEAD
+		state_t = t
+		_sfx("death")
+		over_title = "KNOCKED DOWN"
+		return
+	_die_final(why)
+
+
+func _ads() -> Node:
+	return get_node("/root/Ads")
+
+
+func _ad_revive_done(ok: bool) -> void:
+	rv_busy = false
+	rv_ask = false
+	if not ok:
+		_die_final(rv_why)
+		return
+	rv_used = true
+	hp = maxi(1, hp_cap() / 2)
+	oxy = oxy_max
+	state = PLAY
+	state_t = t
+	msg = "Revived! Back on your feet with half health"
+	_pop(pos, "REVIVED", Color("6dff9a"))
+	_sfx("shield")
+
+
+func _ad_double_done(ok: bool) -> void:
+	rv_busy = false
+	if not ok or ad_doubled:
+		return
+	ad_doubled = true
+	bank += ad_delta
+	_save_meta()
+	over_sub += "\nAd bonus: +%d coins (total %d)" % [ad_delta, bank]
+	_sfx("coin")
+
+
+func _ad_core_done(ok: bool) -> void:
+	rv_busy = false
+	if not ok or not ad_boss:
+		return
+	ad_boss = false
+	_ads().boss_bonus_used()
+	cores += 1
+	run_cores += 1
+	_save_meta()
+	over_sub += "\nAd bonus: +1 CORE"
+	_sfx("coin")
+
+
+func _die_final(why: String) -> void:
+	ad_run_pending = true
 	if mode == "adv":
 		_fx_burst(vis_pos, Color("ff5d5d"), 30, 5.0, 1.0, 7.0)
 		_fx_ring(vis_pos, Color("ff5d5d"), 1.6, 0.8, 6.0)
@@ -1742,6 +1814,8 @@ func _die(why: String) -> void:
 	delta += mxb
 	bank += delta
 	run_banked += delta
+	ad_delta = delta
+	ad_doubled = false
 	_mx_death()
 	var ul_line := _ul_run_end()
 	_save_meta()
@@ -1929,6 +2003,8 @@ func _draw_clear_pop(acc: Color) -> void:
 		return
 	_button(btn_cl_next, "NEXT FLOOR", Color("6dff9a"), 30)
 	_button(btn_cl_menu, ("LEAVE WITH %d COINS" % coins) if mini else "MENU", Color(1, 1, 1, 0.75), 24)
+	if ad_boss and _ads().rewarded_ready():
+		_button(btn_ad_core, "BONUS BOSS CORE (AD)", Color("ff4fd8"), 24)
 
 
 # ---------- puzzle mini-game (from the shop) ----------
@@ -3161,9 +3237,14 @@ func _gui_input(event: InputEvent) -> void:
 			_sfx("ui")
 		return
 	if state == CLEAR:
-		if t - state_t < 0.35 or t - clear_t0 < 0.95:
+		if t - state_t < 0.35 or t - clear_t0 < 0.95 or rv_busy:
+			return
+		if ad_boss and _ads().rewarded_ready() and btn_ad_core.has_point(p):
+			_sfx("ui")
+			rv_busy = _ads().show_rewarded(_ad_core_done)
 			return
 		if btn_cl_next.has_point(p):
+			ad_boss = false
 			_sfx("ui")
 			_fade_out(_mini_win if mini_done else _after_clear_fade)
 		elif btn_cl_menu.has_point(p) and not mini_done:
@@ -3268,7 +3349,23 @@ func _gui_input(event: InputEvent) -> void:
 					_sfx("blocked")
 		return
 	if state == DEAD:
-		if t - state_t < 0.7:
+		if t - state_t < 0.7 or rv_busy:
+			return
+		if rv_ask:
+			if btn_ad_revive.has_point(p):
+				_sfx("ui")
+				rv_busy = _ads().show_rewarded(_ad_revive_done)
+				if not rv_busy:
+					rv_ask = false
+					_die_final(rv_why)
+			elif btn_ad_giveup.has_point(p):
+				_sfx("ui")
+				rv_ask = false
+				_die_final(rv_why)
+			return
+		if ad_delta > 0 and not ad_doubled and _ads().rewarded_ready() and btn_ad_double.has_point(p):
+			_sfx("ui")
+			rv_busy = _ads().show_rewarded(_ad_double_done)
 			return
 		if btn_newrun.has_point(p):
 			state = CLASS
@@ -5395,6 +5492,13 @@ func _draw_overlay(acc: Color) -> void:
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
 		if t - xfer_t < 6.0:
 			_txt(xfer_msg, Vector2(0, 430), T_BODY, C_GOOD)
+	elif state == DEAD and rv_ask:
+		_txt(over_title, Vector2(0, 400), 64, Color("ffb347"))
+		_txt(rv_why, Vector2(0, 470), 26, Color("ffb0a0"))
+		_txt("Watch an ad to get back up with half health (once per run)", Vector2(0, 540), 22, Color.WHITE)
+		if t - state_t >= 0.7:
+			_button(btn_ad_revive, "REVIVE (AD)", Color("6dff9a"), 30)
+			_button(btn_ad_giveup, "GIVE UP", Color(1, 1, 1, 0.7), 24)
 	elif state == DEAD and t - state_t < 0.65:
 		var dk := clampf((t - state_t - 0.2) / 0.4, 0.0, 1.0)
 		_txt(over_title, Vector2(0, 400.0 - (1.0 - dk) * 40.0), int(64.0 + 30.0 * (1.0 - dk)), Color(1, 0.36, 0.36, dk))
@@ -5416,6 +5520,8 @@ func _draw_overlay(acc: Color) -> void:
 				_txt(line, Vector2(0, ly), 26, lc)
 			ly += 42
 			li += 1
+		if ad_delta > 0 and not ad_doubled and _ads().rewarded_ready():
+			_button(btn_ad_double, "DOUBLE COINS +%d (AD)" % ad_delta, Color("ffc93c"), 26)
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
 	elif state == CLEAR:
 		_draw_clear_pop(acc)
@@ -11020,6 +11126,7 @@ func _adv_clear() -> void:
 		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
 	relic_choices = _roll_relics(1 if boss_floor else 0)
 	_nr_clear()
+	ad_boss = boss_floor and _mx_on() and _ads().boss_bonus_available()
 	state = CLEAR
 
 
@@ -17977,6 +18084,12 @@ func _bs_def(id: String) -> Array:
 
 
 func _base_start() -> void:
+	rv_used = false
+	rv_ask = false
+	ad_boss = false
+	if ad_run_pending:
+		ad_run_pending = false
+		_ads().on_return_to_base()
 	in_base = true
 	base_prev_save_off = save_off
 	save_off = true

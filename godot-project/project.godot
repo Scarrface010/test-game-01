@@ -1,4 +1,11 @@
 ; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
@@ -6,25 +13,25 @@ config_version=5
 config/name="Pocket Station"
 run/main_scene="res://launcher.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
-config/icon="res://icon.svg"
 boot_splash/bg_color=Color(0.03, 0.04, 0.09, 1)
 boot_splash/show_image=false
+config/icon="res://icon.svg"
 
 [autoload]
 
 Boot="*res://boot.gd"
+Ads="*res://ads.gd"
 
 [display]
 
 window/size/viewport_width=720
 window/size/viewport_height=1280
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
 window/handheld/orientation=1
 
-[input_devices]
+[editor_plugins]
 
-pointing/emulate_mouse_from_touch=true
+enabled=PackedStringArray("res://addons/admob/plugin.cfg")
 
 [physics]
 
@@ -32,8 +39,7 @@ pointing/emulate_mouse_from_touch=true
 
 [rendering]
 
-textures/vram_compression/import_etc2_astc=true
-
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.082, 0.098, 0.2, 1)
