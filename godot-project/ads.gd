@@ -1,8 +1,8 @@
 extends Node
 # Ads autoload (AdMob via Poing plugin). Active only in the Play build ("play" feature, Android, Gradle).
-# Web and sideload APK: enabled=false, every call is a no-op. Unit IDs are Google TEST IDs until real ones are set.
-const REWARDED_ID := "ca-app-pub-3940256099942544/5224354917"
-const INTERSTITIAL_ID := "ca-app-pub-3940256099942544/1033173712"
+# Web and sideload APK: enabled=false, every call is a no-op. Real unit IDs. Register test phones in AdMob > Settings > Test devices.
+const REWARDED_ID := "ca-app-pub-4166427319338832/7877767153"
+const INTERSTITIAL_ID := "ca-app-pub-4166427319338832/9458442136"
 const CFG := "user://ads.cfg"
 const BOSS_DAILY_CAP := 3
 

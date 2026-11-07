@@ -15,5 +15,9 @@ $env:GODOT_ANDROID_KEYSTORE_RELEASE_PATH='F:\AI\android-build\keys\upload.keysto
 $env:GODOT_ANDROID_KEYSTORE_RELEASE_USER='upload'
 $env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=$pw
 $env:JAVA_HOME='F:\Tools\jdk17'
+# No Gradle daemon: a lingering daemon kept Godot's output pipe open and the export never returned.
+$env:GRADLE_OPTS='-Dorg.gradle.daemon=false'
 & $g --headless --path $proj --export-release "Android Play" F:\AI\android-build\out\pocketstation.aab
+$built="$proj\android\build\build\outputs\bundle\standardRelease\build-standard-release.aab"
+if (Test-Path $built) { Copy-Item $built F:\AI\android-build\out\pocketstation.aab -Force }
 "AAB build $build -> F:\AI\android-build\out\pocketstation.aab"
