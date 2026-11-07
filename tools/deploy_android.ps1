@@ -3,7 +3,7 @@
 param([Parameter(Mandatory=$true)][int]$Version)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
-$g='F:\AI\android-build\godot\Godot_v4.4.1-stable_win64_console.exe'
+$g='F:\Tools\Godot\Godot_v4.7.2-stable_win64_console.exe'
 $o='C:\Program Files\Git\usr\bin\openssl.exe'
 $key='F:\AI\android-build\keys\update_private.pem'
 & $g --headless --path "$root\godot-project" --export-pack Android "$root\android.pck" | Out-Null

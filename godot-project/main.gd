@@ -337,7 +337,7 @@ const VOL_NAMES := ["100%", "60%", "30%", "OFF"]
 var inv_vel := 0.0
 var inv_mv_t := -10.0
 var press_p := Vector2(-999, -999)
-const JOY_STEP := 0.16  # seconds per step while the stick is held
+const JOY_STEP := 0.21  # seconds per step while the stick is held
 var joy_on := false
 var joy_dir := Vector2i.ZERO
 var joy_v := Vector2.ZERO
@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 105
+const BUILD := 107
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -3363,13 +3363,13 @@ func _process(dt: float) -> void:
 				_adv_step(pos + joy_dir, true)
 		elif walk.size() > 0:
 			walk_t += dt
-			if walk_t >= 0.11:
+			if walk_t >= 0.15:
 				walk_t = 0.0
 				var anc: Vector2i = walk.pop_front()
 				_adv_step(anc, walk.is_empty())
 	elif state == PLAY and walk.size() > 0:
 		walk_t += dt
-		if walk_t >= 0.12:
+		if walk_t >= 0.16:
 			walk_t = 0.0
 			var nc: Vector2i = walk.pop_front()
 			if is_dark(nc):
@@ -3888,9 +3888,9 @@ func _anim_update(dt: float) -> void:
 		vis_pos = tgt
 		dist = 0.0
 	elif dist > 0.001:
-		vis_pos = vis_pos.move_toward(tgt, dt * (7.0 + dist * 14.0))
+		vis_pos = vis_pos.move_toward(tgt, dt * (5.0 + dist * 10.0))
 	if dist > 0.05:
-		walk_phase += dt * 9.0
+		walk_phase += dt * 7.0
 		idle_t = 0.0
 		if absf(d.x) > 0.02 or absf(d.y) > 0.02:
 			if absf(d.x) >= absf(d.y):
