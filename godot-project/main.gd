@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 108
+const BUILD := 109
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -406,6 +406,7 @@ var btn_ad_revive := Rect2(160, 640, 400, 84)
 var btn_ad_giveup := Rect2(160, 750, 400, 64)
 var btn_ad_double := Rect2(160, 966, 400, 76)
 var btn_ad_core := Rect2(110, 890, 500, 64)
+var btn_ad_privacy := Rect2(536, 20, 164, 46)
 var rv_ask := false
 var rv_why := ""
 var rv_used := false
@@ -4252,6 +4253,10 @@ func _settings_input(p: Vector2) -> void:
 		_apply_sound()
 		_sfx("ui")
 		return
+	if btn_ad_privacy.has_point(p) and _ads().privacy_options_required():
+		_ads().show_privacy_options()
+		_sfx("ui")
+		return
 	if btn_sv_back.has_point(p):
 		state = set_ret
 		set_ret = MODE
@@ -4304,6 +4309,8 @@ func _draw_gear(gc: Vector2, col: Color) -> void:
 
 func _draw_settings(acc: Color) -> void:
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
+	if _ads().privacy_options_required():
+		_button(btn_ad_privacy, "AD PRIVACY", acc, 18)
 	_txt("SETTINGS", Vector2(0, 200), T_TITLE, acc)
 	var rows := [
 		["RESOLUTION", "NATIVE" if set_res == 0 else "720p", "Native is sharpest. 720p runs faster."],

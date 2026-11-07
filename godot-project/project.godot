@@ -8,6 +8,10 @@
 
 config_version=5
 
+[admob]
+
+general/android/app_id="ca-app-pub-4166427319338832~5303749712"
+
 [application]
 
 config/name="Pocket Station"
