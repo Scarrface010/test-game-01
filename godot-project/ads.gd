@@ -15,12 +15,80 @@ var _earned := false
 var runs_done := 0
 var boss_day := ""
 var boss_count := 0
+# Remove Ads (one-time in-app product). With it: no interstitials, rewarded offers are free (no video).
+const NOADS_ID := "remove_ads"
+var no_ads := false
+var noads_price := ""
+var billing = null
+var buy_msg := ""
 
 func _ready() -> void:
 	enabled = OS.has_feature("android") and OS.has_feature("play")
 	_load_cfg()
 	if enabled:
 		_consent.call_deferred()
+		_billing_start.call_deferred()
+
+# --- Billing (GodotGooglePlayBilling 3.x) ---
+func _billing_start() -> void:
+	if not ClassDB.class_exists("JNISingleton") or not Engine.has_singleton("GodotGooglePlayBilling"):
+		return
+	billing = load("res://addons/GodotGooglePlayBilling/BillingClient.gd").new()
+	add_child(billing)
+	billing.connected.connect(_on_bill_connected)
+	billing.query_product_details_response.connect(_on_bill_details)
+	billing.query_purchases_response.connect(_on_bill_purchases)
+	billing.on_purchase_updated.connect(_on_bill_purchases)
+	billing.start_connection()
+
+func _on_bill_connected() -> void:
+	billing.query_product_details(PackedStringArray([NOADS_ID]), 0)
+	billing.query_purchases(0)
+
+func _on_bill_details(r: Dictionary) -> void:
+	for d in r.get("product_details", []):
+		if String(d.get("product_id", "")) == NOADS_ID:
+			var o = d.get("one_time_purchase_offer_details", {})
+			if o is Dictionary:
+				noads_price = String(o.get("formatted_price", ""))
+
+func _on_bill_purchases(r: Dictionary) -> void:
+	if int(r.get("response_code", -1)) != 0:
+		if int(r.get("response_code", -1)) == 7:
+			billing.query_purchases(0)
+		return
+	for p in r.get("purchases", []):
+		if not (NOADS_ID in Array(p.get("product_ids", []))):
+			continue
+		if int(p.get("purchase_state", 0)) != 1:
+			buy_msg = "Purchase pending"
+			continue
+		if not no_ads:
+			no_ads = true
+			buy_msg = "Ads removed. Thank you!"
+			_save_cfg()
+		if not bool(p.get("is_acknowledged", false)):
+			billing.acknowledge_purchase(String(p.get("purchase_token", "")))
+
+func billing_ready() -> bool:
+	return billing != null and billing.is_ready()
+
+func buy_remove_ads() -> void:
+	if no_ads:
+		return
+	if not billing_ready():
+		buy_msg = "Store not available right now"
+		if billing != null:
+			billing.start_connection()
+		return
+	billing.purchase(NOADS_ID)
+
+func restore() -> void:
+	if billing_ready():
+		billing.query_purchases(0)
+
+func tag() -> String:
+	return "FREE" if no_ads else "AD"
 
 func _load_cfg() -> void:
 	var c := ConfigFile.new()
@@ -28,9 +96,11 @@ func _load_cfg() -> void:
 		runs_done = int(c.get_value("ads", "runs", 0))
 		boss_day = String(c.get_value("ads", "boss_day", ""))
 		boss_count = int(c.get_value("ads", "boss_count", 0))
+		no_ads = bool(c.get_value("ads", "no_ads", false))
 
 func _save_cfg() -> void:
 	var c := ConfigFile.new()
+	c.set_value("ads", "no_ads", no_ads)
 	c.set_value("ads", "runs", runs_done)
 	c.set_value("ads", "boss_day", boss_day)
 	c.set_value("ads", "boss_count", boss_count)
@@ -75,12 +145,15 @@ func _load_rewarded() -> void:
 	RewardedAdLoader.new().load(REWARDED_ID, AdRequest.new(), cb)
 
 func rewarded_ready() -> bool:
-	return enabled and _rewarded != null
+	return enabled and (no_ads or _rewarded != null)
 
 # cb(granted: bool) is called after the ad closes.
 func show_rewarded(cb: Callable) -> bool:
 	if not rewarded_ready():
 		return false
+	if no_ads:
+		cb.call_deferred(true)
+		return true
 	var ad = _rewarded
 	_rewarded = null
 	_reward_cb = cb
@@ -128,7 +201,7 @@ func _load_interstitial() -> void:
 func on_return_to_base() -> void:
 	runs_done += 1
 	_save_cfg()
-	if not enabled or _interstitial == null or runs_done <= 3 or runs_done % 3 != 0:
+	if not enabled or no_ads or _interstitial == null or runs_done <= 3 or runs_done % 3 != 0:
 		return
 	var ad = _interstitial
 	_interstitial = null

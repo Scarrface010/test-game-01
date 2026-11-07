@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 109
+const BUILD := 110
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -360,7 +360,7 @@ const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "flo
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
-	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted"]
+	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted", "deep_run"]
 var adv_text := {
 	"slowdark": "+15 air", "glass": "Gain 3 levels now, but 15 less air and air drains faster", "vanguard": "Gain a level now (each extra copy another)", "alchemist": "Potions give +20% of a level's XP more, overcharged ones +25% more", "slayer": "Elites give 50% more XP",
 	"lantern": "+1 sight and bigger scanner pulses", "ember": "+1 sight and bigger scanners, but spikes hurt 2x more",
@@ -407,6 +407,7 @@ var btn_ad_giveup := Rect2(160, 750, 400, 64)
 var btn_ad_double := Rect2(160, 966, 400, 76)
 var btn_ad_core := Rect2(110, 890, 500, 64)
 var btn_ad_privacy := Rect2(536, 20, 164, 46)
+var btn_ad_remove := Rect2(134, 20, 392, 46)
 var rv_ask := false
 var rv_why := ""
 var rv_used := false
@@ -454,6 +455,7 @@ func _ready() -> void:
 		best = int(cfg.get_value("s", "best", 0))
 		bank = int(cfg.get_value("s", "bank", 0))
 		adv_best = int(cfg.get_value("s", "best_adv", 0))
+		cos_kill = String(cfg.get_value("s", "cos_kill", "none"))
 		if bool(cfg.get_value("s", "shop_v2", false)):
 			for k in ups:
 				ups[k] = int(cfg.get_value("ups", k, 0))
@@ -986,6 +988,7 @@ func _save_meta() -> void:
 	cfg.set_value("lb", "sent_puzzle", int(lb_sent["puzzle"]))
 	cfg.set_value("lb", "sent_adv", int(lb_sent["adv"]))
 	cfg.set_value("s", "shop_v2", true)
+	cfg.set_value("s", "cos_kill", cos_kill)
 	_mx_save(cfg)
 	_ul_save(cfg)
 	for k in ups:
@@ -997,8 +1000,48 @@ func tidx() -> int:
 	return ((floor_n - 1) / 3) % themes.size()
 
 
+# Deep worlds: adventure floors 21+ use darker variants of the four worlds (same art set, new names and palettes).
+const DEEP_THEMES := [
+	{"name": "VOID REACTOR", "bg": Color("06040f"), "tile": Color("140e2c"), "tile2": Color("1a1238"), "wall": Color("4a3a7a"), "accent": Color("8a6cff"), "dark": Color("010006"), "boss": "Void Core"},
+	{"name": "BLIGHTED ARBORETUM", "bg": Color("120d06"), "tile": Color("2a2410"), "tile2": Color("332c14"), "wall": Color("6b5a2a"), "accent": Color("d8ff4f"), "dark": Color("050300"), "boss": "Blight Mother"},
+	{"name": "DROWNED VAULT", "bg": Color("04101a"), "tile": Color("0c2433"), "tile2": Color("102c3e"), "wall": Color("2f6a80"), "accent": Color("4fffe0"), "dark": Color("000508"), "boss": "Drowned Baron"},
+	{"name": "SHATTERED RIFT", "bg": Color("1a0610"), "tile": Color("340e22"), "tile2": Color("40122a"), "wall": Color("a03a6a"), "accent": Color("ff4f9a"), "dark": Color("080005"), "boss": "Rift Titan"},
+]
+var themes_deep: Array = []
+
+
+func _deep_world() -> bool:
+	return mode == "adv" and floor_n > 20 and not in_base and not tutorial and not testroom
+
+
 func cur_theme() -> Dictionary:
+	if _deep_world():
+		if themes_deep.size() != themes.size():
+			themes_deep.clear()
+			for i in themes.size():
+				var d: Dictionary = themes[i].duplicate()
+				d.merge(DEEP_THEMES[i % DEEP_THEMES.size()], true)
+				themes_deep.append(d)
+		return themes_deep[tidx()]
 	return themes[tidx()]
+
+
+# Theme index of the current boss (Deep Station rematches pick a random arena boss).
+func _boss_ti() -> int:
+	if deep_run and arena:
+		var i := ["core", "queen", "lord", "titan"].find(String(arena_d.get("kind", "")))
+		if i >= 0:
+			return i
+	return tidx()
+
+
+func _boss_name() -> String:
+	var bi := _boss_ti()
+	if bi == tidx():
+		return String(cur_theme()["boss"])
+	if _deep_world():
+		return String(DEEP_THEMES[bi % DEEP_THEMES.size()]["boss"])
+	return String(themes[bi]["boss"])
 
 
 func ring(c: Vector2i) -> int:
@@ -1183,7 +1226,7 @@ func _begin_floor() -> void:
 	pops.clear()
 	state = PLAY
 	if boss_floor:
-		msg = "BOSS FLOOR: defeat the %s to leave" % cur_theme()["boss"]
+		msg = "BOSS FLOOR: defeat the %s to leave" % _boss_name()
 	else:
 		msg = "Reach Lv %d to open the %s" % [req, cur_theme()["gate"]]
 
@@ -2005,7 +2048,7 @@ func _draw_clear_pop(acc: Color) -> void:
 	_button(btn_cl_next, "NEXT FLOOR", Color("6dff9a"), 30)
 	_button(btn_cl_menu, ("LEAVE WITH %d COINS" % coins) if mini else "MENU", Color(1, 1, 1, 0.75), 24)
 	if ad_boss and _ads().rewarded_ready():
-		_button(btn_ad_core, "BONUS BOSS CORE (AD)", Color("ff4fd8"), 24)
+		_button(btn_ad_core, "BONUS BOSS CORE (%s)" % _ads().tag(), Color("ff4fd8"), 24)
 
 
 # ---------- puzzle mini-game (from the shop) ----------
@@ -2925,6 +2968,7 @@ func _wipe_progress() -> void:
 
 
 func _new_run(start_floor := 1) -> void:
+	deep_run = false
 	floor_n = start_floor
 	clear_pend = false
 	coins = 0
@@ -3593,6 +3637,8 @@ func _fx_death(c: Vector2i) -> void:
 	_fx_burst(cf, body, 40 if is_boss else (26 if big else 16), 4.4 if big else 3.4, 0.7, 7.0)
 	_fx_burst(cf, Color.WHITE, 8, 5.0, 0.3, 4.0)
 	_fx_ring(cf, body.lightened(0.4), 0.9, 0.45, 5.0)
+	if mode == "adv":
+		_cos_kill_fx(cf, body)
 	if big:
 		_fx_burst(cf, Color("ffd84f"), 16, 5.0, 0.8, 6.0)
 		_fx_ring(cf, Color("ffd84f"), 1.4, 0.6, 4.0, 0.08)
@@ -3751,6 +3797,8 @@ func _draw_mon_sprite(c: Vector2i, ctr: Vector2, ti: int, base_lv: int, is_boss:
 	var sy := squash * (1.0 + (0.0 if asleep else 0.035 * sin(ph)))
 	var sx := 1.0 + (1.0 - sy) * 0.7
 	var bl := asleep or fmod(t * 0.42 + float(c.x * 37 + c.y * 91) * 0.173, 1.0) > 0.93
+	if is_boss and deep_run and arena and c == boss_cell:
+		ti = _boss_ti()
 	var tex: ImageTexture = tex_over if tex_over != null else _monster_tex(ti, base_lv, is_boss, bl, 0 if asleep else _mon_face(c))
 	var at := ctr + Vector2(0, -hop + yoff - (sy - 1.0) * sz * 0.5)
 	_spr_ex(tex, at, sz, mod, 1.0, 0.0, sx, sy)
@@ -4253,6 +4301,13 @@ func _settings_input(p: Vector2) -> void:
 		_apply_sound()
 		_sfx("ui")
 		return
+	if btn_ad_remove.has_point(p) and _ads().enabled:
+		if _ads().no_ads:
+			_ads().restore()
+		else:
+			_ads().buy_remove_ads()
+		_sfx("ui")
+		return
 	if btn_ad_privacy.has_point(p) and _ads().privacy_options_required():
 		_ads().show_privacy_options()
 		_sfx("ui")
@@ -4311,6 +4366,11 @@ func _draw_settings(acc: Color) -> void:
 	_button(btn_sound, "SOUND ON" if snd_on else "SOUND OFF", acc)
 	if _ads().privacy_options_required():
 		_button(btn_ad_privacy, "AD PRIVACY", acc, 18)
+	if _ads().enabled:
+		var ap: String = _ads().noads_price
+		_button(btn_ad_remove, "ADS REMOVED" if _ads().no_ads else ("REMOVE ADS " + ap).strip_edges(), C_GOLD, 18)
+		if _ads().buy_msg != "":
+			_txt(_ads().buy_msg, Vector2(0, 104), T_SMALL, C_DIM)
 	_txt("SETTINGS", Vector2(0, 200), T_TITLE, acc)
 	var rows := [
 		["RESOLUTION", "NATIVE" if set_res == 0 else "720p", "Native is sharpest. 720p runs faster."],
@@ -5504,7 +5564,7 @@ func _draw_overlay(acc: Color) -> void:
 		_txt(rv_why, Vector2(0, 470), 26, Color("ffb0a0"))
 		_txt("Watch an ad to get back up with half health (once per run)", Vector2(0, 540), 22, Color.WHITE)
 		if t - state_t >= 0.7:
-			_button(btn_ad_revive, "REVIVE (AD)", Color("6dff9a"), 30)
+			_button(btn_ad_revive, "REVIVE (%s)" % _ads().tag(), Color("6dff9a"), 30)
 			_button(btn_ad_giveup, "GIVE UP", Color(1, 1, 1, 0.7), 24)
 	elif state == DEAD and t - state_t < 0.65:
 		var dk := clampf((t - state_t - 0.2) / 0.4, 0.0, 1.0)
@@ -5528,7 +5588,7 @@ func _draw_overlay(acc: Color) -> void:
 			ly += 42
 			li += 1
 		if ad_delta > 0 and not ad_doubled and _ads().rewarded_ready():
-			_button(btn_ad_double, "DOUBLE COINS +%d (AD)" % ad_delta, Color("ffc93c"), 26)
+			_button(btn_ad_double, "DOUBLE COINS +%d (%s)" % [ad_delta, _ads().tag()], Color("ffc93c"), 26)
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
 	elif state == CLEAR:
 		_draw_clear_pop(acc)
@@ -6182,6 +6242,8 @@ func _adv_gen_arena() -> void:
 	adv_req = 0
 	var kind_ids := ["core", "queen", "lord", "titan"]
 	var k: String = kind_ids[tidx() % 4]
+	if deep_run:
+		k = kind_ids[(adv_seed & 0x7fffffff) % 4]   # Deep Station: random boss rematch
 	arena_d = {"kind": k, "mark": [], "n": 0, "shield": false, "resh": 0, "intro": false}
 	mons[stairs] = _adv_scaled(3 + floor_n / 2) + 2
 	stations[Vector2i(2, 10)] = true
@@ -6265,7 +6327,7 @@ func _arena_tick(fought: bool) -> void:
 			arena_d["mark"] = []
 			if hit:
 				var bd := maxi(2, int(round(float(2 + floor_n / 2 + level / 4) * 1.5)))
-				if not _adv_env_hurt(bd, "Blast! You lose %d health", "You were caught in the %s's blast" % String(cur_theme()["boss"]), "boom"):
+				if not _adv_env_hurt(bd, "Blast! You lose %d health", "You were caught in the %s's blast" % String(_boss_name()), "boom"):
 					return
 		elif n % (2 if k == "core" else 3) == 0:
 			arena_d["mark"] = _arena_pick_marks((4 + floor_n / 8) if k == "core" else 3)
@@ -6308,7 +6370,7 @@ func _arena_tick(fought: bool) -> void:
 				if not fought:
 					mon_lunge[bc] = [t, Vector2(pos - bc).normalized()]
 					msg = "The Crime Lord strikes!"
-					if not _adv_hurt(mon_atk(bc), String(cur_theme()["boss"]), bc):
+					if not _adv_hurt(mon_atk(bc), String(_boss_name()), bc):
 						return
 			else:
 				var dist := _adv_bfs(pos, 30)
@@ -6992,7 +7054,7 @@ func _adv_mname(c: Vector2i) -> String:
 	var th := cur_theme()
 	var names: Array = th["mons"]
 	if boss_floor and c == boss_cell:
-		return ("Ascended " if mode == "adv" and floor_n > 20 else "") + String(th["boss"])
+		return ("Ascended " if mode == "adv" and floor_n > 20 else "") + _boss_name()
 	if String(kinds.get(c, "")) == "shard":
 		return "Crystal Shard"
 	if String(kinds.get(c, "")) == "drone":
@@ -9769,9 +9831,9 @@ func _adv_begin() -> void:
 	state = PLAY
 	if arena:
 		cam = Vector2(6, 6)
-		msg = "BOSS ARENA: the %s. %s" % [cur_theme()["boss"], _arena_hint()]
+		msg = "BOSS ARENA: the %s. %s" % [_boss_name(), _arena_hint()]
 	elif boss_floor:
-		msg = "BOSS FLOOR: the %s guards the exit" % cur_theme()["boss"]
+		msg = "BOSS FLOOR: the %s guards the exit" % _boss_name()
 	else:
 		msg = "Explore! Collect %d points to unlock the %s" % [adv_req, cur_theme()["gate"]]
 		var wr := _world_rule()
@@ -12057,6 +12119,8 @@ func _adv_draw() -> void:
 			var vis := adv_vis.has(c)
 			if not _aopen(c):
 				draw_texture_rect(wall_set[_wall_var(cx, cy)], r.grow(-1.0), false)
+				if in_base:
+					_dc_draw(c, ctr)
 				var wfa := _fog_a(c, 0.6)
 				if wfa > 0.01:
 					draw_rect(r, Color(0, 0, 0, wfa))
@@ -18080,7 +18144,214 @@ const BS_ROOMS := [
 	["thr_m", "THREAT -", 8, Color("ff6a5c"), "-", Vector2i(6, 6)],
 	["thr_p", "THREAT +", 8, Color("ff6a5c"), "+", Vector2i(9, 6)],
 	["contracts", "CONTRACTS", 6, Color("4fd1c5"), "!", Vector2i(9, 8)],
+	["deep", "DEEP STATION", 0, Color("7a5cff"), "D", Vector2i(6, 4)],
+	["style", "STYLE", 0, Color("ff8ad0"), "S", Vector2i(9, 4)],
 ]
+
+# ===== B110: cosmetics - kill effects (picked at the STYLE terminal) and base decor (unlocks on milestones) =====
+# id, name, unlock kind ("" free / "runs" / "best" floor / "boss" kills), amount
+const KILL_FX := [
+	["none", "Standard", "", 0],
+	["pixel", "Pixel Pop", "runs", 2],
+	["confetti", "Confetti", "runs", 5],
+	["ember", "Ember Rise", "best", 8],
+	["frost", "Frost Shatter", "best", 12],
+	["gold", "Gold Rush", "boss", 3],
+	["bolt", "Thunder Strike", "boss", 8],
+	["void", "Void Implosion", "best", 21],
+]
+# id, name, unlock kind, amount, wall cell beside the corridor
+const DECOR := [
+	["plant", "Potted Plant", "runs", 1, Vector2i(6, 13)],
+	["crates", "Cargo Crates", "runs", 3, Vector2i(9, 13)],
+	["poster", "Recruit Poster", "runs", 6, Vector2i(6, 11)],
+	["lamp", "Lava Lamp", "best", 6, Vector2i(9, 11)],
+	["trophy", "Boss Trophy", "boss", 1, Vector2i(6, 9)],
+	["tank", "Aquarium", "best", 10, Vector2i(9, 9)],
+	["arcade", "Arcade Cabinet", "runs", 12, Vector2i(6, 7)],
+	["bot", "Pet Bot", "boss", 5, Vector2i(9, 7)],
+	["crystal", "Deep Crystal", "best", 15, Vector2i(6, 5)],
+	["banner", "Abyss Banner", "best", 21, Vector2i(9, 5)],
+]
+var cos_kill := "none"
+
+
+func _cos_bosses() -> int:
+	return int((cx.get("st", {}) as Dictionary).get("bosses", 0))
+
+
+func _cos_open(kind: String, n: int) -> bool:
+	if ul_all == 1 or kind == "":
+		return true
+	match kind:
+		"runs": return runs_done >= n
+		"best": return adv_best >= n
+		"boss": return _cos_bosses() >= n
+	return false
+
+
+func _cos_need(kind: String, n: int) -> String:
+	match kind:
+		"runs": return "finish %d runs" % n
+		"best": return "reach floor %d" % n
+		"boss": return "beat %d bosses" % n
+	return ""
+
+
+func _style_tap() -> void:
+	var open: Array = []
+	for d in KILL_FX:
+		if _cos_open(String(d[2]), int(d[3])):
+			open.append(String(d[0]))
+	var i := open.find(cos_kill)
+	cos_kill = String(open[(i + 1) % open.size()])
+	_save_meta()
+	var nm := ""
+	for d in KILL_FX:
+		if String(d[0]) == cos_kill:
+			nm = String(d[1])
+	var nd := 0
+	for d in DECOR:
+		if _cos_open(String(d[2]), int(d[3])):
+			nd += 1
+	msg = "KILL EFFECT: %s (%d / %d unlocked). Base decor %d / %d." % [nm, open.size(), KILL_FX.size(), nd, DECOR.size()]
+	for d in KILL_FX + DECOR:
+		if not _cos_open(String(d[2]), int(d[3])):
+			msg += "  Next: %s - %s." % [String(d[1]), _cos_need(String(d[2]), int(d[3]))]
+			break
+	_pop(pos, nm.to_upper(), Color("ff8ad0"))
+
+
+func _cos_kill_fx(cf: Vector2, body: Color) -> void:
+	match cos_kill:
+		"pixel":
+			for i in 14:
+				var a := randf() * TAU
+				_fx_spark(cf, Vector2(cos(a), sin(a)) * (2.0 + randf() * 3.0), [Color("4fd1ff"), Color.WHITE, body][i % 3], 0.6, 9.0, 5.0)
+		"confetti":
+			for i in 26:
+				var a := -PI / 2.0 + (randf() - 0.5) * 2.2
+				_fx_spark(cf, Vector2(cos(a), sin(a)) * (3.0 + randf() * 3.5), Color.from_hsv(randf(), 0.75, 1.0), 1.1, 5.0, 1.6)
+		"ember":
+			for i in 18:
+				_fx_spark(cf + Vector2(randf() - 0.5, 0.2) * 0.6, Vector2((randf() - 0.5) * 0.8, -1.5 - randf() * 2.0), Color("ff7b2e").lerp(Color("ffd84f"), randf()), 1.0, 5.0, 0.6)
+		"frost":
+			_fx_ring(cf, Color("9fe8ff"), 1.1, 0.5, 6.0)
+			_fx_burst(cf, Color("dff8ff"), 20, 4.0, 0.8, 6.0)
+		"gold":
+			_fx_burst(cf, Color("ffd84f"), 22, 3.6, 0.9, 7.0)
+			_fx_ring(cf, Color("ffe98a"), 0.8, 0.4, 3.0)
+		"bolt":
+			_fx_bolt(cf + Vector2(0.3, -3.5), cf, Color("bfe6ff"))
+			_fx_ring(cf, Color("bfe6ff"), 1.0, 0.35, 5.0)
+			_shake(4.0, 0.2)
+		"void":
+			_fx_ring(cf, Color("8a6cff"), 1.6, 0.5, 6.0)
+			_fx_ring(cf, Color("2a1060"), 0.5, 0.5, 9.0, 0.15)
+			for i in 16:
+				var a := randf() * TAU
+				_fx_spark(cf + Vector2(cos(a), sin(a)) * 1.2, -Vector2(cos(a), sin(a)) * 2.6, Color("b49cff"), 0.45, 5.0, 0.0)
+
+
+func _dc_draw(c: Vector2i, ctr: Vector2) -> void:
+	for d in DECOR:
+		if d[4] != c or not _cos_open(String(d[2]), int(d[3])):
+			continue
+		var s := AC
+		var id := String(d[0])
+		var fl := ctr + Vector2(0, s * 0.36)   # floor line of the alcove
+		draw_rect(Rect2(ctr - Vector2(s, s) * 0.42, Vector2(s, s) * 0.84), Color(0.03, 0.04, 0.08, 0.55))
+		match id:
+			"plant":
+				draw_rect(Rect2(fl + Vector2(-s * 0.14, -s * 0.2), Vector2(s * 0.28, s * 0.2)), Color("b0643a"))
+				for k in 5:
+					var a := -PI / 2.0 + (k - 2) * 0.42 + sin(t * 1.3 + k) * 0.05
+					draw_line(fl + Vector2(0, -s * 0.2), fl + Vector2(0, -s * 0.2) + Vector2.from_angle(a) * s * 0.34, Color("5fd36a"), s * 0.07)
+			"crates":
+				draw_rect(Rect2(fl + Vector2(-s * 0.34, -s * 0.26), Vector2(s * 0.34, s * 0.26)), Color("8a6a45"))
+				draw_rect(Rect2(fl + Vector2(0.02 * s, -s * 0.22), Vector2(s * 0.3, s * 0.22)), Color("a07a4f"))
+				draw_rect(Rect2(fl + Vector2(-s * 0.2, -s * 0.5), Vector2(s * 0.3, s * 0.24)), Color("b88a55"))
+				draw_line(fl + Vector2(-s * 0.34, -s * 0.13), fl + Vector2(0, -s * 0.13), Color("5a4028"), 2.0)
+			"poster":
+				var pr := Rect2(ctr + Vector2(-s * 0.22, -s * 0.34), Vector2(s * 0.44, s * 0.56))
+				draw_rect(pr, Color("e8f4ff"))
+				draw_rect(pr.grow(-3.0), Color("2a3a6a"))
+				draw_circle(pr.get_center() + Vector2(0, -s * 0.06), s * 0.1, Color("4fd1ff"))
+				draw_rect(Rect2(pr.position + Vector2(5, pr.size.y - 12), Vector2(pr.size.x - 10, 5)), Color("ffd84f"))
+			"lamp":
+				var k := 0.5 + 0.5 * sin(t * 1.7)
+				draw_rect(Rect2(fl + Vector2(-s * 0.1, -s * 0.08), Vector2(s * 0.2, s * 0.08)), Color("56607f"))
+				draw_rect(Rect2(fl + Vector2(-s * 0.08, -s * 0.5), Vector2(s * 0.16, s * 0.42)), Color(1.0, 0.4, 0.6, 0.5))
+				draw_circle(fl + Vector2(0, -s * (0.16 + 0.26 * k)), s * 0.05, Color("ffb347"))
+				draw_circle(fl + Vector2(0, -s * 0.3), s * 0.3, Color(1.0, 0.5, 0.6, 0.08))
+			"trophy":
+				draw_rect(Rect2(fl + Vector2(-s * 0.14, -s * 0.08), Vector2(s * 0.28, s * 0.08)), Color("8a6a2a"))
+				draw_rect(Rect2(fl + Vector2(-s * 0.03, -s * 0.2), Vector2(s * 0.06, s * 0.12)), Color("ffd84f"))
+				draw_circle(fl + Vector2(0, -s * 0.32), s * 0.14, Color("ffd84f"))
+				draw_arc(fl + Vector2(-s * 0.16, -s * 0.34), s * 0.06, 0, TAU, 10, Color("ffd84f"), 2.0)
+				draw_arc(fl + Vector2(s * 0.16, -s * 0.34), s * 0.06, 0, TAU, 10, Color("ffd84f"), 2.0)
+				if fmod(t, 2.5) < 0.3:
+					draw_circle(fl + Vector2(s * 0.06, -s * 0.38), 2.5, Color.WHITE)
+			"tank":
+				var tr := Rect2(ctr + Vector2(-s * 0.36, -s * 0.24), Vector2(s * 0.72, s * 0.5))
+				draw_rect(tr, Color(0.2, 0.6, 0.9, 0.45))
+				draw_rect(tr, Color("9fe8ff"), false, 2.0)
+				for k in 2:
+					var fx2 := tr.position.x + fmod(t * (14.0 + k * 9.0) + k * 30.0, tr.size.x)
+					draw_circle(Vector2(fx2, tr.position.y + tr.size.y * (0.35 + 0.3 * k)), s * 0.045, [Color("ffb347"), Color("ff6f91")][k])
+				for k in 3:
+					var by := fmod(t * 20.0 + k * 13.0, tr.size.y)
+					draw_circle(Vector2(tr.position.x + tr.size.x * (0.2 + 0.3 * k), tr.end.y - by), 1.5, Color(1, 1, 1, 0.5))
+			"arcade":
+				draw_rect(Rect2(ctr + Vector2(-s * 0.2, -s * 0.38), Vector2(s * 0.4, s * 0.74)), Color("3a2a6a"))
+				var sc := Color.from_hsv(fmod(t * 0.2, 1.0), 0.6, 1.0)
+				draw_rect(Rect2(ctr + Vector2(-s * 0.15, -s * 0.3), Vector2(s * 0.3, s * 0.22)), sc.darkened(0.5))
+				draw_circle(ctr + Vector2(-s * 0.04, -s * 0.2), s * 0.03, sc)
+				draw_circle(ctr + Vector2(-s * 0.08, s * 0.02), s * 0.03, Color("ff5d5d"))
+				draw_circle(ctr + Vector2(s * 0.06, s * 0.02), s * 0.03, Color("ffd84f"))
+			"bot":
+				var bp := ctr + Vector2(sin(t * 0.9) * s * 0.12, sin(t * 2.6) * s * 0.04 - s * 0.04)
+				draw_circle(bp + Vector2(0, s * 0.36), s * 0.12, Color(0, 0, 0, 0.3))
+				draw_circle(bp, s * 0.17, Color("c9d3f0"))
+				draw_rect(Rect2(bp + Vector2(-s * 0.1, -s * 0.05), Vector2(s * 0.2, s * 0.08)), Color("10142a"))
+				var blink := fmod(t, 3.0) < 0.12
+				if not blink:
+					draw_circle(bp + Vector2(-s * 0.045, -s * 0.01), s * 0.025, Color("4fd1ff"))
+					draw_circle(bp + Vector2(s * 0.045, -s * 0.01), s * 0.025, Color("4fd1ff"))
+				draw_line(bp + Vector2(0, -s * 0.17), bp + Vector2(0, -s * 0.26), Color("c9d3f0"), 2.0)
+				draw_circle(bp + Vector2(0, -s * 0.27), 3.0, Color("ff6f91"))
+			"crystal":
+				var g := 0.5 + 0.5 * sin(t * 2.0)
+				draw_circle(ctr, s * 0.32, Color(0.6, 0.4, 1.0, 0.1 + 0.08 * g))
+				draw_colored_polygon(PackedVector2Array([fl + Vector2(-s * 0.14, 0), fl + Vector2(0, -s * 0.6), fl + Vector2(s * 0.14, 0)]), Color("b49cff"))
+				draw_colored_polygon(PackedVector2Array([fl + Vector2(-s * 0.26, 0), fl + Vector2(-s * 0.16, -s * 0.34), fl + Vector2(-s * 0.08, 0)]), Color("8a6cff"))
+				draw_colored_polygon(PackedVector2Array([fl + Vector2(s * 0.08, 0), fl + Vector2(s * 0.2, -s * 0.28), fl + Vector2(s * 0.28, 0)]), Color("8a6cff"))
+			"banner":
+				var w := sin(t * 1.5) * s * 0.03
+				draw_line(ctr + Vector2(-s * 0.26, -s * 0.38), ctr + Vector2(s * 0.26, -s * 0.38), Color("8a93a8"), 3.0)
+				draw_colored_polygon(PackedVector2Array([ctr + Vector2(-s * 0.2, -s * 0.36), ctr + Vector2(s * 0.2, -s * 0.36), ctr + Vector2(s * 0.2 + w, s * 0.3), ctr + Vector2(w, s * 0.18), ctr + Vector2(-s * 0.2 + w, s * 0.3)]), Color("5a0f3a"))
+				draw_circle(ctr + Vector2(w * 0.5, -s * 0.06), s * 0.1, Color("ff4f9a"))
+const DEEP_NEED := 15      # best adventure floor needed to open the Deep Station dive
+const DEEP_START := 13     # dives start here (anomalies from 14, deep worlds from 21)
+var deep_run := false      # this run is a Deep Station dive: arena bosses are random rematches
+
+
+func _deep_locked() -> bool:
+	return adv_best < DEEP_NEED and ul_all == 0
+
+
+func _deep_dive() -> void:
+	_base_end()
+	deep_run = true
+	_new_run(DEEP_START)
+	deep_run = true
+	_adv_level_up(14)
+	for i in 4:
+		_adv_give_gear(_adv_roll_gear(null, 1))
+	hp = hp_cap()
+	oxy = oxy_max
+	msg = "DEEP STATION DIVE: you start on floor %d at level %d with 4 pieces of gear. Every world's boss is a random rematch." % [floor_n, level]
+	_pop(pos, "DEEP DIVE", Color("7a5cff"))
 
 
 func _bs_def(id: String) -> Array:
@@ -18091,6 +18362,7 @@ func _bs_def(id: String) -> Array:
 
 
 func _base_start() -> void:
+	deep_run = false
 	rv_used = false
 	rv_ask = false
 	ad_boss = false
@@ -18161,6 +18433,10 @@ func _bs_open(kind: String) -> void:
 	swipe_on = false
 	var id := kind.substr(3)
 	var d := _bs_def(id)
+	if id == "deep" and _deep_locked():
+		msg = "LOCKED: DEEP STATION opens after you reach floor %d in an adventure run (best %d)." % [DEEP_NEED, adv_best]
+		_sfx("blocked")
+		return
 	if d.size() > 0 and not ul(int(d[2])):
 		var un: Array = UL_STEPS[int(d[2])]
 		msg = "LOCKED: %s unlocks after run %d. %s" % [String(d[1]), int(d[2]), String(un[1])]
@@ -18174,6 +18450,12 @@ func _bs_open(kind: String) -> void:
 			_base_end()
 			_new_run()
 			_first_tut()
+		"deep":
+			_sfx("big")
+			_deep_dive()
+		"style":
+			_sfx("ui")
+			_style_tap()
 		"shop":
 			shop_return = PLAY
 			shop_tab = 0
@@ -18215,7 +18497,7 @@ func _bs_draw(ctr: Vector2, kind: String, bob: float) -> void:
 	if d.is_empty():
 		return
 	var col: Color = d[3]
-	var locked := not ul(int(d[2]))
+	var locked := not ul(int(d[2])) or (String(d[0]) == "deep" and _deep_locked())
 	if locked:
 		col = Color(0.55, 0.58, 0.68)
 	var k := 0.5 + 0.5 * sin(t * 3.0)
@@ -18834,7 +19116,7 @@ func _boss_card(u: float, acc: Color) -> void:
 		for yy in [cy - 90.0, cy + 78.0]:
 			draw_colored_polygon(PackedVector2Array([Vector2(x, yy), Vector2(x + 20, yy), Vector2(x + 8, yy + 12), Vector2(x - 12, yy + 12)]), Color(red.r, red.g, red.b, 0.85 * a))
 	_txt("WARNING", Vector2(bx, cy - 40), 26, Color(red.r, red.g, red.b, a * (0.6 + 0.4 * sin(t * 12.0))))
-	var bn := String(cur_theme()["boss"]).to_upper()
+	var bn := String(_boss_name()).to_upper()
 	_txt(bn, Vector2(bx + 3, cy + 33), 62, Color(0, 0, 0, 0.7 * a))
 	_txt(bn, Vector2(bx, cy + 30), 62, Color(1, 1, 1, a))
 	_txt("BOSS  -  FLOOR %d" % floor_n, Vector2(bx, cy + 66), 20, Color(acc.r, acc.g, acc.b, a))
