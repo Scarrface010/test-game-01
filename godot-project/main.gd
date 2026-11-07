@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 111
+const BUILD := 112
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -12119,8 +12119,6 @@ func _adv_draw() -> void:
 			var vis := adv_vis.has(c)
 			if not _aopen(c):
 				draw_texture_rect(wall_set[_wall_var(cx, cy)], r.grow(-1.0), false)
-				if in_base:
-					_dc_draw(c, ctr)
 				var wfa := _fog_a(c, 0.6)
 				if wfa > 0.01:
 					draw_rect(r, Color(0, 0, 0, wfa))
@@ -18148,7 +18146,7 @@ const BS_ROOMS := [
 	["style", "STYLE", 0, Color("ff8ad0"), "S", Vector2i(9, 4)],
 ]
 
-# ===== B110: cosmetics - kill effects (picked at the STYLE terminal) and base decor (unlocks on milestones) =====
+# ===== B110: cosmetics - kill effects (picked at the STYLE terminal) =====
 # id, name, unlock kind ("" free / "runs" / "best" floor / "boss" kills), amount
 const KILL_FX := [
 	["none", "Standard", "", 0],
@@ -18159,19 +18157,6 @@ const KILL_FX := [
 	["gold", "Gold Rush", "boss", 3],
 	["bolt", "Thunder Strike", "boss", 8],
 	["void", "Void Implosion", "best", 21],
-]
-# id, name, unlock kind, amount, wall cell beside the corridor
-const DECOR := [
-	["plant", "Potted Plant", "runs", 1, Vector2i(6, 13)],
-	["crates", "Cargo Crates", "runs", 3, Vector2i(9, 13)],
-	["poster", "Recruit Poster", "runs", 6, Vector2i(6, 11)],
-	["lamp", "Lava Lamp", "best", 6, Vector2i(9, 11)],
-	["trophy", "Boss Trophy", "boss", 1, Vector2i(6, 9)],
-	["tank", "Aquarium", "best", 10, Vector2i(9, 9)],
-	["arcade", "Arcade Cabinet", "runs", 12, Vector2i(6, 7)],
-	["bot", "Pet Bot", "boss", 5, Vector2i(9, 7)],
-	["crystal", "Deep Crystal", "best", 15, Vector2i(6, 5)],
-	["banner", "Abyss Banner", "best", 21, Vector2i(9, 5)],
 ]
 var cos_kill := "none"
 
@@ -18210,12 +18195,8 @@ func _style_tap() -> void:
 	for d in KILL_FX:
 		if String(d[0]) == cos_kill:
 			nm = String(d[1])
-	var nd := 0
-	for d in DECOR:
-		if _cos_open(String(d[2]), int(d[3])):
-			nd += 1
-	msg = "KILL EFFECT: %s (%d / %d unlocked). Base decor %d / %d." % [nm, open.size(), KILL_FX.size(), nd, DECOR.size()]
-	for d in KILL_FX + DECOR:
+	msg = "KILL EFFECT: %s (%d / %d unlocked)." % [nm, open.size(), KILL_FX.size()]
+	for d in KILL_FX:
 		if not _cos_open(String(d[2]), int(d[3])):
 			msg += "  Next: %s - %s." % [String(d[1]), _cos_need(String(d[2]), int(d[3]))]
 			break
@@ -18253,84 +18234,6 @@ func _cos_kill_fx(cf: Vector2, body: Color) -> void:
 				_fx_spark(cf + Vector2(cos(a), sin(a)) * 1.2, -Vector2(cos(a), sin(a)) * 2.6, Color("b49cff"), 0.45, 5.0, 0.0)
 
 
-func _dc_draw(c: Vector2i, ctr: Vector2) -> void:
-	for d in DECOR:
-		if d[4] != c or not _cos_open(String(d[2]), int(d[3])):
-			continue
-		var s := AC
-		var id := String(d[0])
-		var fl := ctr + Vector2(0, s * 0.36)   # floor line of the alcove
-		draw_rect(Rect2(ctr - Vector2(s, s) * 0.42, Vector2(s, s) * 0.84), Color(0.03, 0.04, 0.08, 0.55))
-		match id:
-			"plant":
-				draw_rect(Rect2(fl + Vector2(-s * 0.14, -s * 0.2), Vector2(s * 0.28, s * 0.2)), Color("b0643a"))
-				for k in 5:
-					var a := -PI / 2.0 + (k - 2) * 0.42 + sin(t * 1.3 + k) * 0.05
-					draw_line(fl + Vector2(0, -s * 0.2), fl + Vector2(0, -s * 0.2) + Vector2.from_angle(a) * s * 0.34, Color("5fd36a"), s * 0.07)
-			"crates":
-				draw_rect(Rect2(fl + Vector2(-s * 0.34, -s * 0.26), Vector2(s * 0.34, s * 0.26)), Color("8a6a45"))
-				draw_rect(Rect2(fl + Vector2(0.02 * s, -s * 0.22), Vector2(s * 0.3, s * 0.22)), Color("a07a4f"))
-				draw_rect(Rect2(fl + Vector2(-s * 0.2, -s * 0.5), Vector2(s * 0.3, s * 0.24)), Color("b88a55"))
-				draw_line(fl + Vector2(-s * 0.34, -s * 0.13), fl + Vector2(0, -s * 0.13), Color("5a4028"), 2.0)
-			"poster":
-				var pr := Rect2(ctr + Vector2(-s * 0.22, -s * 0.34), Vector2(s * 0.44, s * 0.56))
-				draw_rect(pr, Color("e8f4ff"))
-				draw_rect(pr.grow(-3.0), Color("2a3a6a"))
-				draw_circle(pr.get_center() + Vector2(0, -s * 0.06), s * 0.1, Color("4fd1ff"))
-				draw_rect(Rect2(pr.position + Vector2(5, pr.size.y - 12), Vector2(pr.size.x - 10, 5)), Color("ffd84f"))
-			"lamp":
-				var k := 0.5 + 0.5 * sin(t * 1.7)
-				draw_rect(Rect2(fl + Vector2(-s * 0.1, -s * 0.08), Vector2(s * 0.2, s * 0.08)), Color("56607f"))
-				draw_rect(Rect2(fl + Vector2(-s * 0.08, -s * 0.5), Vector2(s * 0.16, s * 0.42)), Color(1.0, 0.4, 0.6, 0.5))
-				draw_circle(fl + Vector2(0, -s * (0.16 + 0.26 * k)), s * 0.05, Color("ffb347"))
-				draw_circle(fl + Vector2(0, -s * 0.3), s * 0.3, Color(1.0, 0.5, 0.6, 0.08))
-			"trophy":
-				draw_rect(Rect2(fl + Vector2(-s * 0.14, -s * 0.08), Vector2(s * 0.28, s * 0.08)), Color("8a6a2a"))
-				draw_rect(Rect2(fl + Vector2(-s * 0.03, -s * 0.2), Vector2(s * 0.06, s * 0.12)), Color("ffd84f"))
-				draw_circle(fl + Vector2(0, -s * 0.32), s * 0.14, Color("ffd84f"))
-				draw_arc(fl + Vector2(-s * 0.16, -s * 0.34), s * 0.06, 0, TAU, 10, Color("ffd84f"), 2.0)
-				draw_arc(fl + Vector2(s * 0.16, -s * 0.34), s * 0.06, 0, TAU, 10, Color("ffd84f"), 2.0)
-				if fmod(t, 2.5) < 0.3:
-					draw_circle(fl + Vector2(s * 0.06, -s * 0.38), 2.5, Color.WHITE)
-			"tank":
-				var tr := Rect2(ctr + Vector2(-s * 0.36, -s * 0.24), Vector2(s * 0.72, s * 0.5))
-				draw_rect(tr, Color(0.2, 0.6, 0.9, 0.45))
-				draw_rect(tr, Color("9fe8ff"), false, 2.0)
-				for k in 2:
-					var fx2 := tr.position.x + fmod(t * (14.0 + k * 9.0) + k * 30.0, tr.size.x)
-					draw_circle(Vector2(fx2, tr.position.y + tr.size.y * (0.35 + 0.3 * k)), s * 0.045, [Color("ffb347"), Color("ff6f91")][k])
-				for k in 3:
-					var by := fmod(t * 20.0 + k * 13.0, tr.size.y)
-					draw_circle(Vector2(tr.position.x + tr.size.x * (0.2 + 0.3 * k), tr.end.y - by), 1.5, Color(1, 1, 1, 0.5))
-			"arcade":
-				draw_rect(Rect2(ctr + Vector2(-s * 0.2, -s * 0.38), Vector2(s * 0.4, s * 0.74)), Color("3a2a6a"))
-				var sc := Color.from_hsv(fmod(t * 0.2, 1.0), 0.6, 1.0)
-				draw_rect(Rect2(ctr + Vector2(-s * 0.15, -s * 0.3), Vector2(s * 0.3, s * 0.22)), sc.darkened(0.5))
-				draw_circle(ctr + Vector2(-s * 0.04, -s * 0.2), s * 0.03, sc)
-				draw_circle(ctr + Vector2(-s * 0.08, s * 0.02), s * 0.03, Color("ff5d5d"))
-				draw_circle(ctr + Vector2(s * 0.06, s * 0.02), s * 0.03, Color("ffd84f"))
-			"bot":
-				var bp := ctr + Vector2(sin(t * 0.9) * s * 0.12, sin(t * 2.6) * s * 0.04 - s * 0.04)
-				draw_circle(bp + Vector2(0, s * 0.36), s * 0.12, Color(0, 0, 0, 0.3))
-				draw_circle(bp, s * 0.17, Color("c9d3f0"))
-				draw_rect(Rect2(bp + Vector2(-s * 0.1, -s * 0.05), Vector2(s * 0.2, s * 0.08)), Color("10142a"))
-				var blink := fmod(t, 3.0) < 0.12
-				if not blink:
-					draw_circle(bp + Vector2(-s * 0.045, -s * 0.01), s * 0.025, Color("4fd1ff"))
-					draw_circle(bp + Vector2(s * 0.045, -s * 0.01), s * 0.025, Color("4fd1ff"))
-				draw_line(bp + Vector2(0, -s * 0.17), bp + Vector2(0, -s * 0.26), Color("c9d3f0"), 2.0)
-				draw_circle(bp + Vector2(0, -s * 0.27), 3.0, Color("ff6f91"))
-			"crystal":
-				var g := 0.5 + 0.5 * sin(t * 2.0)
-				draw_circle(ctr, s * 0.32, Color(0.6, 0.4, 1.0, 0.1 + 0.08 * g))
-				draw_colored_polygon(PackedVector2Array([fl + Vector2(-s * 0.14, 0), fl + Vector2(0, -s * 0.6), fl + Vector2(s * 0.14, 0)]), Color("b49cff"))
-				draw_colored_polygon(PackedVector2Array([fl + Vector2(-s * 0.26, 0), fl + Vector2(-s * 0.16, -s * 0.34), fl + Vector2(-s * 0.08, 0)]), Color("8a6cff"))
-				draw_colored_polygon(PackedVector2Array([fl + Vector2(s * 0.08, 0), fl + Vector2(s * 0.2, -s * 0.28), fl + Vector2(s * 0.28, 0)]), Color("8a6cff"))
-			"banner":
-				var w := sin(t * 1.5) * s * 0.03
-				draw_line(ctr + Vector2(-s * 0.26, -s * 0.38), ctr + Vector2(s * 0.26, -s * 0.38), Color("8a93a8"), 3.0)
-				draw_colored_polygon(PackedVector2Array([ctr + Vector2(-s * 0.2, -s * 0.36), ctr + Vector2(s * 0.2, -s * 0.36), ctr + Vector2(s * 0.2 + w, s * 0.3), ctr + Vector2(w, s * 0.18), ctr + Vector2(-s * 0.2 + w, s * 0.3)]), Color("5a0f3a"))
-				draw_circle(ctr + Vector2(w * 0.5, -s * 0.06), s * 0.1, Color("ff4f9a"))
 const DEEP_NEED := 15      # best adventure floor needed to open the Deep Station dive
 const DEEP_START := 13     # dives start here (anomalies from 14, deep worlds from 21)
 var deep_run := false      # this run is a Deep Station dive: arena bosses are random rematches

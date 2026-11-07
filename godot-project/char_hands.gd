@@ -2,9 +2,9 @@
 extends RefCounted
 const H := {
 	"scout": [Vector2i(111, 97), Vector2i(94, 122), Vector2i(96, 109)],
-	"mystic": [Vector2i(109, 88), Vector2i(98, 125), Vector2i(74, 108)],
+	"mystic": [Vector2i(100, 89), Vector2i(100, 124), Vector2i(92, 97)],
 	"gambler": [Vector2i(107, 84), Vector2i(101, 126), Vector2i(74, 112)],
-	"gunslinger": [Vector2i(105, 87), Vector2i(98, 126), Vector2i(75, 109)],
+	"gunslinger": [Vector2i(105, 87), Vector2i(98, 126), Vector2i(85, 97)],
 	"brute": [Vector2i(108, 88), Vector2i(97, 125), Vector2i(76, 108)],
 	"engineer": [Vector2i(105, 87), Vector2i(99, 127), Vector2i(78, 109)],
 	"hacker": [Vector2i(105, 91), Vector2i(97, 124), Vector2i(81, 110)],
