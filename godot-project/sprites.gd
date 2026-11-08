@@ -1080,6 +1080,7 @@ const W_FRONT := "res://art/gear_hi/wf_%s.png"   # gun seen down the barrel, use
 # weapon hand: art/chars/hands/<cls>.png is the class's fist, redrawn over the weapon (char_hands.py)
 const CHAR_HAND := "res://art/chars/hands/%s.png"
 const CHAR_ARM := "res://art/chars/arm/%s.png"
+const CHAR_NEAR := "res://art/chars/near/%s.png"
 const CharHands := preload("res://char_hands.gd")
 const HAND_GEN := [Vector2i(36, 118), Vector2i(94, 118), Vector2i(70, 118)]
 const CWS := 384   # canvas of the class player texture (body centred, weapons have room on every side)
@@ -1106,6 +1107,11 @@ func _player_cls(cls: String, frame: int, dir: int, eq: Dictionary) -> ImageText
 	for l in layers:
 		base.blend_rect(l, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	# b114: side view uses one shared arm (recoloured per class) over the armour, fist at CharHands side point
+	# b117: near (hanging) arm cut from the class body, drawn over the armour
+	if col == 2 and ResourceLoader.exists(CHAR_NEAR % cls):
+		var near: Image = (load(CHAR_NEAR % cls) as Texture2D).get_image()
+		near.convert(Image.FORMAT_RGBA8)
+		base.blend_rect(near, Rect2i(0, 0, HW, HH), Vector2i.ZERO)
 	if col == 2 and ResourceLoader.exists(CHAR_ARM % cls):
 		var arm: Image = (load(CHAR_ARM % cls) as Texture2D).get_image()
 		arm.convert(Image.FORMAT_RGBA8)
