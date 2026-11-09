@@ -346,7 +346,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 118
+const BUILD := 119
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -4271,7 +4271,7 @@ func _cancel_rect() -> Rect2:
 
 
 func _settings_input(p: Vector2) -> void:
-	if SET_TITLE.has_point(p) and not test_unlocked:
+	if SET_TITLE.has_point(p) and not test_unlocked and not OS.has_feature("play"):
 		set_taps = set_taps + 1 if t - set_tap_t < 1.5 else 1
 		set_tap_t = t
 		if set_taps >= 5:
