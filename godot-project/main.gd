@@ -142,6 +142,7 @@ var bank := 0
 var run_banked := 0
 var run_spent := 0   # coins spent in shops this run; still counts toward the bank
 var run_won := false # last run ended by extracting
+var run_daily := false # first run of the day (double mastery XP)
 var btn_cl_ext := Rect2(110, 974, 500, 64)
 var run_kills := 0
 var run_best := 0
@@ -349,7 +350,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 125
+const BUILD := 126
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -360,7 +361,7 @@ var save_off := false
 const SAVE_PATH := "user://run.sav"
 const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
 	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
-	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "run_spent", "adv_open", "adv_seen",
+	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "run_spent", "run_daily", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
 	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted", "deep_run"]
@@ -3502,6 +3503,9 @@ func _gui_input(event: InputEvent) -> void:
 			_sfx("ui")
 		return
 	# playing
+	if mode == "adv" and in_base and bs_pick != "":
+		_bs_pick_input(p)
+		return
 	if mode == "adv":
 		_adv_input(p)
 		return
@@ -5156,6 +5160,8 @@ func _draw() -> void:
 	if mode == "adv" and state != MODE and state != CLASS and state != SHOP and state != TUTORIAL and state != LEADER and state != SAVES and state != SETTINGS:
 		_adv_draw()
 		_fx_draw_top()
+		if state == PLAY and in_base and bs_pick != "":
+			_bs_pick_draw()
 		if state != PLAY:
 			_draw_overlay(acc)
 		_draw_tut_dlg()
@@ -5643,6 +5649,8 @@ func _draw_overlay(acc: Color) -> void:
 		_draw_gear(btn_font.get_center(), Color("c9d3f0"))
 		var bt := get_node_or_null("/root/Boot")
 		_txt("build %d  %s" % [BUILD, (bt.status if bt else "")], Vector2(0, 1274), 14, Color(1, 1, 1, 0.4))
+		if String(cx.get("day", "")) != Time.get_date_string_from_system():
+			_txt("First run today: double mastery XP", Vector2(0, 600), T_BODY, C_GOLD)
 		if t - xfer_t < 6.0:
 			_txt(xfer_msg, Vector2(0, 430), T_BODY, C_GOOD)
 	elif state == DEAD and rv_ask:
@@ -10255,6 +10263,8 @@ func _adv_fight(nc: Vector2i) -> int:
 
 
 func _adv_step(nc: Vector2i, final: bool) -> void:
+	if in_base and bs_pick != "":
+		return
 	var th := cur_theme()
 	var snd := "step"
 	var extra := 0.0
@@ -11303,6 +11313,8 @@ func _adv_clear() -> void:
 		over_sub = "Air bonus +%d coins\nNext: %s" % [bonus, nxt]
 	else:
 		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
+	if _ce_on():
+		over_sub += "\n" + _ce_line()
 	relic_choices = _roll_relics(1 if boss_floor else 0)
 	_nr_clear()
 	ad_boss = boss_floor and _mx_on() and _ads().boss_bonus_available()
@@ -14508,7 +14520,7 @@ func _mx_gain(n: int) -> void:
 		return
 	var old := mx_level(cls)
 	var os := mx_stars(cls)
-	n = int(round(float(n) * _ex_mx_mult()))
+	n = int(round(float(n) * _ex_mx_mult())) * (2 if run_daily else 1)
 	mxp[cls] = int(mxp.get(cls, 0)) + n
 	run_mxp += n
 	var nl := mx_level(cls)
@@ -14531,8 +14543,15 @@ func _mx_init_run() -> void:
 	run_mxp = 0
 	cp_dirty = true
 	_ex_init_run()
+	run_daily = false
 	if not _mx_on():
 		return
+	# A2: first run of the day gets double mastery XP
+	var today := Time.get_date_string_from_system()
+	if String(cx.get("day", "")) != today:
+		cx["day"] = today
+		run_daily = true
+		msg += "   FIRST RUN TODAY: double mastery XP"
 	_cx_st("runs", 1)
 	var lv := mx_level(cls)
 	for i in lv:
@@ -15984,7 +16003,28 @@ func _ct_met(c: Dictionary, cleared: int) -> bool:
 	return false
 
 
+# A4: before the contract board opens (run 6), one easy kill contract from run 2
+func _ce_on() -> bool:
+	return _mx_on() and not ul(6) and runs_done >= 1
+
+
+func _ce_need() -> int:
+	return 15 + 10 * int(cx.get("ce", 0))
+
+
+func _ce_line() -> String:
+	return "Contract: defeat %d enemies (%d / %d)" % [_ce_need(), mini(run_kills, _ce_need()), _ce_need()]
+
+
 func _ct_check(cleared: int) -> void:
+	if _ce_on() and run_kills >= _ce_need():
+		cores += 1
+		run_cores += 1
+		bank += 40
+		run_cts += 1
+		_pop(pos, "CONTRACT DONE", Color("ff4fd8"))
+		msg += "   Contract done: defeat %d enemies (+1 core, +40 coins)" % _ce_need()
+		cx["ce"] = int(cx.get("ce", 0)) + 1
 	if not _mx_on() or not ul(6):
 		return
 	for i in range(ct.size() - 1, -1, -1):
@@ -18422,6 +18462,7 @@ func _base_start() -> void:
 
 func _base_end() -> void:
 	in_base = false
+	bs_pick = ""
 	save_off = base_prev_save_off
 	walk.clear()
 	aim = -1
@@ -18459,6 +18500,102 @@ func _adv_gen_base() -> void:
 	adv_pts_total = 0
 
 
+# ---- B3 world shortcuts + Deep Station info screen (popups over the Station Base)
+var bs_pick := ""   # "" / "world" / "deep"
+const WS_NEED := 3  # arena boss kills in a world to unlock starting in the next one
+
+
+func _worlds_open() -> int:
+	var n := 1
+	var st: Dictionary = cx.get("st", {})
+	for w in range(1, 4):
+		if ul_all == 1 or int(st.get("wb%d" % w, 0)) >= WS_NEED:
+			n = w + 1
+		else:
+			break
+	return n
+
+
+func _bs_world_rect(i: int) -> Rect2:
+	return Rect2(110, 400 + i * 116, 500, 100)
+
+
+func _bs_back_rect() -> Rect2:
+	return Rect2(160, 880, 400, 64)
+
+
+func _bs_dive_rect() -> Rect2:
+	return Rect2(110, 770, 500, 90)
+
+
+func _bs_pick_draw() -> void:
+	draw_rect(Rect2(-60, -60, 840, 1500), Color(0, 0, 0, 0.78))
+	var r := Rect2(70, 250, 580, 720)
+	_abox(r, Color(0.03, 0.04, 0.08, 0.96))
+	if bs_pick == "world":
+		_aline(r, Color("6dff9a"), 3.0)
+		_txt("CHOOSE YOUR START", Vector2(0, 320), T_TITLE, Color("6dff9a"))
+		_txt("Beat a world's boss %d times to start in the next" % WS_NEED, Vector2(0, 362), T_SMALL, C_DIM)
+		for i in _worlds_open():
+			var th: Dictionary = themes[i]
+			var lv := _world_lv(i + 1)
+			var sub := "Floor 1" if i == 0 else "Floor %d  -  start level +%d, %d gear" % [3 * i + 1, lv, i]
+			var br := _bs_world_rect(i)
+			_panel(br, th["accent"], 0.18)
+			_txt("WORLD %d  %s" % [i + 1, String(th["name"])], Vector2(br.position.x, br.position.y + 44), 28, th["accent"], br.size.x)
+			_txt(sub, Vector2(br.position.x, br.position.y + 80), T_SMALL, C_TEXT, br.size.x)
+	else:
+		var dc := Color("7a5cff")
+		_aline(r, dc, 3.0)
+		_txt("DEEP STATION", Vector2(0, 330), T_TITLE, dc)
+		var info := "A dive straight into the lower station. You start on floor %d at level +14 with 4 pieces of gear. Every world's boss is a random rematch, anomalies start on floor 14 and the deep worlds begin at floor 21. Coins, mastery and contracts work as in a normal run." % DEEP_START
+		_para_fit(info, Vector2(110, 400), T_BODY, C_TEXT, 500.0, 9)
+		if _deep_locked():
+			_txt("LOCKED: reach floor %d in a run (best %d)" % [DEEP_NEED, adv_best], Vector2(0, 820), T_BODY, C_BAD)
+		else:
+			_button(_bs_dive_rect(), "DIVE", dc, 36)
+	_button(_bs_back_rect(), "BACK", Color(1, 1, 1, 0.7), 24)
+
+
+func _bs_pick_input(p: Vector2) -> void:
+	if _bs_back_rect().has_point(p):
+		bs_pick = ""
+		_sfx("ui")
+		return
+	if bs_pick == "deep":
+		if not _deep_locked() and _bs_dive_rect().has_point(p):
+			bs_pick = ""
+			_sfx("big")
+			_deep_dive()
+		return
+	for i in _worlds_open():
+		if _bs_world_rect(i).has_point(p):
+			bs_pick = ""
+			_sfx("big")
+			_world_start(i + 1)
+			return
+
+
+func _world_lv(w: int) -> int:
+	return 4 * (w - 1)
+
+
+func _world_start(w: int) -> void:
+	_base_end()
+	if w <= 1:
+		_new_run()
+		_first_tut()
+		return
+	_new_run(3 * (w - 1) + 1)
+	_adv_level_up(_world_lv(w))
+	for i in w - 1:
+		_adv_give_gear(_adv_roll_gear(null))
+	hp = hp_cap()
+	oxy = oxy_max
+	msg = "WORLD %d START: floor %d, +%d levels and %d gear" % [w, floor_n, _world_lv(w), w - 1]
+	_pop(pos, "WORLD %d" % w, themes[w - 1]["accent"])
+
+
 func _bs_new(step: int) -> bool:
 	return step > 0 and ul_all == 0 and ul_tapped & (1 << step) == 0
 
@@ -18472,10 +18609,6 @@ func _bs_open(kind: String) -> void:
 	swipe_on = false
 	var id := kind.substr(3)
 	var d := _bs_def(id)
-	if id == "deep" and _deep_locked():
-		msg = "LOCKED: DEEP STATION opens after you reach floor %d in an adventure run (best %d)." % [DEEP_NEED, adv_best]
-		_sfx("blocked")
-		return
 	if d.size() > 0 and not ul(int(d[2])):
 		var un: Array = UL_STEPS[int(d[2])]
 		msg = "LOCKED: %s unlocks after run %d. %s" % [String(d[1]), int(d[2]), String(un[1])]
@@ -18485,13 +18618,17 @@ func _bs_open(kind: String) -> void:
 		_ul_tap(int(d[2]))
 	match id:
 		"start":
+			if _worlds_open() > 1:
+				bs_pick = "world"
+				_sfx("ui")
+				return
 			_sfx("big")
 			_base_end()
 			_new_run()
 			_first_tut()
 		"deep":
-			_sfx("big")
-			_deep_dive()
+			bs_pick = "deep"
+			_sfx("ui")
 		"style":
 			_sfx("ui")
 			_style_tap()
