@@ -140,6 +140,7 @@ var relic_choices: Array = []
 var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
+var run_spent := 0   # coins spent in shops this run; still counts toward the bank
 var run_kills := 0
 var run_best := 0
 var run_dmg := 0
@@ -346,7 +347,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 119
+const BUILD := 124
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -357,7 +358,7 @@ var save_off := false
 const SAVE_PATH := "user://run.sav"
 const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
 	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
-	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "adv_open", "adv_seen",
+	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "run_spent", "adv_open", "adv_seen",
 	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
 	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted", "deep_run"]
@@ -1833,6 +1834,11 @@ func _ad_core_done(ok: bool) -> void:
 	_sfx("coin")
 
 
+func _spend(n: int) -> void:
+	coins -= n
+	run_spent += n
+
+
 func _die_final(why: String) -> void:
 	ad_run_pending = true
 	if mode == "adv":
@@ -1853,7 +1859,7 @@ func _die_final(why: String) -> void:
 	elif reached > best:
 		best = reached
 		was_best = true
-	var delta := maxi(0, coins - run_banked)
+	var delta := maxi(0, coins + run_spent - run_banked)
 	var mxb := _mx_bank_bonus(delta)
 	delta += mxb
 	bank += delta
@@ -2979,6 +2985,7 @@ func _new_run(start_floor := 1) -> void:
 	run_gear = 0
 	guide_seen.clear()
 	run_banked = 0
+	run_spent = 0
 	mirror_n = 0
 	lucky_n = 0
 	bounty_n = 0
@@ -3340,7 +3347,7 @@ func _gui_input(event: InputEvent) -> void:
 			if _market_rect(i).has_point(p):
 				var it: Dictionary = market_stock[i]
 				if coins >= int(it["price"]) and inv.size() < slots_n():
-					coins -= int(it["price"])
+					_spend(int(it["price"]))
 					inv.append(String(it["id"]))
 					market_stock.remove_at(i)
 					_sfx("coin")
@@ -4371,6 +4378,7 @@ func _draw_settings(acc: Color) -> void:
 		_button(btn_ad_remove, "ADS REMOVED" if _ads().no_ads else ("REMOVE ADS " + ap).strip_edges(), C_GOLD, 18)
 		if _ads().buy_msg != "":
 			_txt(_ads().buy_msg, Vector2(0, 104), T_SMALL, C_DIM)
+		_txt("ads: " + _ads().ad_status, Vector2(0, 150), T_SMALL, C_DIM)
 	_txt("SETTINGS", Vector2(0, 200), T_TITLE, acc)
 	var rows := [
 		["RESOLUTION", "NATIVE" if set_res == 0 else "720p", "Native is sharpest. 720p runs faster."],
@@ -6818,11 +6826,11 @@ func _adv_gen() -> void:
 		mons[mcell] = lv2
 		if floor_n >= 2 and rng.randf() < 0.25:
 			kinds[mcell] = "hunter"
-		elif floor_n >= 3 and rng.randf() < (0.3 if _world_rule() == "black" else 0.15):
+		elif floor_n >= 4 and rng.randf() < (0.3 if _world_rule() == "black" else 0.15):
 			kinds[mcell] = "thief"
-		elif floor_n >= 3 and rng.randf() < 0.14:
+		elif floor_n >= 5 and rng.randf() < 0.14:
 			kinds[mcell] = "shooter"
-		var el := rng.randf() < 0.15
+		var el := rng.randf() < (0.08 if floor_n <= 3 else 0.15)
 		if el:
 			elite[mcell] = true
 		pts += lv2 + (2 if el else 0)
@@ -6988,7 +6996,7 @@ func _aff_pill(p: Vector2, key: String, fs: int, right: bool) -> void:
 func mon_atk(c: Vector2i) -> int:
 	var a := maxi(1, _mon_level(c))
 	if mode == "adv":
-		a += armor_total() / 3 + (floor_n - 1) / 2
+		a += (floor_n - 1) / 2
 		if _is_frenzied(c):
 			a += maxi(2, a / 2)
 		a += _hz_atk(c)
@@ -7007,7 +7015,11 @@ func mon_hp_max(c: Vector2i) -> int:
 	if boss_floor and c == boss_cell:
 		h = int(h * 1.6)
 	if mode == "adv":
-		h = int(h * (1.0 + minf(0.6, 0.03 * float(threat()))) * (1.0 + 0.09 * float(floor_n - 1)))
+		h = int(h * (1.0 + minf(0.3, 0.015 * float(threat()))) * (1.0 + 0.06 * float(floor_n - 1)))
+		if floor_n == 1:
+			h = maxi(1, int(h * 0.6))
+		elif floor_n == 2:
+			h = maxi(1, int(h * 0.8))
 		if String(affix.get(c, "")) == "brute":
 			h *= 2
 		h = int(float(h) * _hz_hp(c))
@@ -7023,7 +7035,7 @@ func mon_hp_now(c: Vector2i) -> int:
 
 
 func dmg_taken(a: int) -> int:
-	var d := maxi(1, a - armor_total())
+	var d := maxi(1, maxi(int(ceil(a * 0.4)), a - armor_total()))
 	if mode == "adv" and sk("laststand") > 0.0 and hp * 100 < hp_cap() * 30:
 		d = maxi(1, int(round(float(d) * (1.0 - sk("laststand") / 100.0))))
 	if gm("laststand") and hp * 100 < hp_cap() * 25:
@@ -7078,7 +7090,7 @@ func _adv_level_up(n: int, pick := false) -> void:
 		oxy = oxy_max
 	var got := 0
 	for l in range(old + 1, level + 1):
-		if l % 3 == 0:
+		if l % 2 == 0:
 			got += 1
 	if got > 0:
 		skill_pts += got
@@ -8609,10 +8621,10 @@ func _affix_name(c: Vector2i, nm: String) -> String:
 
 # how strong the player's gear/relic build is; monsters grow tougher with it
 func threat() -> int:
-	return int(gear("atk")) + 2 * armor_total() + 2 * wtr().size() + skill_spent() / 2 + relic_n("prism") + relic_n("pyro") + relic_n("storm") + relic_n("toxi") + relic_n("frost") + relic_n("bloodpact") + relic_n("hood") + relic_n("echo") + relic_n("overclock")
+	return int(gear("atk")) + 2 * wtr().size() + skill_spent() / 2 + relic_n("prism") + relic_n("pyro") + relic_n("storm") + relic_n("toxi") + relic_n("frost") + relic_n("bloodpact") + relic_n("hood") + relic_n("echo") + relic_n("overclock")
 
 
-# ---------------------------------------------------------------- skill web (Adventure): a point every 3 levels, per run
+# ---------------------------------------------------------------- skill web (Adventure): a point every 2 levels, per run
 var skills: Dictionary = {}    # node id -> rank (0-2)
 var skill_pts := 0
 var sk_sel := ""
@@ -8880,7 +8892,7 @@ func sk_respec() -> bool:
 		return false
 	var oh := hp_cap()
 	var oo := oxy_max
-	coins -= sk_respec_cost()
+	_spend(sk_respec_cost())
 	skill_pts += sp
 	skills.clear()
 	_adv_apply_change(oh, oo)
@@ -9520,7 +9532,7 @@ func _trade_input(p: Vector2) -> void:
 					msg = "Tool slots are full!"
 					_sfx("blocked")
 					return
-			coins -= _eff_price(o)
+			_spend(_eff_price(o))
 			o["sold"] = true
 			_sfx("coin")
 			return
@@ -9552,7 +9564,7 @@ func _trade_reroll() -> void:
 	if coins < cost:
 		_sfx("blocked")
 		return
-	coins -= cost
+	_spend(cost)
 	var bonus := 1 if (n == 0 and gm("gamblerchip")) else 0
 	var fresh: Array = []
 	for k in 3:
@@ -9723,7 +9735,7 @@ func _adv_init_run() -> void:
 
 
 func xp_need() -> int:
-	return 12 + 6 * level
+	return 15 + 9 * level
 
 
 func _adv_gain_xp(n: int) -> void:
@@ -9756,7 +9768,7 @@ func _adv_relic_applied(id: String) -> void:
 
 
 func _adv_scaled(raw: int) -> int:
-	var r := raw + int(round(0.7 * float(level - START_LEVEL)))
+	var r := raw + int(round(0.4 * float(level - START_LEVEL)))
 	if raw >= 2:
 		r += floor_n - 1
 	else:
@@ -11293,7 +11305,7 @@ func _med_input(p: Vector2) -> void:
 			if coins < cost:
 				_sfx("blocked")
 				return
-			coins -= cost
+			_spend(cost)
 			_p_heal(amt)
 			poison_n = 0
 			msg = "Medical station: +%d HP for %d coins" % [amt, cost]
@@ -13039,7 +13051,7 @@ func _skill_selftest() -> int:
 	skill_pts = 0
 	level = 3
 	_adv_level_up(6)
-	if skill_pts != 2:
+	if skill_pts != 3:
 		print("FAIL skill points ", skill_pts)
 		bad += 1
 	if sk_buy("b0n3"):
@@ -13470,6 +13482,9 @@ func _adv_selftest() -> void:
 	for dix in 4:
 		if _aopen(pos + TDIRS[dix]) and _aopen(pos + TDIRS[dix] * 2) and _aopen(pos + TDIRS[dix] * 3):
 			shc = pos + TDIRS[dix] * 3
+			for lk in [1, 2]:
+				mons.erase(pos + TDIRS[dix] * lk)
+				vaults.erase(pos + TDIRS[dix] * lk)
 			mons[shc] = 2
 			kinds[shc] = "shooter"
 			break
@@ -13495,6 +13510,8 @@ func _adv_selftest() -> void:
 	for dix in 4:
 		var tcell: Vector2i = pos + TDIRS[dix] * 2
 		if _aopen(pos + TDIRS[dix]) and _aopen(tcell):
+			mons.erase(pos + TDIRS[dix])
+			vaults.erase(pos + TDIRS[dix])
 			mons.erase(tcell)
 			mons[tcell] = 1
 			kinds.erase(tcell)
@@ -15483,8 +15500,8 @@ const HZ := [
 ]
 # Workshop research: [id, name, text (%s = total), stat ("" = special), per rank, max, coin base, growth, cores per rank]
 const WS_DEFS := [
-	["w_hull", "Hull Plating", "+%s max health", "hp", 1, 40, 40, 1.12, 0],
-	["w_o2", "O2 Reserves", "+%s max air", "air", 2, 40, 40, 1.12, 0],
+	["w_hull", "Hull Plating", "+%s max health", "hp", 4, 10, 60, 1.45, 0],
+	["w_o2", "O2 Reserves", "+%s max air", "air", 8, 10, 60, 1.45, 0],
 	["w_train", "Field Training", "+%s%% XP", "xp", 3, 20, 60, 1.15, 0],
 	["w_bank", "Salvage Rights", "+%s%% coins banked", "", 2, 25, 80, 1.12, 0],
 	["w_crit", "Targeting AI", "+%s%% crit chance", "crit", 1, 10, 70, 1.15, 0],
@@ -16135,6 +16152,7 @@ func _ex_death_line() -> String:
 func _ex_save(cfg: ConfigFile) -> void:
 	cfg.set_value("mx", "cores", cores)
 	cfg.set_value("mx", "ws", ws)
+	cfg.set_value("mx", "ws_v2", true)
 	cfg.set_value("mx", "ct", ct)
 	cfg.set_value("mx", "hzmax", hz_max)
 	cfg.set_value("mx", "hzsel", hz_sel)
@@ -16154,6 +16172,8 @@ func _ex_load(cfg: ConfigFile) -> void:
 	var a = cfg.get_value("mx", "ws", {})
 	if a is Dictionary:
 		ws = a
+		if not bool(cfg.get_value("mx", "ws_v2", false)):
+			_ws_v2(ws)
 	var b = cfg.get_value("mx", "ct", [])
 	if b is Array:
 		ct = b
@@ -16165,15 +16185,24 @@ func _ex_load(cfg: ConfigFile) -> void:
 		hz_sel = d
 
 
+# Hull Plating / O2 Reserves went from 40 small ranks to 10 big ones: owned / 4, rounded up
+func _ws_v2(w: Dictionary) -> void:
+	for k in ["w_hull", "w_o2"]:
+		if w.has(k):
+			w[k] = mini(10, int(ceil(float(w[k]) / 4.0)))
+
+
 func _ex_pack() -> Dictionary:
-	return {"cores": cores, "ws": ws.duplicate(), "ct": ct.duplicate(true), "hzmax": hz_max.duplicate(), "hzsel": hz_sel.duplicate()}
+	return {"wv": 2, "cores": cores, "ws": ws.duplicate(), "ct": ct.duplicate(true), "hzmax": hz_max.duplicate(), "hzsel": hz_sel.duplicate()}
 
 
 func _ex_unpack(d) -> void:
 	if not (d is Dictionary) or d.is_empty():
 		return
 	cores = maxi(cores, int(d.get("cores", 0)))
-	var iw: Dictionary = d.get("ws", {})
+	var iw: Dictionary = d.get("ws", {}).duplicate()
+	if int(d.get("wv", 1)) < 2:
+		_ws_v2(iw)
 	for k in iw:
 		ws[k] = maxi(int(ws.get(k, 0)), int(iw[k]))
 	var ih: Dictionary = d.get("hzmax", {})
@@ -18028,7 +18057,7 @@ func _ev_touch(c: Vector2i, kind: String) -> void:
 				items[c] = kind
 				msg = "%s: a relic for %d coins (you have %d)" % [nm, price, coins]
 				return
-			coins -= price
+			_spend(price)
 			_nr_give_relic(nm)
 		"supply":
 			ev_run = "supply"
@@ -19734,7 +19763,7 @@ func _stat_list() -> Array:
 		["XP", "%d / %d" % [xp, xp_need()], "Kills, potions and vaults give XP."],
 		["HEALTH", "%d / %d" % [hp, hp_cap()], "Reach 0 and you die."],
 		["ATTACK", "%d" % p_atk(), "Damage per hit."],
-		["ARMOUR", "%d" % armor_total(), "Cuts every hit you take (minimum 1)."],
+		["ARMOUR", "%d" % armor_total(), "Cuts every hit you take, up to 60% of the hit."],
 		["SHIELD", "%d / %d" % [sh, sh_cap()], "Soaks damage before your health."],
 		["AIR", "%d / %d" % [int(ceil(oxy)), int(oxy_max)], "Each step costs air. O2 stations refill it."],
 		["POINTS", "%d / %d" % [adv_pts, adv_req], "Fill this to open the exit."],
