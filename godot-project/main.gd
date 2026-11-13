@@ -183,6 +183,8 @@ var dd_on := false   # A1 Daily Dive run
 var dd_next := false
 var dd_seed := 0
 var btn_dd := Rect2(160, 470, 400, 84)
+var sp_rooms: Array = []         # C1: [Rect2i, name] special rooms on this floor
+var secrets: Dictionary = {}     # C2: cracked wall cells hiding a cache
 var cam := Vector2.ZERO
 var scan_steps := 0
 var mirror_n := 0      # Mirror Shard: hits left to reflect
@@ -354,7 +356,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 127
+const BUILD := 128
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -366,7 +368,7 @@ const SAVE_PATH := "user://run.sav"
 const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
 	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "run_spent", "run_daily", "adv_open", "adv_seen",
-	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "dd_on", "dd_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
+	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "dd_on", "dd_seed", "sp_rooms", "secrets", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
 	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted", "deep_run"]
 var adv_text := {
@@ -6649,6 +6651,8 @@ func _arena_selftest() -> int:
 func _adv_gen() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = adv_seed
+	sp_rooms.clear()
+	secrets.clear()
 	if tutorial:
 		_adv_gen_tutorial()
 		return
@@ -6846,6 +6850,99 @@ func _adv_gen() -> void:
 				var spc := _adv_pick(rng, r, false, taken)
 				if spc.x >= 0:
 					spikes[spc] = true
+	# C1: 1-2 special rooms per floor from floor 2
+	if floor_n >= 2 and adv_rooms.size() > 4:
+		var cand: Array = []
+		for i in range(1, adv_rooms.size()):
+			var rr0: Rect2i = adv_rooms[i]
+			if i != far and rr0.size.x >= 5 and rr0.size.y >= 5:
+				cand.append(i)
+		for k in 1 + (1 if rng.randf() < 0.4 else 0):
+			if cand.is_empty():
+				break
+			var rr: Rect2i = adv_rooms[cand.pop_at(rng.randi() % cand.size())]
+			var busy := false
+			for bd in [stations, merchants, meds, vaults]:
+				for q in bd:
+					if rr.has_point(q):
+						busy = true
+			if busy:
+				continue
+			var ctr := _rc(rr)
+			for q in coin_at.keys():
+				if rr.has_point(q):
+					coin_at.erase(q)
+					pts -= 1
+			for q in items.keys():
+				if rr.has_point(q):
+					items.erase(q)
+					pts -= 2
+			for q in spikes.keys():
+				if rr.has_point(q):
+					spikes.erase(q)
+			for q in mons.keys():
+				if rr.has_point(q):
+					mons.erase(q)
+					mon_cells.erase(q)
+			var sk_name := String(["BARRACKS", "TREASURY", "SHRINE GARDEN"][rng.randi() % 3])
+			sp_rooms.append([rr, sk_name])
+			taken[ctr] = true
+			if sk_name == "BARRACKS":
+				items[ctr] = "gear_" + _adv_roll_gear(rng)
+				pts += 2
+				for d in [Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)]:
+					var bm: Vector2i = ctr + d
+					if rr.has_point(bm):
+						mons[bm] = 1
+						mon_cells.append(bm)
+						taken[bm] = true
+			elif sk_name == "TREASURY":
+				items[ctr] = "big"
+				pts += 4
+				for dx in range(-2, 3):
+					for dy in range(-2, 3):
+						var tc2 := ctr + Vector2i(dx, dy)
+						if tc2 == ctr or not rr.has_point(tc2):
+							continue
+						taken[tc2] = true
+						if maxi(absi(dx), absi(dy)) == 1:
+							coin_at[tc2] = true
+							pts += 1
+						else:
+							spikes[tc2] = true
+			else:
+				items[ctr] = "shrine"
+				var hpc := ctr + Vector2i(1, 0)
+				items[hpc] = "hp"
+				taken[hpc] = true
+				pts += 3
+	# C2: 1-2 cracked walls hiding a cache (bombs open them)
+	if floor_n >= 2:
+		var want_s := 1 + (1 if rng.randf() < 0.5 else 0)
+		for k in 40:
+			if secrets.size() >= want_s:
+				break
+			var sr: Rect2i = adv_rooms[rng.randi_range(1, adv_rooms.size() - 1)]
+			var sd := rng.randi() % 4
+			var sc2 := Vector2i.ZERO
+			var out := Vector2i.ZERO
+			if sd == 0:
+				sc2 = Vector2i(sr.position.x - 1, rng.randi_range(sr.position.y, sr.end.y - 1))
+				out = Vector2i(-1, 0)
+			elif sd == 1:
+				sc2 = Vector2i(sr.end.x, rng.randi_range(sr.position.y, sr.end.y - 1))
+				out = Vector2i(1, 0)
+			elif sd == 2:
+				sc2 = Vector2i(rng.randi_range(sr.position.x, sr.end.x - 1), sr.position.y - 1)
+				out = Vector2i(0, -1)
+			else:
+				sc2 = Vector2i(rng.randi_range(sr.position.x, sr.end.x - 1), sr.end.y)
+				out = Vector2i(0, 1)
+			if sc2.x < 1 or sc2.y < 1 or sc2.x > AW - 2 or sc2.y > AH - 2:
+				continue
+			if _aopen(sc2) or _aopen(sc2 + out) or secrets.has(sc2):
+				continue
+			secrets[sc2] = true
 	var crates := 0
 	for ic in items:
 		if String(items[ic]).begins_with("gear_"):
@@ -9829,6 +9926,21 @@ func _adv_new_floor() -> void:
 	_play_music(tidx())
 
 
+func _secret_open(c: Vector2i) -> void:
+	secrets.erase(c)
+	var r := randf()
+	if r < 0.15:
+		items[c] = "gear_" + _adv_roll_gear(null)
+	elif r < 0.55:
+		items[c] = "use_" + _random_use()
+	else:
+		var n := 6 + floor_n * 2
+		coins += n
+		_pop(c, "+%d" % n, Color("ffc93c"))
+	_pop(c, "SECRET!", Color("ffd84f"))
+	_sfx("big")
+
+
 func _adv_reset() -> void:
 	mons = saved["mons"].duplicate()
 	elite = saved["elite"].duplicate()
@@ -11540,6 +11652,8 @@ func _adv_use_slot(i: int) -> void:
 				if not _aopen(c) and c.x > 0 and c.y > 0 and c.x < AW - 1 and c.y < AH - 1:
 					adv_open[_ai(c)] = 1
 					hit += 1
+					if secrets.has(c):
+						_secret_open(c)
 				if spikes.has(c):
 					spikes.erase(c)
 					hit += 1
@@ -12303,6 +12417,11 @@ func _adv_draw() -> void:
 			var vis := adv_vis.has(c)
 			if not _aopen(c):
 				draw_texture_rect(wall_set[_wall_var(cx, cy)], r.grow(-1.0), false)
+				if secrets.has(c):
+					var scc := Color(1, 0.9, 0.6, 0.55)
+					draw_line(ctr + Vector2(-AC * 0.3, -AC * 0.32), ctr + Vector2(-AC * 0.02, AC * 0.0), scc, 2.0)
+					draw_line(ctr + Vector2(-AC * 0.02, AC * 0.0), ctr + Vector2(AC * 0.28, -AC * 0.12), scc, 2.0)
+					draw_line(ctr + Vector2(-AC * 0.02, AC * 0.0), ctr + Vector2(AC * 0.08, AC * 0.34), scc, 2.0)
 				var wfa := _fog_a(c, 0.6)
 				if wfa > 0.01:
 					draw_rect(r, Color(0, 0, 0, wfa))
@@ -12471,6 +12590,10 @@ func _adv_draw() -> void:
 	for mdc in meds:
 		if _aseen(mdc):
 			draw_rect(Rect2(mm.position.x + 3 + mdc.x * msc - 1, mm.position.y + 3 + mdc.y * msc - 1, 4, 4), Color("6dff9a"))
+	for spr in sp_rooms:
+		var spc := _rc(spr[0])
+		if _aseen(spc):
+			_ctext(String(spr[1]), mm.position + Vector2(3, 3) + Vector2(spc) * msc, 10, Color("ffd84f"))
 	if ev_c.x >= 0 and items.has(ev_c):
 		draw_rect(Rect2(mm.position.x + 3 + ev_c.x * msc - 2, mm.position.y + 3 + ev_c.y * msc - 2, 6, 6), Color("ff5dff"))
 	if gm("prospect") or gm("gcompass"):
@@ -18834,6 +18957,12 @@ func _amb_build() -> void:
 			mon_idle[c3] = {"s": "sleep", "ph": 0}
 		else:
 			mon_idle[c3] = {"s": "look", "ph": amb_rng.randi() % 4}
+	# C1 Barracks: everyone inside starts asleep
+	for spr in sp_rooms:
+		if String(spr[1]) == "BARRACKS":
+			for c4 in ml:
+				if (spr[0] as Rect2i).has_point(c4) and _idle_ok(c4):
+					mon_idle[c4] = {"s": "sleep", "ph": 0}
 
 
 func _amb_pick(m: Dictionary) -> void:
