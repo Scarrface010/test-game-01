@@ -179,6 +179,10 @@ var oxy := 100.0
 var oxy_max := 100.0
 var adv_steps := 0
 var adv_seed := 0
+var dd_on := false   # A1 Daily Dive run
+var dd_next := false
+var dd_seed := 0
+var btn_dd := Rect2(160, 470, 400, 84)
 var cam := Vector2.ZERO
 var scan_steps := 0
 var mirror_n := 0      # Mirror Shard: hits left to reflect
@@ -350,7 +354,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 126
+const BUILD := 127
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -362,7 +366,7 @@ const SAVE_PATH := "user://run.sav"
 const SAVE_VARS := ["mode", "cls", "hz_run", "N", "cell", "period", "maxd", "floor_n", "level", "moves", "coins", "shield", "pos", "start", "stairs", "req",
 	"boss_cell", "mons", "elite", "items", "spikes", "coin_at", "haz", "corpses", "tur", "poison_n", "poison_d", "walls", "portals", "kinds",
 	"thief_held", "relics", "boost", "cloak_steps", "keys", "vaults", "boss_floor", "boss_kind", "boss_base", "fmod", "run_banked", "run_spent", "run_daily", "adv_open", "adv_seen",
-	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
+	"adv_rooms", "adv_pts", "adv_req", "adv_pts_total", "oxy", "oxy_max", "adv_steps", "adv_seed", "dd_on", "dd_seed", "AW", "AH", "cam", "scan_steps", "scan_r",
 	"xp", "merchants", "trade_cell", "equip", "hp", "hp_max", "armor", "sh", "mon_hp", "stations", "meds", "saved", "msg", "door_choices",
 	"market_stock", "relic_choices", "shop_return", "affix", "mstat", "skills", "skill_pts", "ammo", "pk", "sk_wind", "sk_phx", "act_cd", "act_free", "act_stance", "act_rico", "station_uses", "arena", "arena_d", "mirror_n", "lucky_n", "bounty_n", "oil_steps", "scrap", "fr_uses", "sup_done", "can_n", "run_best", "run_dmg", "run_steps", "run_gear", "clear_pend", "puz_used", "run_ghost", "floor_spotted", "deep_run"]
 var adv_text := {
@@ -1916,6 +1920,11 @@ func _die_final(why: String, won := false) -> void:
 	var reached := floor_n if won else floor_n - 1
 	var was_best := false
 	var close := _so_close(reached)
+	if dd_on:
+		dd_on = false
+		cx["dd_f"] = maxi(int(cx.get("dd_f", 0)), reached)
+		if lb_url != "" and (lb_name != "" or _lb_ask_name()):
+			_lb_put(_lb_key(2), reached)
 	if mode == "adv":
 		if reached > adv_best:
 			adv_best = reached
@@ -3049,6 +3058,8 @@ func _wipe_progress() -> void:
 
 func _new_run(start_floor := 1) -> void:
 	deep_run = false
+	dd_on = dd_next
+	dd_next = false
 	floor_n = start_floor
 	clear_pend = false
 	coins = 0
@@ -3277,6 +3288,14 @@ func _gui_input(event: InputEvent) -> void:
 		_ws_input(p)
 		return
 	if state == MODE:
+		if btn_dd.has_point(p):
+			if _dd_done():
+				lb_mode = 2
+				_lb_open()
+				_sfx("ui")
+			else:
+				_dd_start()
+			return
 		if btn_lb.has_point(p):
 			_lb_open()
 			_sfx("ui")
@@ -4529,7 +4548,37 @@ func _lb_name_done(txt: String) -> void:
 # ---------- leaderboard ----------
 
 func _lb_key(i: int) -> String:
+	if i == 2:
+		return "d" + _dd_day()
 	return "puzzle" if i == 0 else "adv"
+
+
+# A1 Daily Dive: same seed + class for everyone today, one scored attempt.
+func _dd_day() -> String:
+	return Time.get_date_string_from_system(true).replace("-", "")
+
+
+func _dd_done() -> bool:
+	return String(cx.get("dd", "")) == _dd_day()
+
+
+func _dd_start() -> void:
+	var d := _dd_day()
+	cx["dd"] = d
+	cx["dd_f"] = 0
+	_save_meta()
+	mode = "adv"
+	cls = ["scout", "brute", "mystic", "gambler", "gunslinger"][int(d) % 5]
+	dd_seed = int(d) * 31
+	seed(dd_seed)
+	in_base = false
+	rv_used = false
+	rv_ask = false
+	ad_boss = false
+	dd_next = true
+	_new_run()
+	msg = "DAILY DIVE: %s, one attempt. Go as deep as you can." % _cls_name(cls)
+	_sfx("big")
 
 
 func _lb_clean(s: String) -> String:
@@ -4646,7 +4695,7 @@ func _lb_input(p: Vector2) -> void:
 		state = MODE
 		_sfx("ui")
 		return
-	for i in 2:
+	for i in 3:
 		if _tut_tabs(i).has_point(p):
 			lb_mode = i
 			_lb_fetch()
@@ -4663,14 +4712,16 @@ func _lb_input(p: Vector2) -> void:
 
 func _draw_lb(acc: Color) -> void:
 	_txt("LEADERBOARD", Vector2(0, 150), T_TITLE, acc)
-	var names := ["PUZZLE", "ADVENTURE"]
-	for i in 2:
+	var names := ["PUZZLE", "ADVENTURE", "DAILY"]
+	for i in 3:
 		var tr := _tut_tabs(i)
 		var tc := Color("ffd84f") if i == lb_mode else Color(1, 1, 1, 0.5)
 		_abox(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == lb_mode else 0.06))
 		_aline(tr, tc, 2.0)
 		_ctext(names[i], tr.get_center(), 24, tc)
 	var mine := best if lb_mode == 0 else adv_best
+	if lb_mode == 2:
+		mine = int(cx.get("dd_f", 0)) if _dd_done() else 0
 	var nm := lb_name if lb_name != "" else "(no name yet)"
 	_txt("You: %s    Best: %d floors" % [nm, mine], Vector2(0, 280), 24, Color(1, 1, 1, 0.8))
 	if lb_status == "notset":
@@ -5645,6 +5696,10 @@ func _draw_overlay(acc: Color) -> void:
 			_button(btn_mode_a, "PLAY", Color("7dffb0"), 48)
 		_button(btn_tut, "HOW TO PLAY", C_GOLD, 22, "help")
 		_button(btn_lb, "LEADERBOARD", C_INFO, 22, "trophy")
+		if _dd_done():
+			_button(btn_dd, "DAILY DONE: floor %d" % int(cx.get("dd_f", 0)), Color(1, 1, 1, 0.55), 24)
+		else:
+			_button(btn_dd, "DAILY DIVE", C_GOLD, 30)
 		_button(btn_quit, "QUIT", Color(1, 1, 1, 0.45), 22)
 		_draw_gear(btn_font.get_center(), Color("c9d3f0"))
 		var bt := get_node_or_null("/root/Boot")
@@ -9759,7 +9814,11 @@ func _adv_new_floor() -> void:
 	period = 100000
 	maxd = 0
 	fmod = "standard"
-	adv_seed = randi()
+	if dd_on:
+		adv_seed = dd_seed + floor_n * 7919
+		seed(adv_seed)
+	else:
+		adv_seed = randi()
 	puz_used.clear()
 	_adv_gen()
 	_adv_snapshot()

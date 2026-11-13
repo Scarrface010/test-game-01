@@ -18,7 +18,7 @@ export default {
   async fetch(req, env) {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const parts = new URL(req.url).pathname.replace(/\.json$/, "").split("/").filter(Boolean);
-    if (parts[0] !== "lb" || !["puzzle", "adv"].includes(parts[1])) return json({ error: "not found" }, 404);
+    if (parts[0] !== "lb" || !(["puzzle", "adv", "rt_puzzle", "rt_adv"].includes(parts[1]) || /^d\d{8}$/.test(parts[1] ?? ""))) return json({ error: "not found" }, 404);
     const mode = parts[1];
 
     if (req.method === "GET" && parts.length === 2) {
