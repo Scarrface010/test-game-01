@@ -141,6 +141,8 @@ var shop_defs: Array = []
 var bank := 0
 var run_banked := 0
 var run_spent := 0   # coins spent in shops this run; still counts toward the bank
+var run_won := false # last run ended by extracting
+var btn_cl_ext := Rect2(110, 974, 500, 64)
 var run_kills := 0
 var run_best := 0
 var run_dmg := 0
@@ -347,7 +349,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 124
+const BUILD := 125
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1839,9 +1841,69 @@ func _spend(n: int) -> void:
 	run_spent += n
 
 
-func _die_final(why: String) -> void:
+# up to 3 "so close" lines for the end-of-run screen
+func _so_close(reached: int) -> PackedStringArray:
+	var out := PackedStringArray()
+	if mode != "adv" or not _mx_on():
+		return out
+	var gap := adv_best - reached
+	if gap >= 1 and gap <= 2:
+		out.append("%d floor%s from your best" % [gap, "" if gap == 1 else "s"])
+	if mx_level(cls) < MX_MAX:
+		var mp := _mx_prog(cls)
+		out.append("%d XP to %s Mastery %d" % [mp.y - mp.x, _cls_name(cls), mx_level(cls) + 1])
+	var cheap := 0
+	var cname := ""
+	for d in shop_defs:
+		var sid := String(d["id"])
+		if sid.begins_with("c_") and up(sid) == 0 and not class_open(sid.substr(2)):
+			var cc := int((d["costs"] as Array)[0])
+			if cname == "" or cc < cheap:
+				cheap = cc
+				cname = String(d["name"]).replace(" Class", "")
+	if cname != "" and bank < cheap:
+		out.append("%s unlock: %d coins short" % [cname, cheap - bank])
+	if out.size() < 3 and ul(6):
+		var best_r := 0.0
+		var best_s := ""
+		for c in ct:
+			var k := String(c.get("k", ""))
+			var n := int(c.get("n", 1))
+			var cur := -1
+			match k:
+				"kills":
+					cur = run_kills
+				"elites":
+					cur = run_elites
+				"bosses":
+					cur = run_bosses
+				"level":
+					cur = level
+				"floor":
+					cur = reached
+			if cur >= 0 and cur < n and float(cur) / float(n) > best_r:
+				best_r = float(cur) / float(n)
+				best_s = "Contract: %s (%d / %d)" % [k.capitalize(), cur, n]
+		if best_s != "" and best_r >= 0.5:
+			out.append(best_s)
+	if out.size() > 3:
+		out.resize(3)
+	return out
+
+
+# B1: leave after a boss arena as a win (+25% coins banked)
+func _can_extract() -> bool:
+	return mode == "adv" and arena and boss_floor and _mx_on() and not mini_done
+
+
+func _extract() -> void:
+	_die_final("You extracted after the floor %d boss" % floor_n, true)
+
+
+func _die_final(why: String, won := false) -> void:
+	run_won = won
 	ad_run_pending = true
-	if mode == "adv":
+	if mode == "adv" and not won:
 		_fx_burst(vis_pos, Color("ff5d5d"), 30, 5.0, 1.0, 7.0)
 		_fx_ring(vis_pos, Color("ff5d5d"), 1.6, 0.8, 6.0)
 		_fx_ring(vis_pos, Color.WHITE, 0.9, 0.5, 3.0)
@@ -1850,8 +1912,9 @@ func _die_final(why: String) -> void:
 	aim = -1
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	save_info = ""
-	var reached := floor_n - 1
+	var reached := floor_n if won else floor_n - 1
 	var was_best := false
+	var close := _so_close(reached)
 	if mode == "adv":
 		if reached > adv_best:
 			adv_best = reached
@@ -1861,27 +1924,35 @@ func _die_final(why: String) -> void:
 		was_best = true
 	var delta := maxi(0, coins + run_spent - run_banked)
 	var mxb := _mx_bank_bonus(delta)
-	delta += mxb
+	var exb := delta / 4 if won else 0
+	delta += mxb + exb
 	bank += delta
 	run_banked += delta
 	ad_delta = delta
 	ad_doubled = false
-	_mx_death()
+	if won:
+		if _mx_on():
+			_cx_scan()
+			_ex_death()
+	else:
+		_mx_death()
 	var ul_line := _ul_run_end()
 	_save_meta()
 	_lb_note(reached, true)
-	_sfx("death")
-	over_title = "YOU DIED"
+	_sfx("big" if won else "death")
+	over_title = "EXTRACTED" if won else "YOU DIED"
 	var dl: PackedStringArray = PackedStringArray([why, "Floor %d   Level %d" % [floor_n, level]])
 	if mode == "adv":
 		dl.append("Kills %d   Best hit %d   Damage %d" % [run_kills, run_best, run_dmg])
 		dl.append("Steps %d   Gear found %d" % [run_steps, run_gear])
 	dl.append("Floors cleared %d   Best %d%s" % [reached, adv_best if mode == "adv" else best, "   NEW BEST!" if was_best else ""])
-	dl.append("Banked +%d coins (total %d)" % [delta, bank])
+	dl.append("Banked +%d coins (total %d)%s" % [delta, bank, ("   extract bonus +%d" % exb) if won else ""])
 	if mode == "adv" and _mx_on() and ul(4):
 		dl.append(_mx_death_line(mxb))
 	if ul_line != "":
 		dl.append(ul_line)
+	for cl in close:
+		dl.append("SO CLOSE: " + cl)
 	over_sub = "\n".join(dl)
 
 
@@ -2055,6 +2126,8 @@ func _draw_clear_pop(acc: Color) -> void:
 	_button(btn_cl_menu, ("LEAVE WITH %d COINS" % coins) if mini else "MENU", Color(1, 1, 1, 0.75), 24)
 	if ad_boss and _ads().rewarded_ready():
 		_button(btn_ad_core, "BONUS BOSS CORE (%s)" % _ads().tag(), Color("ff4fd8"), 24)
+	if _can_extract():
+		_button(btn_cl_ext, "EXTRACT  (+25% COINS, ENDS RUN)", Color("7dffb0"), 24)
 
 
 # ---------- puzzle mini-game (from the shop) ----------
@@ -3294,6 +3367,11 @@ func _gui_input(event: InputEvent) -> void:
 		if ad_boss and _ads().rewarded_ready() and btn_ad_core.has_point(p):
 			_sfx("ui")
 			rv_busy = _ads().show_rewarded(_ad_core_done)
+			return
+		if _can_extract() and btn_cl_ext.has_point(p):
+			ad_boss = false
+			_sfx("ui")
+			_extract()
 			return
 		if btn_cl_next.has_point(p):
 			ad_boss = false
@@ -5576,24 +5654,29 @@ func _draw_overlay(acc: Color) -> void:
 			_button(btn_ad_giveup, "GIVE UP", Color(1, 1, 1, 0.7), 24)
 	elif state == DEAD and t - state_t < 0.65:
 		var dk := clampf((t - state_t - 0.2) / 0.4, 0.0, 1.0)
-		_txt(over_title, Vector2(0, 400.0 - (1.0 - dk) * 40.0), int(64.0 + 30.0 * (1.0 - dk)), Color(1, 0.36, 0.36, dk))
+		var tcol := Color(0.43, 1, 0.6, dk) if run_won else Color(1, 0.36, 0.36, dk)
+		_txt(over_title, Vector2(0, 400.0 - (1.0 - dk) * 40.0), int(64.0 + 30.0 * (1.0 - dk)), tcol)
 	elif state == DEAD:
-		_txt(over_title, Vector2(0, 400), 64, Color("ff5d5d"))
+		_txt(over_title, Vector2(0, 400), 64, Color("6dff9a") if run_won else Color("ff5d5d"))
 		var ly := 476
 		var li := 0
-		for line in over_sub.split("\n"):
+		var lines := over_sub.split("\n")
+		var lstep := mini(42, 500 / maxi(1, lines.size()))
+		for line in lines:
 			var lc := Color.WHITE
 			if li == 0:
-				lc = Color("ffb0a0")
+				lc = Color("b6ffd2") if run_won else Color("ffb0a0")
 			elif line.contains("NEW BEST"):
 				lc = Color("ffd84f")
+			elif line.begins_with("SO CLOSE"):
+				lc = Color("8fd8ff")
 			if line.begins_with("NEW! "):
 				# bold yellow: draw twice, 2px apart
 				_txt(line, Vector2(-1, ly), 28, Color("ffd84f"))
 				_txt(line, Vector2(1, ly), 28, Color("ffd84f"))
 			else:
-				_txt(line, Vector2(0, ly), 26, lc)
-			ly += 42
+				_txt(line, Vector2(0, ly), 26 if lstep >= 36 else 22, lc)
+			ly += lstep
 			li += 1
 		if ad_delta > 0 and not ad_doubled and _ads().rewarded_ready():
 			_button(btn_ad_double, "DOUBLE COINS +%d (%s)" % [ad_delta, _ads().tag()], Color("ffc93c"), 26)
@@ -6512,7 +6595,7 @@ func _adv_gen() -> void:
 	if arena:
 		_adv_gen_arena()
 		return
-	AW = mini(34 + floor_n * 2, 56)
+	AW = 28 if floor_n == 1 else mini(34 + floor_n * 2, 56)
 	AH = AW
 	adv_open.resize(AW * AH)
 	adv_open.fill(0)
@@ -6532,7 +6615,7 @@ func _adv_gen() -> void:
 	kinds.clear()
 	thief_held.clear()
 	vaults.clear()
-	var want := mini(8 + floor_n, 15)
+	var want := 6 if floor_n == 1 else mini(8 + floor_n, 15)
 	var tries := 0
 	while adv_rooms.size() < want and tries < 800:
 		tries += 1
@@ -6707,6 +6790,21 @@ func _adv_gen() -> void:
 		if cc2.x >= 0:
 			items[cc2] = "gear_" + _adv_roll_gear(rng)
 			pts += 2
+	# C3: floor 1 always has a weapon crate about two rooms from the start
+	if floor_n == 1 and adv_rooms.size() > 2:
+		var near: Array = range(1, adv_rooms.size())
+		near.sort_custom(func(a, b): return int(dist.get(_rc(adv_rooms[a]), 0)) < int(dist.get(_rc(adv_rooms[b]), 0)))
+		var wc := _adv_pick(rng, adv_rooms[near[mini(1, near.size() - 1)]], false, taken)
+		if wc.x >= 0:
+			var wid := ""
+			for wt in 30:
+				var g0 := _adv_roll_gear(rng)
+				if String(gear_defs[gb(g0)]["slot"]) == "weapon":
+					wid = g0
+					break
+			if wid != "":
+				items[wc] = "gear_" + wid
+				pts += 2
 	if rng.randf() < (0.9 if _world_rule() == "black" else 0.6) and adv_rooms.size() > 3:
 		var mi := rng.randi_range(1, adv_rooms.size() - 1)
 		if mi != far:
@@ -16088,6 +16186,9 @@ func _ex_kill(nc: Vector2i, is_boss: bool) -> void:
 		run_elites += 1
 	if is_boss:
 		run_bosses += 1
+		# B3 groundwork: count arena boss kills per world (1-4) for future world shortcuts
+		if arena and _mx_on() and floor_n <= 12:
+			_cx_st("wb%d" % ((floor_n - 1) / 3 + 1), 1)
 	if _mx_on():
 		var cg := 0
 		if is_boss:
@@ -17997,7 +18098,13 @@ func _ev_begin() -> void:
 	ev_c = Vector2i(-1, -1)
 	ev_run = ""
 	ev_idol = false
-	if mode != "adv" or tutorial or testroom or in_base or arena or boss_floor or floor_n < 2 or randf() > 0.75:
+	if mode != "adv" or tutorial or testroom or in_base or arena or boss_floor:
+		return
+	# C3: from the second run on, floor 1 always has an event
+	if floor_n == 1:
+		if runs_done < 1 or deep_run:
+			return
+	elif floor_n < 2 or randf() > 0.75:
 		return
 	var c := _ev_far_cell(8)
 	if c.x < 0:
