@@ -4683,6 +4683,8 @@ func _lb_fetch_done(result: int, code: int, _h: PackedStringArray, body: PackedB
 
 func _lb_open() -> void:
 	state = LEADER
+	if lb_mode == 0:
+		lb_mode = 1
 	_lb_fetch()
 
 
@@ -4695,9 +4697,9 @@ func _lb_input(p: Vector2) -> void:
 		state = MODE
 		_sfx("ui")
 		return
-	for i in 3:
+	for i in 2:
 		if _tut_tabs(i).has_point(p):
-			lb_mode = i
+			lb_mode = i + 1
 			_lb_fetch()
 			_sfx("ui")
 			return
@@ -4712,11 +4714,12 @@ func _lb_input(p: Vector2) -> void:
 
 func _draw_lb(acc: Color) -> void:
 	_txt("LEADERBOARD", Vector2(0, 150), T_TITLE, acc)
-	var names := ["PUZZLE", "ADVENTURE", "DAILY"]
-	for i in 3:
+	var names := ["ADVENTURE", "DAILY"]
+	for i in 2:
 		var tr := _tut_tabs(i)
-		var tc := Color("ffd84f") if i == lb_mode else Color(1, 1, 1, 0.5)
-		_abox(tr, Color(tc.r, tc.g, tc.b, 0.16 if i == lb_mode else 0.06))
+		var on := i + 1 == lb_mode
+		var tc := Color("ffd84f") if on else Color(1, 1, 1, 0.5)
+		_abox(tr, Color(tc.r, tc.g, tc.b, 0.16 if on else 0.06))
 		_aline(tr, tc, 2.0)
 		_ctext(names[i], tr.get_center(), 24, tc)
 	var mine := best if lb_mode == 0 else adv_best
