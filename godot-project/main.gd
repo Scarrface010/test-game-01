@@ -106,6 +106,17 @@ var bomb_t: Dictionary = {}      # Vector2i -> steps left before a glowing bombe
 var newe_t := -10.0              # time the "new enemy" banner started
 var newe_n := ""
 var newe_d := ""
+# D enemies: kind -> [banner name, banner line, spotted hint]
+const NEWE := {
+	"bomber": ["BOMBER", "Explodes 3 steps after it reaches you", "it explodes 3 steps after reaching you - kill it or step away!"],
+	"mender": ["MENDER", "Heals enemies next to it every step", "it heals enemies next to it - kill it first!"],
+	"shielder": ["SHIELDER", "Half damage from the front - hit its side or back", "its shield blocks half from the front - its shield turns every 2 steps!"],
+	"brood": ["BROOD", "Spawns a small hunter every 8 steps", "it spawns hunters every 8 steps - reach it fast!"],
+	"charger": ["CHARGER", "Lines up, then rushes 3 tiles - step out of the lane", "it rushes 3 tiles when lined up - step out of the lane!"],
+}
+var shd: Dictionary = {}         # shielder -> facing direction of its shield
+var chg_m: Dictionary = {}       # charger -> lane direction it will rush next step
+var brood_n: Dictionary = {}     # brood -> hunters spawned
 var fo_kind := ""                # C4 floor bonus objective: "nodmg" | "steps" | "elite"
 var fo_hit := false
 var fo_elite := false
@@ -365,7 +376,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 130
+const BUILD := 131
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1317,6 +1328,9 @@ func _random_layout(tries: int) -> void:
 	kinds.clear()
 	thief_held.clear()
 	bomb_t.clear()
+	shd.clear()
+	chg_m.clear()
+	brood_n.clear()
 	items.clear()
 	spikes.clear()
 	coin_at.clear()
@@ -6428,6 +6442,9 @@ func _adv_gen_arena() -> void:
 	kinds.clear()
 	thief_held.clear()
 	bomb_t.clear()
+	shd.clear()
+	chg_m.clear()
+	brood_n.clear()
 	vaults.clear()
 	stations.clear()
 	meds.clear()
@@ -6732,6 +6749,9 @@ func _adv_gen() -> void:
 	kinds.clear()
 	thief_held.clear()
 	bomb_t.clear()
+	shd.clear()
+	chg_m.clear()
+	brood_n.clear()
 	vaults.clear()
 	var want := 6 if floor_n == 1 else mini(8 + floor_n, 15)
 	var tries := 0
@@ -7139,6 +7159,13 @@ func _adv_gen() -> void:
 			kinds[mcell] = "bomber"
 		elif floor_n >= 4 and rng.randf() < 0.1:
 			kinds[mcell] = "mender"
+		elif floor_n >= 6 and rng.randf() < 0.08:
+			kinds[mcell] = "brood"
+		elif floor_n >= 7 and rng.randf() < 0.1:
+			kinds[mcell] = "shielder"
+			shd[mcell] = Vector2i(0, 1)
+		elif floor_n >= 10 and rng.randf() < 0.1:
+			kinds[mcell] = "charger"
 		elif floor_n >= 4 and rng.randf() < (0.3 if _world_rule() == "black" else 0.15):
 			kinds[mcell] = "thief"
 		elif floor_n >= 5 and rng.randf() < 0.14:
@@ -10445,6 +10472,10 @@ func _adv_fight(nc: Vector2i) -> int:
 	if crit:
 		dmg = int(round(float(dmg) * ((1.0 + (crit_mult() - 1.0) * 0.5) if sneak_slp else crit_mult())))
 	sneak_slp = false
+	if String(kinds.get(nc, "")) == "shielder" and shd.get(nc, Vector2i.ZERO) == pos - nc:
+		dmg = maxi(1, dmg / 2)
+		_pop(nc, "BLOCKED", Color("7fb8ff"))
+		_fx_ring(Vector2(nc), Color("7fb8ff"), 0.9, 0.3, 4.0)
 	var missed := String(affix.get(nc, "")) == "evasive" and randf() < 0.2
 	if missed:
 		dmg = 0
@@ -10999,21 +11030,14 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 					msg += " [%s: %s]" % [AFFIX_DEFS[affix[c]]["n"], AFFIX_DEFS[affix[c]]["d"]]
 				if String(kinds.get(c, "")) == "hunter":
 					msg += " (it hunts you!)"
-				elif String(kinds.get(c, "")) == "bomber":
-					msg += " (it explodes 3 steps after reaching you - kill it or step away!)"
-					if not bool(cx.get("seen_bomber", false)):
-						cx["seen_bomber"] = true
+				elif NEWE.has(String(kinds.get(c, ""))):
+					var nk := String(kinds.get(c, ""))
+					msg += " (%s)" % String(NEWE[nk][2])
+					if not bool(cx.get("seen_" + nk, false)):
+						cx["seen_" + nk] = true
 						newe_t = t
-						newe_n = "BOMBER"
-						newe_d = "Explodes 3 steps after it reaches you"
-						_save_meta()
-				elif String(kinds.get(c, "")) == "mender":
-					msg += " (it heals enemies next to it - kill it first!)"
-					if not bool(cx.get("seen_mender", false)):
-						cx["seen_mender"] = true
-						newe_t = t
-						newe_n = "MENDER"
-						newe_d = "Heals enemies next to it every step"
+						newe_n = String(NEWE[nk][0])
+						newe_d = String(NEWE[nk][1])
 						_save_meta()
 				elif tur.has(c):
 					msg += " (it fires down a 5-tile lane!)"
@@ -11057,6 +11081,10 @@ func _adv_move_mon(a: Vector2i, b: Vector2i) -> void:
 	if thief_held.has(a):
 		thief_held[b] = thief_held[a]
 		thief_held.erase(a)
+	for dd in [shd, chg_m, bomb_t, brood_n]:
+		if (dd as Dictionary).has(a):
+			dd[b] = dd[a]
+			(dd as Dictionary).erase(a)
 	if affix.has(a):
 		affix[b] = affix[a]
 		affix.erase(a)
@@ -11162,12 +11190,83 @@ func _mend_tick() -> void:
 					_pop(n, "+%d" % amt, Color("6dff9a"))
 
 
+func _d_awake(c: Vector2i, rg: int) -> bool:
+	return mons.has(c) and not _stunned(c) and not _turned(c) and not mon_idle.has(c) and _cheb(c, pos) <= rg
+
+
+func _d_tick() -> void:
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for c in kinds.keys():
+		if not mons.has(c):
+			continue
+		var k := String(kinds[c])
+		if k == "shielder":
+			if adv_steps % 2 == 0 and _d_awake(c, 9):
+				var d: Vector2i = pos - c
+				shd[c] = Vector2i(signi(d.x), 0) if absi(d.x) > absi(d.y) else Vector2i(0, signi(d.y) if d.y != 0 else 1)
+		elif k == "brood":
+			if _d_awake(c, 8) and int(brood_n.get(c, 0)) < 3 and (adv_steps + c.x + c.y) % 8 == 0:
+				for dv in dirs:
+					var n: Vector2i = c + dv
+					if _aopen(n) and n != pos and not mons.has(n) and not vaults.has(n) and not items.has(n):
+						mons[n] = maxi(1, int(mons[c]) - 2)
+						kinds[n] = "hunter"
+						mon_slide[n] = [Vector2(c - n), t]
+						brood_n[c] = int(brood_n.get(c, 0)) + 1
+						if adv_vis.has(n):
+							_pop(n, "HATCH", Color("c07cff"))
+							msg = "%s spawns a hunter!" % _adv_mname(c)
+						break
+	for c in chg_m.keys():
+		if not mons.has(c) or String(kinds.get(c, "")) != "charger":
+			chg_m.erase(c)
+			continue
+		var dv: Vector2i = chg_m[c]
+		chg_m.erase(c)
+		if _stunned(c) or _rooted(c):
+			continue
+		var cur: Vector2i = c
+		var hit := false
+		for i in 3:
+			var n: Vector2i = cur + dv
+			if n == pos:
+				hit = true
+				break
+			if not _aopen(n) or mons.has(n) or vaults.has(n):
+				break
+			cur = n
+		if cur != c:
+			_adv_move_mon(c, cur)
+		if hit:
+			walk.clear()
+			mon_lunge[cur] = [t, Vector2(dv)]
+			_shake(5.0, 0.25)
+			msg = "%s rams you!" % _adv_mname(cur)
+			if not _adv_hurt(mon_atk(cur) * 3 / 2, _adv_mname(cur), cur):
+				return
+		elif cur != c and adv_vis.has(cur):
+			msg = "%s charges past!" % _adv_mname(cur)
+	for c in kinds.keys():
+		if String(kinds[c]) != "charger" or chg_m.has(c) or not _d_awake(c, 4):
+			continue
+		var d: Vector2i = pos - c
+		if (d.x == 0) == (d.y == 0):
+			continue
+		if not _lane_ok(c, pos, 4):
+			continue
+		chg_m[c] = Vector2i(signi(d.x), signi(d.y))
+		if adv_vis.has(c):
+			_pop(c, "!", Color("ff4a4a"))
+			msg = "%s lines up a charge - step out of the lane!" % _adv_mname(c)
+
+
 func _adv_hunters() -> void:
 	_idle_notice()
 	_bomb_tick()
 	if state != PLAY:
 		return
 	_mend_tick()
+	_d_tick()
 	if state != PLAY:
 		return
 	var tgt := pos
@@ -11671,7 +11770,7 @@ func _adv_clear() -> void:
 		cores += 10
 		run_cores += 10
 		over_title = "STATION ESCAPED"
-		over_sub = "You beat the station! +10 boss cores\nNext goal: DEEP STATION\n" + over_sub
+		over_sub = "You beat the station! +10 boss cores\nUnlocked kill effect: ESCAPE BURST (STYLE)\nNext goal: DEEP STATION\n" + over_sub
 		_save_meta()
 	relic_choices = _roll_relics(1 if boss_floor else 0)
 	_nr_clear()
@@ -12407,6 +12506,31 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 		_ctext("+", mk, int(AC * 0.28), Color("6dff9a"))
 		draw_arc(ctr, AC * 0.55, 0.0, TAU, 24, Color(0.43, 1.0, 0.6, 0.25 + 0.15 * sin(t * 3.0)), 2.0)
 		_ctext("heals", ctr + Vector2(0, -AC * 0.47), 12, Color("6dff9a"))
+	elif kind == "shielder":
+		var sv: Vector2i = shd.get(c, Vector2i(0, 1))
+		var sa := Vector2(sv).angle()
+		draw_arc(ctr, AC * 0.5, sa - 0.95, sa + 0.95, 14, Color(0.5, 0.75, 1.0, 0.9), 6.0)
+		draw_circle(mk, AC * 0.13, Color("13305a"))
+		_ctext("[", mk, int(AC * 0.24), Color("7fb8ff"))
+		_ctext("shield", ctr + Vector2(0, -AC * 0.47), 12, Color("7fb8ff"))
+	elif kind == "brood":
+		draw_circle(mk, AC * 0.13, Color("3a1450"))
+		_ctext("o", mk, int(AC * 0.24), Color("c07cff"))
+		var bl := 3 - int(brood_n.get(c, 0))
+		_ctext(("spawns (%d)" % bl) if bl > 0 else "empty", ctr + Vector2(0, -AC * 0.47), 12, Color("c07cff"))
+	elif kind == "charger":
+		draw_circle(mk, AC * 0.13, Color("5a0e0e"))
+		_ctext(">", mk, int(AC * 0.24), Color("ff4a4a"))
+		if chg_m.has(c):
+			var cv := Vector2(chg_m[c] as Vector2i)
+			var ca := 0.35 + 0.25 * sin(t * 12.0)
+			for i in range(1, 4):
+				var lc := ctr + cv * AC * float(i)
+				draw_rect(Rect2(lc - Vector2(AC * 0.42, AC * 0.42), Vector2(AC * 0.84, AC * 0.84)), Color(1.0, 0.25, 0.2, ca * 0.5))
+				draw_rect(Rect2(lc - Vector2(AC * 0.42, AC * 0.42), Vector2(AC * 0.84, AC * 0.84)), Color(1.0, 0.3, 0.25, ca + 0.2), false, 2.0)
+			_ctext("CHARGES!", ctr + Vector2(0, -AC * 0.47), 13, Color("ff4a4a"))
+		else:
+			_ctext("charger", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a"))
 	elif kind == "thief":
 		draw_circle(mk, AC * 0.13, Color("5a4500"))
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
@@ -18721,6 +18845,7 @@ const KILL_FX := [
 	["gold", "Gold Rush", "boss", 3],
 	["bolt", "Thunder Strike", "boss", 8],
 	["void", "Void Implosion", "best", 21],
+	["escape", "Escape Burst", "esc", 1],
 ]
 var cos_kill := "none"
 
@@ -18736,6 +18861,7 @@ func _cos_open(kind: String, n: int) -> bool:
 		"runs": return runs_done >= n
 		"best": return adv_best >= n
 		"boss": return _cos_bosses() >= n
+		"esc": return bool(cx.get("escaped", false))
 	return false
 
 
@@ -18744,6 +18870,7 @@ func _cos_need(kind: String, n: int) -> String:
 		"runs": return "finish %d runs" % n
 		"best": return "reach floor %d" % n
 		"boss": return "beat %d bosses" % n
+		"esc": return "escape the station (beat the floor 12 boss)"
 	return ""
 
 
@@ -18790,6 +18917,12 @@ func _cos_kill_fx(cf: Vector2, body: Color) -> void:
 			_fx_bolt(cf + Vector2(0.3, -3.5), cf, Color("bfe6ff"))
 			_fx_ring(cf, Color("bfe6ff"), 1.0, 0.35, 5.0)
 			_shake(4.0, 0.2)
+		"escape":
+			_fx_ring(cf, Color("6dff9a"), 1.3, 0.5, 6.0)
+			_fx_ring(cf, Color("ffd84f"), 0.8, 0.45, 4.0, 0.1)
+			for i in 20:
+				var a := float(i) / 20.0 * TAU
+				_fx_spark(cf, Vector2(cos(a), sin(a)) * 4.5, Color("6dff9a") if i % 2 == 0 else Color("ffd84f"), 0.8, 6.0, 2.5)
 		"void":
 			_fx_ring(cf, Color("8a6cff"), 1.6, 0.5, 6.0)
 			_fx_ring(cf, Color("2a1060"), 0.5, 0.5, 9.0, 0.15)
