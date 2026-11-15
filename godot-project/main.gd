@@ -203,6 +203,9 @@ var dd_on := false   # A1 Daily Dive run
 var dd_next := false
 var dd_seed := 0
 var btn_dd := Rect2(160, 470, 400, 84)
+var btn_dd2 := Rect2(210, 888, 300, 54)   # E: second Daily Dive attempt (ad)
+var rr_used := false                      # E: relic reroll ad, once per run
+var btn_rr := Rect2(160, 1216, 400, 56)
 var sp_rooms: Array = []         # C1: [Rect2i, name] special rooms on this floor
 var secrets: Dictionary = {}     # C2: cracked wall cells hiding a cache
 var cam := Vector2.ZERO
@@ -376,7 +379,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 131
+const BUILD := 132
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -1873,6 +1876,31 @@ func _ad_core_done(ok: bool) -> void:
 	_sfx("coin")
 
 
+# E: rewarded ad = reroll the relic choice, once per run (not in the Daily Dive)
+func _rr_ok() -> bool:
+	return _mx_on() and not dd_on and not rr_used and relic_pick == -1 and relic_choices.size() > 0 and _ads().rewarded_ready()
+
+
+func _ad_rr_done(ok: bool) -> void:
+	rv_busy = false
+	if not ok or rr_used or state != RELIC:
+		return
+	rr_used = true
+	relic_choices = _roll_relics(maxi(0, relic_choices.size() - 3))
+	_sfx("big")
+
+
+# E: rewarded ad = one more Daily Dive attempt today (best floor counts)
+func _dd2_ok() -> bool:
+	return _dd_done() and String(cx.get("dd2", "")) != _dd_day() and not rv_busy and _ads().rewarded_ready()
+
+
+func _ad_dd2_done(ok: bool) -> void:
+	rv_busy = false
+	if ok and state == MODE and _dd_done() and String(cx.get("dd2", "")) != _dd_day():
+		_dd_start(true)
+
+
 func _spend(n: int) -> void:
 	coins -= n
 	run_spent += n
@@ -1956,7 +1984,7 @@ func _die_final(why: String, won := false) -> void:
 		dd_on = false
 		cx["dd_f"] = maxi(int(cx.get("dd_f", 0)), reached)
 		if lb_url != "" and (lb_name != "" or _lb_ask_name()):
-			_lb_put(_lb_key(2), reached)
+			_lb_put(_lb_key(2), int(cx["dd_f"]))
 	if mode == "adv":
 		if reached > adv_best:
 			adv_best = reached
@@ -3111,6 +3139,7 @@ func _new_run(start_floor := 1) -> void:
 	deep_run = false
 	dd_on = dd_next
 	dd_next = false
+	rr_used = false
 	floor_n = start_floor
 	clear_pend = false
 	coins = 0
@@ -3339,6 +3368,12 @@ func _gui_input(event: InputEvent) -> void:
 		_ws_input(p)
 		return
 	if state == MODE:
+		if rv_busy:
+			return
+		if _dd2_ok() and btn_dd2.has_point(p):
+			_sfx("ui")
+			rv_busy = _ads().show_rewarded(_ad_dd2_done)
+			return
 		if btn_dd.has_point(p):
 			if _dd_done():
 				lb_mode = 2
@@ -3458,6 +3493,12 @@ func _gui_input(event: InputEvent) -> void:
 				state = MODE
 		return
 	if state == RELIC:
+		if rv_busy:
+			return
+		if _rr_ok() and btn_rr.has_point(p):
+			_sfx("ui")
+			rv_busy = _ads().show_rewarded(_ad_rr_done)
+			return
 		if btn_skip.has_point(p):
 			coins += _skip_val()
 			_sfx("coin")
@@ -4622,10 +4663,13 @@ func _dd_done() -> bool:
 	return String(cx.get("dd", "")) == _dd_day()
 
 
-func _dd_start() -> void:
+func _dd_start(again := false) -> void:
 	var d := _dd_day()
-	cx["dd"] = d
-	cx["dd_f"] = 0
+	if again:
+		cx["dd2"] = d
+	else:
+		cx["dd"] = d
+		cx["dd_f"] = 0
 	_save_meta()
 	mode = "adv"
 	cls = ["scout", "brute", "mystic", "gambler", "gunslinger"][int(d) % 5]
@@ -5761,6 +5805,8 @@ func _draw_overlay(acc: Color) -> void:
 		_button(btn_lb, "LEADERBOARD", C_INFO, 22, "trophy")
 		if _dd_done():
 			_button(btn_dd, "DAILY DONE: floor %d" % int(cx.get("dd_f", 0)), Color(1, 1, 1, 0.55), 24)
+			if _dd2_ok():
+				_button(btn_dd2, "TRY AGAIN (%s)" % _ads().tag(), Color("ffc93c"), 22)
 		else:
 			_button(btn_dd, "DAILY DIVE", C_GOLD, 30)
 		_button(btn_quit, "QUIT", Color(1, 1, 1, 0.45), 22)
@@ -5853,6 +5899,8 @@ func _draw_overlay(acc: Color) -> void:
 					_txt(stxt, Vector2(rr.position.x + 22, rr.end.y - 10), 16, Color("ffd84f") if have else Color(1, 1, 1, 0.45), rr.size.x - 44, HORIZONTAL_ALIGNMENT_LEFT)
 					break
 		_button(btn_skip, "SKIP  +%d COINS" % _skip_val(), Color(1, 1, 1, 0.75), 24)
+		if _rr_ok():
+			_button(btn_rr, "REROLL RELICS (%s)" % _ads().tag(), Color("ffc93c"), 22)
 		if relic_pick != -1:
 			var pk2 := clampf((t - pick_t) / 0.3, 0.0, 1.0)
 			for i in relic_choices.size():
@@ -6952,7 +7000,7 @@ func _adv_gen() -> void:
 				if rr.has_point(q):
 					mons.erase(q)
 					mon_cells.erase(q)
-			var sk_name := String(["BARRACKS", "TREASURY", "SHRINE GARDEN"][rng.randi() % 3])
+			var sk_name := String(["BARRACKS", "TREASURY", "SHRINE GARDEN", "ARMOURY", "REACTOR HALL"][rng.randi() % 5])
 			sp_rooms.append([rr, sk_name])
 			taken[ctr] = true
 			if sk_name == "BARRACKS":
@@ -6978,6 +7026,26 @@ func _adv_gen() -> void:
 							pts += 1
 						else:
 							spikes[tc2] = true
+			elif sk_name == "ARMOURY":
+				# three gear crates: take one, the others lock
+				for arm_x in [-2, 0, 2]:
+					var arm_c := ctr + Vector2i(arm_x, 0)
+					if rr.has_point(arm_c):
+						items[arm_c] = "gear_" + _adv_roll_gear(rng)
+						taken[arm_c] = true
+				pts += 2
+			elif sk_name == "REACTOR HALL":
+				# arc plates in a checker pattern around a heart cell
+				items[ctr] = "heartcell"
+				pts += 2
+				for dx in range(-2, 3):
+					for dy in range(-2, 3):
+						var rea_c := ctr + Vector2i(dx, dy)
+						if rea_c == ctr or not rr.has_point(rea_c):
+							continue
+						taken[rea_c] = true
+						if (dx + dy) % 2 != 0:
+							haz[rea_c] = "arc"
 			else:
 				items[ctr] = "shrine"
 				var hpc := ctr + Vector2i(1, 0)
@@ -10730,6 +10798,13 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 					msg += "   %s: %s" % [MOD_DEFS[mid2]["n"], MOD_DEFS[mid2]["d"]]
 				_pop(nc, String(gd["name"]), _gear_col(String(gd["slot"])))
 				snd = "big"
+				# C1 Armoury: taking one crate locks the others
+				for arm_r in sp_rooms:
+					if String(arm_r[1]) == "ARMOURY" and (arm_r[0] as Rect2i).has_point(nc):
+						for arm_q in items.keys():
+							if arm_q != nc and (arm_r[0] as Rect2i).has_point(arm_q) and String(items[arm_q]).begins_with("gear_"):
+								items.erase(arm_q)
+								_pop(arm_q, "LOCKED", Color("ff9d9d"))
 			else:
 				items[nc] = kind
 				adv_pts -= 2
