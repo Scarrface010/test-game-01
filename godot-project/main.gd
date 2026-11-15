@@ -105,6 +105,12 @@ var thief_held: Dictionary = {}  # Vector2i -> coins the thief is holding
 var bomb_t: Dictionary = {}      # Vector2i -> steps left before a glowing bomber explodes
 var newe_t := -10.0              # time the "new enemy" banner started
 var newe_n := ""
+var newe_d := ""
+var fo_kind := ""                # C4 floor bonus objective: "nodmg" | "steps" | "elite"
+var fo_hit := false
+var fo_elite := false
+var fo_s0 := 0
+var fo_n := 0
 var relics: Dictionary = {}      # id -> count (this run only)
 var relic_defs: Array = []
 var synergies: Array = []
@@ -359,7 +365,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 129
+const BUILD := 130
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -2114,7 +2120,7 @@ func _newe_card() -> void:
 	_txt("NEW ENEMY", Vector2(bx, cy - 26), 24, Color(org.r, org.g, org.b, a))
 	_txt(newe_n, Vector2(bx + 3, cy + 23), 54, Color(0, 0, 0, 0.7 * a))
 	_txt(newe_n, Vector2(bx, cy + 20), 54, Color(1, 1, 1, a))
-	_txt("Explodes 3 steps after it reaches you", Vector2(bx, cy + 52), 18, Color(1, 1, 1, 0.8 * a))
+	_txt(newe_d, Vector2(bx, cy + 52), 18, Color(1, 1, 1, 0.8 * a))
 
 
 func _draw_floor_msg(acc: Color) -> void:
@@ -7131,6 +7137,8 @@ func _adv_gen() -> void:
 			kinds[mcell] = "hunter"
 		elif floor_n >= 2 and rng.randf() < 0.12:
 			kinds[mcell] = "bomber"
+		elif floor_n >= 4 and rng.randf() < 0.1:
+			kinds[mcell] = "mender"
 		elif floor_n >= 4 and rng.randf() < (0.3 if _world_rule() == "black" else 0.15):
 			kinds[mcell] = "thief"
 		elif floor_n >= 5 and rng.randf() < 0.14:
@@ -7426,6 +7434,7 @@ func _adv_hurt(a: int, who: String, src := Vector2i(-1, -1)) -> bool:
 		ck_src = src
 		_mx_dodged()
 		return true
+	fo_hit = true
 	if gm("ablative") and not abl_used:
 		abl_used = true
 		_pop(pos, "ABSORBED", Color("c8f1ff"))
@@ -10165,6 +10174,7 @@ func _adv_begin() -> void:
 	cam = Vector2(pos)
 	_adv_update_vis()
 	state = PLAY
+	_fo_pick()
 	if arena:
 		cam = Vector2(6, 6)
 		msg = "BOSS ARENA: the %s. %s" % [_boss_name(), _arena_hint()]
@@ -10322,6 +10332,8 @@ func _adv_kill(nc: Vector2i, nm: String, lv: int, is_boss: bool) -> void:
 		back = int(thief_held[nc]) + _repo_bonus()
 		coins += back
 	var was_elite := elite.has(nc)
+	if was_elite:
+		fo_elite = true
 	var was_affix := affix.has(nc)
 	var bounty_hit := false
 	if bounty_n > 0 and was_elite:
@@ -10993,6 +11005,15 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 						cx["seen_bomber"] = true
 						newe_t = t
 						newe_n = "BOMBER"
+						newe_d = "Explodes 3 steps after it reaches you"
+						_save_meta()
+				elif String(kinds.get(c, "")) == "mender":
+					msg += " (it heals enemies next to it - kill it first!)"
+					if not bool(cx.get("seen_mender", false)):
+						cx["seen_mender"] = true
+						newe_t = t
+						newe_n = "MENDER"
+						newe_d = "Heals enemies next to it every step"
 						_save_meta()
 				elif tur.has(c):
 					msg += " (it fires down a 5-tile lane!)"
@@ -11054,6 +11075,47 @@ func _cloak_break() -> void:
 		_pop(pos, "REVEALED", Color("9aa3c7"))
 
 
+func _fo_pick() -> void:
+	fo_kind = ""
+	fo_hit = false
+	fo_elite = false
+	fo_s0 = run_steps
+	if mode != "adv" or in_base or tutorial or arena or boss_floor or floor_n < 2:
+		return
+	var opts: Array[String] = ["nodmg", "steps"]
+	if not elite.is_empty():
+		opts.append("elite")
+	fo_kind = opts[absi(hash([adv_seed, floor_n])) % opts.size()]
+	fo_n = 160 + 10 * floor_n
+
+
+func _fo_met() -> bool:
+	match fo_kind:
+		"nodmg":
+			return not fo_hit
+		"steps":
+			return run_steps - fo_s0 <= fo_n
+		"elite":
+			return fo_elite
+	return false
+
+
+func _fo_text() -> String:
+	match fo_kind:
+		"nodmg":
+			return "BONUS: take no damage" + ("" if not fo_hit else "  (failed)")
+		"steps":
+			var left := fo_n - (run_steps - fo_s0)
+			return "BONUS: exit within %d steps  (%d left)" % [fo_n, maxi(0, left)] if left >= 0 else "BONUS: exit within %d steps  (failed)" % fo_n
+		"elite":
+			return "BONUS: kill an elite" + ("  (done)" if fo_elite else "")
+	return ""
+
+
+func _fo_reward() -> int:
+	return 15 + 5 * floor_n
+
+
 func _bomb_tick() -> void:
 	for c in bomb_t.keys():
 		if not mons.has(c) or String(kinds.get(c, "")) != "bomber":
@@ -11081,9 +11143,31 @@ func _bomb_tick() -> void:
 			msg = "%s explodes - you got clear!" % nm
 
 
+func _mend_tick() -> void:
+	for c in kinds.keys():
+		if String(kinds[c]) != "mender" or not mons.has(c) or _stunned(c) or mon_idle.has(c) or _cheb(c, pos) > 8:
+			continue
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var n: Vector2i = c + Vector2i(dx, dy)
+				if n == c or not mons.has(n) or not mon_hp.has(n):
+					continue
+				var mx := mon_hp_max(n)
+				var cur := int(mon_hp[n])
+				if cur >= mx:
+					continue
+				var amt := maxi(1, mx / 10)
+				mon_hp[n] = mini(mx, cur + amt)
+				if adv_vis.has(n):
+					_pop(n, "+%d" % amt, Color("6dff9a"))
+
+
 func _adv_hunters() -> void:
 	_idle_notice()
 	_bomb_tick()
+	if state != PLAY:
+		return
+	_mend_tick()
 	if state != PLAY:
 		return
 	var tgt := pos
@@ -11576,6 +11660,12 @@ func _adv_clear() -> void:
 		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
 	if _ce_on():
 		over_sub += "\n" + _ce_line()
+	if fo_kind != "" and not arena and _fo_met():
+		var fr := _fo_reward()
+		coins += fr
+		over_sub += "\nBONUS MET: +%d coins" % fr
+		_pop(pos, "BONUS +%d" % fr, Color("ffd84f"))
+	fo_kind = ""
 	if arena and boss_floor and floor_n == 12 and not deep_run and not dd_on and not bool(cx.get("escaped", false)):
 		cx["escaped"] = true
 		cores += 10
@@ -12312,6 +12402,11 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 			_ctext("BOOM IN %d" % int(bomb_t[c]), ctr + Vector2(0, -AC * 0.47), 13, Color("ffb04f"))
 		else:
 			_ctext("explodes", ctr + Vector2(0, -AC * 0.47), 12, Color("ffb04f"))
+	elif kind == "mender":
+		draw_circle(mk, AC * 0.13, Color("0d4a24"))
+		_ctext("+", mk, int(AC * 0.28), Color("6dff9a"))
+		draw_arc(ctr, AC * 0.55, 0.0, TAU, 24, Color(0.43, 1.0, 0.6, 0.25 + 0.15 * sin(t * 3.0)), 2.0)
+		_ctext("heals", ctr + Vector2(0, -AC * 0.47), 12, Color("6dff9a"))
 	elif kind == "thief":
 		draw_circle(mk, AC * 0.13, Color("5a4500"))
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
@@ -12773,6 +12868,10 @@ func _adv_draw() -> void:
 	if arena:
 		ptxt = "ARENA: " + _arena_hint()
 	_txt(ptxt, Vector2(0, 308), 26, Color("6dff9a") if okp else Color(1, 1, 1, 0.75))
+	if fo_kind != "" and not arena:
+		var fok := _fo_met()
+		var fail := fo_kind != "elite" and not fok
+		_txt(_fo_text(), Vector2(0, 334), 17, Color(1, 1, 1, 0.35) if fail else (Color("6dff9a") if fok and fo_kind == "elite" else Color("ffd84f")))
 	# tool slots (thumb cluster)
 	for i in slots_n():
 		var sr := _slot_rect(i)
