@@ -102,6 +102,9 @@ var stars: Array = []
 var saved: Dictionary = {}
 var kinds: Dictionary = {}       # Vector2i -> "sleeper" | "feeder" | "thief"
 var thief_held: Dictionary = {}  # Vector2i -> coins the thief is holding
+var bomb_t: Dictionary = {}      # Vector2i -> steps left before a glowing bomber explodes
+var newe_t := -10.0              # time the "new enemy" banner started
+var newe_n := ""
 var relics: Dictionary = {}      # id -> count (this run only)
 var relic_defs: Array = []
 var synergies: Array = []
@@ -356,7 +359,7 @@ var press_t := -10.0
 var last_state := -1
 var state_t := 0.0
 var bank_disp := -1.0
-const BUILD := 128
+const BUILD := 129
 var imp_wait := false
 var xfer_msg := ""
 var xfer_t := -10.0
@@ -411,6 +414,7 @@ var btn_invmenu := Rect2(20, 76, 190, 56)
 var menu_armed := -10.0
 var btn_retry := Rect2(160, 790, 400, 76)
 var btn_newrun := Rect2(160, 1060, 400, 76)
+var btn_again := Rect2(160, 1150, 400, 76)
 # Rewarded/interstitial ads (Play build only, see ads.gd)
 var btn_ad_revive := Rect2(160, 640, 400, 84)
 var btn_ad_giveup := Rect2(160, 750, 400, 64)
@@ -555,6 +559,11 @@ func _ready() -> void:
 	if "--drawtest" in args:
 		_setup_audio()
 		await _draw_selftest()
+		get_tree().quit()
+		return
+	if "--trailer" in args:
+		_setup_audio()
+		await load("res://trailer.gd").new().run(self)
 		get_tree().quit()
 		return
 	if "--test" in args:
@@ -1301,6 +1310,7 @@ func _random_layout(tries: int) -> void:
 	elite.clear()
 	kinds.clear()
 	thief_held.clear()
+	bomb_t.clear()
 	items.clear()
 	spikes.clear()
 	coin_at.clear()
@@ -2089,8 +2099,27 @@ func _draw_fade() -> void:
 		draw_rect(Rect2(-60, -60, 840, 1500), Color(0, 0, 0, fade_a))
 
 
+func _newe_card() -> void:
+	var u := t - newe_t
+	if u < 0.0 or u > 2.6 or state != PLAY or mode != "adv":
+		return
+	var a := clampf(minf(u / 0.2, (2.6 - u) / 0.45), 0.0, 1.0)
+	var e := 1.0 - pow(1.0 - clampf(u / 0.35, 0.0, 1.0), 3.0)
+	var org := Color("ffb04f")
+	var cy := 600.0
+	var bx := (1.0 - e) * -900.0
+	draw_rect(Rect2(bx - 60, cy - 70, 840, 140), Color(0.06, 0.03, 0.01, 0.92 * a))
+	draw_rect(Rect2(bx - 60, cy - 70, 840, 6), Color(org.r, org.g, org.b, a))
+	draw_rect(Rect2(bx - 60, cy + 64, 840, 6), Color(org.r, org.g, org.b, a))
+	_txt("NEW ENEMY", Vector2(bx, cy - 26), 24, Color(org.r, org.g, org.b, a))
+	_txt(newe_n, Vector2(bx + 3, cy + 23), 54, Color(0, 0, 0, 0.7 * a))
+	_txt(newe_n, Vector2(bx, cy + 20), 54, Color(1, 1, 1, a))
+	_txt("Explodes 3 steps after it reaches you", Vector2(bx, cy + 52), 18, Color(1, 1, 1, 0.8 * a))
+
+
 func _draw_floor_msg(acc: Color) -> void:
 	_streak_draw()
+	_newe_card()
 	var u := t - floor_msg_t
 	if arena and mode == "adv" and not in_base:
 		_boss_card(u, acc)
@@ -3522,6 +3551,15 @@ func _gui_input(event: InputEvent) -> void:
 		if btn_newrun.has_point(p):
 			state = CLASS
 			_sfx("ui")
+		elif mode == "adv" and not dd_on and class_open(cls) and btn_again.has_point(p):
+			_sfx("big")
+			_base_start()
+			if _worlds_open() > 1:
+				bs_pick = "world"
+			else:
+				_base_end()
+				_new_run()
+				_first_tut()
 		return
 	# playing
 	if mode == "adv" and in_base and bs_pick != "":
@@ -5749,6 +5787,8 @@ func _draw_overlay(acc: Color) -> void:
 		if ad_delta > 0 and not ad_doubled and _ads().rewarded_ready():
 			_button(btn_ad_double, "DOUBLE COINS +%d (%s)" % [ad_delta, _ads().tag()], Color("ffc93c"), 26)
 		_button(btn_newrun, "NEW RUN", Color("ff9d9d"), 28)
+		if mode == "adv" and not dd_on and class_open(cls):
+			_button(btn_again, "AGAIN AS %s" % String(cdef().get("name", cls)).to_upper(), Color("6dff9a"), 26)
 	elif state == CLEAR:
 		_draw_clear_pop(acc)
 	elif state == RELIC:
@@ -6381,6 +6421,7 @@ func _adv_gen_arena() -> void:
 	portals.clear()
 	kinds.clear()
 	thief_held.clear()
+	bomb_t.clear()
 	vaults.clear()
 	stations.clear()
 	meds.clear()
@@ -6684,6 +6725,7 @@ func _adv_gen() -> void:
 	portals.clear()
 	kinds.clear()
 	thief_held.clear()
+	bomb_t.clear()
 	vaults.clear()
 	var want := 6 if floor_n == 1 else mini(8 + floor_n, 15)
 	var tries := 0
@@ -7087,6 +7129,8 @@ func _adv_gen() -> void:
 		mons[mcell] = lv2
 		if floor_n >= 2 and rng.randf() < 0.25:
 			kinds[mcell] = "hunter"
+		elif floor_n >= 2 and rng.randf() < 0.12:
+			kinds[mcell] = "bomber"
 		elif floor_n >= 4 and rng.randf() < (0.3 if _world_rule() == "black" else 0.15):
 			kinds[mcell] = "thief"
 		elif floor_n >= 5 and rng.randf() < 0.14:
@@ -10943,6 +10987,13 @@ func _adv_step(nc: Vector2i, final: bool) -> void:
 					msg += " [%s: %s]" % [AFFIX_DEFS[affix[c]]["n"], AFFIX_DEFS[affix[c]]["d"]]
 				if String(kinds.get(c, "")) == "hunter":
 					msg += " (it hunts you!)"
+				elif String(kinds.get(c, "")) == "bomber":
+					msg += " (it explodes 3 steps after reaching you - kill it or step away!)"
+					if not bool(cx.get("seen_bomber", false)):
+						cx["seen_bomber"] = true
+						newe_t = t
+						newe_n = "BOMBER"
+						_save_meta()
 				elif tur.has(c):
 					msg += " (it fires down a 5-tile lane!)"
 				elif String(kinds.get(c, "")) == "shooter":
@@ -11003,8 +11054,38 @@ func _cloak_break() -> void:
 		_pop(pos, "REVEALED", Color("9aa3c7"))
 
 
+func _bomb_tick() -> void:
+	for c in bomb_t.keys():
+		if not mons.has(c) or String(kinds.get(c, "")) != "bomber":
+			bomb_t.erase(c)
+			continue
+		bomb_t[c] = int(bomb_t[c]) - 1
+		if int(bomb_t[c]) > 0:
+			continue
+		bomb_t.erase(c)
+		var nm := _adv_mname(c)
+		var dmg := mon_atk(c) * 2
+		var hit := _cheb(c, pos) <= 1
+		var cf := Vector2(c)
+		_fx_burst(cf, Color("ff9a2e"), 34, 5.0, 0.7, 8.0)
+		_fx_ring(cf, Color("ffd84f"), 1.6, 0.5, 6.0)
+		_shake(7.0, 0.35)
+		_sfx("big")
+		_remove_mon(c)
+		if hit:
+			walk.clear()
+			msg = "%s explodes!" % nm
+			if not _adv_hurt(dmg, nm):
+				return
+		else:
+			msg = "%s explodes - you got clear!" % nm
+
+
 func _adv_hunters() -> void:
 	_idle_notice()
+	_bomb_tick()
+	if state != PLAY:
+		return
 	var tgt := pos
 	var dec := decoy_steps > 0
 	if dec:
@@ -11016,7 +11097,7 @@ func _adv_hunters() -> void:
 		return
 	var hs: Array[Vector2i] = []
 	for c in kinds:
-		if (String(kinds[c]) == "hunter" or String(kinds[c]) == "rager" or String(kinds[c]) == "drone") and mons.has(c):
+		if (String(kinds[c]) == "hunter" or String(kinds[c]) == "rager" or String(kinds[c]) == "drone" or (String(kinds[c]) == "bomber" and not bomb_t.has(c))) and mons.has(c):
 			hs.append(c)
 	if hs.is_empty():
 		return
@@ -11030,6 +11111,12 @@ func _adv_hunters() -> void:
 			if dec:
 				continue
 			walk.clear()
+			if String(kinds[c]) == "bomber":
+				bomb_t[c] = 3
+				msg = "%s starts glowing! Kill it or step away" % _adv_mname(c)
+				_pop(c, "FUSE LIT", Color("ff9a2e"))
+				_sfx("blocked")
+				continue
 			mon_lunge[c] = [t, Vector2(pos - c).normalized()]
 			msg = "%s attacks!" % _adv_mname(c)
 			if not _adv_hurt(mon_atk(c), _adv_mname(c), c):
@@ -11489,6 +11576,13 @@ func _adv_clear() -> void:
 		over_sub = "Points %d / %d   Air bonus +%d coins\nNext: %s" % [adv_pts, adv_req, bonus, nxt]
 	if _ce_on():
 		over_sub += "\n" + _ce_line()
+	if arena and boss_floor and floor_n == 12 and not deep_run and not dd_on and not bool(cx.get("escaped", false)):
+		cx["escaped"] = true
+		cores += 10
+		run_cores += 10
+		over_title = "STATION ESCAPED"
+		over_sub = "You beat the station! +10 boss cores\nNext goal: DEEP STATION\n" + over_sub
+		_save_meta()
 	relic_choices = _roll_relics(1 if boss_floor else 0)
 	_nr_clear()
 	ad_boss = boss_floor and _mx_on() and _ads().boss_bonus_available()
@@ -12208,6 +12302,16 @@ func _adv_draw_mon(c: Vector2i, ctr: Vector2, ti: int, names: Array, acc: Color)
 			_ctext("heals her", ctr + Vector2(0, -AC * 0.47), 12, Color("6dff9a"))
 		else:
 			_ctext("hunts" if kind == "hunter" else "CHARGES", ctr + Vector2(0, -AC * 0.47), 12, Color("ff7a7a") if kind == "hunter" else Color("ff4a4a"))
+	elif kind == "bomber":
+		draw_circle(mk, AC * 0.13, Color("6a3a08"))
+		_ctext("*", mk, int(AC * 0.26), Color("ffb04f"))
+		if bomb_t.has(c):
+			var bk := 0.5 + 0.5 * sin(t * (10.0 + 6.0 * (3 - int(bomb_t[c]))))
+			draw_circle(ctr, AC * 0.5, Color(1.0, 0.55, 0.1, 0.2 + 0.25 * bk))
+			draw_rect(Rect2(ctr - Vector2(AC * 1.5, AC * 1.5), Vector2(AC * 3.0, AC * 3.0)), Color(1.0, 0.5, 0.1, 0.25 + 0.3 * bk), false, 3.0)
+			_ctext("BOOM IN %d" % int(bomb_t[c]), ctr + Vector2(0, -AC * 0.47), 13, Color("ffb04f"))
+		else:
+			_ctext("explodes", ctr + Vector2(0, -AC * 0.47), 12, Color("ffb04f"))
 	elif kind == "thief":
 		draw_circle(mk, AC * 0.13, Color("5a4500"))
 		_ctext("$", mk, int(AC * 0.24), Color("ffd84f"))
